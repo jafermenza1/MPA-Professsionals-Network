@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "datasets": [
+    {
+      "dataset_key": "geography",
+      "name": "Administrative Geography",
+      "domain": "geography",
+      "source_type": "mpa_governed",
+      "version": "baseline-1",
+      "items": []
+    },
+    {
+      "dataset_key": "occupation",
+      "name": "Occupation Classification",
+      "domain": "occupation",
+      "source_type": "external",
+      "version": "baseline-1",
+      "items": []
+    },
+    {
+      "dataset_key": "industry",
+      "name": "Industry Classification",
+      "domain": "industry",
+      "source_type": "external",
+      "version": "baseline-1",
+      "items": []
+    },
+    {
+      "dataset_key": "education_level",
+      "name": "Education Levels",
+      "domain": "education_level",
+      "source_type": "mpa_governed",
+      "version": "baseline-1",
+      "items": []
+    },
+    {
+      "dataset_key": "qualification_type",
+      "name": "Qualification Types",
+      "domain": "qualification_type",
+      "source_type": "mpa_governed",
+      "version": "baseline-1",
+      "items": []
+    },
+    {
+      "dataset_key": "field_of_study",
+      "name": "Field of Study",
+      "domain": "field_of_study",
+      "source_type": "external",
+      "version": "baseline-1",
+      "items": []
+    }
+  ],
+  "membership_products": [
+    {
+      "product_code": "BASIC",
+      "name": "Basic",
+      "billing_model": "recurring",
+      "price": 1200,
+      "currency": "ETB",
+      "duration_days": 365,
+      "renewal_required": true,
+      "active": true
+    },
+    {
+      "product_code": "LIFETIME",
+      "name": "Lifetime",
+      "billing_model": "lifetime",
+      "price": 12000,
+      "currency": "ETB",
+      "renewal_required": false,
+      "active": true
+    },
+    {
+      "product_code": "PREMIUM",
+      "name": "Premium",
+      "billing_model": "one_time",
+      "price": 50000,
+      "currency": "ETB",
+      "renewal_required": false,
+      "active": true
+    }
+  ],
+  "verification_claim_types": [
+    {"claim_code": "identity", "name": "Identity"},
+    {"claim_code": "education", "name": "Education"},
+    {"claim_code": "professional_certification", "name": "Professional Certification"},
+    {"claim_code": "employment", "name": "Employment"},
+    {"claim_code": "experience", "name": "Professional Experience"},
+    {"claim_code": "organization", "name": "Organization"},
+    {"claim_code": "membership", "name": "Membership"},
+    {"claim_code": "service_capability", "name": "Service Capability"}
+  ],
+  "import_rules": {
+    "minimum_columns": ["code", "name", "type", "parent_code", "status"],
+    "accepted_formats": ["csv", "xlsx", "json"],
+    "publish_requires": ["validation_passed", "review_approved"],
+    "historical_versions_immutable": true,
+    "referenced_items_cannot_be_hard_deleted": true
+  }
+}

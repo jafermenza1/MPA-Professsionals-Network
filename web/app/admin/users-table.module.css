@@ -1,0 +1,119 @@
+.wrap {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.account {
+  min-width: 170px;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.account small,
+.muted {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.roleList {
+  display: grid;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.role {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.roleAction,
+.accountActions {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+  min-width: 150px;
+}
+
+.roleAction select,
+.reasonField textarea {
+  width: 100%;
+  min-width: 150px;
+}
+
+.reasonField {
+  display: grid;
+  gap: 5px;
+  min-width: 180px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.reasonField textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.accountActions button {
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 24px !important;
+  color: var(--muted);
+  text-align: center !important;
+}
+
+.catalog {
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.catalog summary {
+  padding: 10px 0;
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .wrap {
+    overflow-x: auto;
+  }
+
+  .table {
+    min-width: 1050px;
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+web/.next/
+web/tsconfig.tsbuildinfo
+.env
+.env.*
+!.env.example
+coverage/
+.DS_Store
+*.log
+.private-files/
+playwright-report/
+test-results/

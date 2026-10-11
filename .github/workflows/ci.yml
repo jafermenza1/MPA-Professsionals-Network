@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: ["main","feat/**","fix/**","reconciliation/**"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconciliation-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mpa
+          POSTGRES_USER: mpa
+          POSTGRES_PASSWORD: mpa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mpa -d mpa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://mpa:mpa_ci@localhost:5432/mpa
+      LOG_LEVEL: error
+      JWT_SECRET: ci-only-phase1-test-secret
+      BOOTSTRAP_ADMIN_EMAIL: ci-admin@example.test
+      BOOTSTRAP_ADMIN_PASSWORD: ci-only-admin-password-12345
+      BOOTSTRAP_ADMIN_NAME: CI Test Administrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --no-audit --no-fund
+      - name: Apply database migrations
+        run: npm run migrate
+      - name: Verify migration rerun safety
+        run: npm run migrate
+      - name: Verify legacy database adoption on isolated PostgreSQL
+        env:
+          PGPASSWORD: mpa_ci
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE mpa_migration_upgrade"
+          DATABASE_URL=postgresql://mpa:mpa_ci@localhost:5432/mpa_migration_upgrade bash scripts/ci-migration-upgrade.sh
+      - run: npm test
+      - run: npm run web:build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Application and browser workflow smoke test
+        shell: bash
+        run: |
+          export JWT_SECRET="$(openssl rand -hex 32)"
+          CORS_ORIGIN=http://127.0.0.1:3001 node server.js > /tmp/mpa-server.log 2>&1 &
+          pid=$!
+          web_pid=''
+          trap 'kill "${web_pid:-}" "$pid" 2>/dev/null || true' EXIT
+          healthy=0
+          for i in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3000/healthz >/dev/null; then
+              healthy=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$healthy" -ne 1 ]; then
+            cat /tmp/mpa-server.log
+            exit 1
+          fi
+          node scripts/ci-api-smoke.js
+          API_SERVER_BASE_URL=http://127.0.0.1:3000 npm run dev --workspace @mpa/web -- --hostname 127.0.0.1 --port 3001 > /tmp/mpa-web.log 2>&1 &
+          web_pid=$!
+          web_healthy=0
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3001/jobs >/dev/null; then
+              web_healthy=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$web_healthy" -ne 1 ]; then
+            cat /tmp/mpa-web.log
+            exit 1
+          fi
+          WEB_BASE_URL=http://127.0.0.1:3001 API_BASE_URL=http://127.0.0.1:3000 npx playwright test

@@ -1,0 +1,78 @@
+.hero{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(0,1.12fr) minmax(320px,.88fr);align-items:center;gap:clamp(28px,4vw,58px);overflow:hidden;border:1px solid var(--border);border-radius:28px;padding:clamp(28px,4.4vw,58px);background:linear-gradient(120deg,var(--surface) 0%,color-mix(in srgb,var(--primary) 3%,var(--surface)) 100%);box-shadow:var(--shadow)}
+.heroCopy{position:relative;z-index:3;min-width:0;padding:8px 0}
+.brandEyebrow{display:flex;align-items:center;gap:12px;max-width:100%;color:var(--muted);font-size:10px;letter-spacing:.085em;font-weight:800;line-height:1.6}
+.brandEyebrow>span:last-child{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.brandEyebrow i{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--gold)}
+.brandMarkSmall{width:34px;height:34px;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:5px}
+.mpaMark{width:100%;height:100%;overflow:visible}
+.heroTitle{max-width:650px;font-size:clamp(38px,4.5vw,62px);line-height:1.055;letter-spacing:-.052em;margin:24px 0 20px;color:var(--text)}
+.heroAccent{background:linear-gradient(105deg,var(--primary) 5%,var(--gold) 125%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;color:var(--primary)}
+.heroLead{max-width:570px;font-size:clamp(16px,1.3vw,18px);line-height:1.7;margin:0;color:var(--muted)}
+.heroActions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:28px;position:relative;z-index:5}
+.loginLink{display:inline-flex;align-items:center;gap:7px;padding:11px 6px;color:var(--primary);font-weight:700;font-size:14px;text-decoration:none;white-space:nowrap}
+.loginLink:hover,.textLink:hover{ text-decoration:underline;text-underline-offset:4px}
+.trustBar{display:flex;align-items:center;flex-wrap:wrap;gap:12px 19px;border-top:1px solid var(--border);margin-top:32px;padding-top:20px;max-width:670px}
+.trustBar>span{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:var(--muted);line-height:1.5}
+.trustBar svg{color:var(--primary);flex-shrink:0}
+.heroVisual{position:relative;z-index:1;min-width:0;min-height:440px;display:flex;align-items:center;justify-content:center;padding:28px 0}
+.archBackdrop{position:absolute;pointer-events:none;z-index:0;right:-14%;top:50%;transform:translateY(-50%);width:min(112%,510px);height:100%;opacity:.15}
+.archBackdrop svg{width:100%;height:100%;overflow:visible}
+.archLine{stroke-dasharray:1200;stroke-dashoffset:1200;animation:mpaArchDraw 2s cubic-bezier(.22,.61,.36,1) .12s forwards}
+.nodePulse{transform-box:fill-box;transform-origin:center;animation:mpaNodePulse 2.8s ease-in-out infinite}
+.nodePulseAlt{transform-box:fill-box;transform-origin:center;animation:mpaNodePulse 2.8s ease-in-out 1.1s infinite}
+.heroVisual :global(.card){position:relative;z-index:2;width:100%;max-width:430px;padding:23px;background:color-mix(in srgb,var(--surface) 97%,transparent);border:1px solid var(--border);box-shadow:0 22px 60px color-mix(in srgb,var(--primary) 12%,transparent)}
+.visualLogo{position:absolute;z-index:3;top:0;right:0;display:flex;align-items:center;gap:10px;padding:10px 13px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
+.visualLogo .mpaMark{width:31px;height:31px}
+.visualLogo div{display:grid;gap:2px}
+.visualLogo strong{font-size:12px;color:var(--text)}
+.visualLogo span{font-size:10px;color:var(--muted)}
+.previewTop{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.previewTop .eyebrow{font-size:10px;letter-spacing:.1em}
+.previewTitle{font-size:23px;line-height:1.2;letter-spacing:-.035em;margin:8px 0 0;color:var(--text)}
+.previewIcon{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:color-mix(in srgb,var(--gold) 22%,var(--surface));color:var(--primary);flex-shrink:0}
+.previewRows{display:grid;gap:4px;margin-top:22px}
+.previewRows>div{display:grid;grid-template-columns:36px minmax(0,1fr) 16px;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
+.previewRows>div>div{display:grid;gap:4px;min-width:0}
+.previewRows b{font-size:13px;line-height:1.3;color:var(--text)}
+.previewRows small{font-size:11px;line-height:1.4;color:var(--muted)}
+.previewRows>div>svg{color:var(--muted)}
+.previewRowIcon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,var(--primary) 8%,var(--surface));color:var(--primary)}
+.previewFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:17px;padding-top:2px;text-decoration:none;color:var(--primary);font-size:11px;font-weight:750}
+.previewFooter>span{display:flex;align-items:center;gap:7px}
+.statusDot{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 20%,transparent)}
+.journeys{display:grid;gap:16px}
+.journeys :global(.card){height:100%}
+.textLink{display:inline-flex;align-items:center;gap:6px;margin-top:7px;color:var(--primary);font-weight:750;font-size:13px;text-decoration:none}
+@keyframes mpaArchDraw{to{stroke-dashoffset:0}}
+@keyframes mpaNodePulse{0%,100%{opacity:.45;scale:.85}50%{opacity:1;scale:1.2}}
+@media(max-width:1050px){.hero{grid-template-columns:minmax(0,1fr) minmax(280px,.8fr);gap:25px;padding:30px}.heroTitle{font-size:clamp(36px,4.8vw,52px)}.heroVisual{min-height:400px}.visualLogo{right:-4px}.heroVisual :global(.card){padding:19px}}
+@media(max-width:760px){.hero{grid-template-columns:minmax(0,1fr);gap:10px;padding:25px 21px;border-radius:22px}.heroCopy{padding:0}.brandEyebrow{font-size:9px;gap:9px}.brandMarkSmall{width:31px;height:31px}.heroTitle{font-size:clamp(37px,9.4vw,50px);margin:21px 0 16px;max-width:600px}.heroLead{font-size:16px;max-width:580px}.heroActions{display:flex;gap:10px;margin-top:23px}.heroActions :global(.btn){min-height:44px}.loginLink{padding:10px 4px}.trustBar{margin-top:24px;padding-top:17px;gap:10px 15px}.trustBar>span{font-size:11px}.heroVisual{min-height:350px;margin-top:10px;padding:38px 0 16px}.archBackdrop{width:100%;height:110%;right:-8%;opacity:.12}.heroVisual :global(.card){max-width:460px}.visualLogo{top:0;right:0}.journeys :global(.grid-4){grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.hero{padding:21px 16px}.heroTitle{font-size:36px;letter-spacing:-.045em}.heroActions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center}.heroActions :global(.btn-primary){grid-column:1/-1;justify-content:center}.heroActions :global(.btn-ghost){justify-content:center;padding-inline:9px;font-size:12px}.loginLink{justify-content:center}.trustBar{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.heroVisual{min-height:335px}.visualLogo{right:-2px}.previewTitle{font-size:21px}.journeys :global(.grid-4){grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.archLine,.nodePulse,.nodePulseAlt{animation:none}.archLine{stroke-dashoffset:0}}
+:global(.dark) .hero{background:linear-gradient(120deg,var(--surface) 0%,color-mix(in srgb,var(--primary) 6%,var(--surface)) 100%)}
+:global(.dark) .archBackdrop{opacity:.13}
+
+/* Quiet architectural identity across the landing page, tuned by the active theme. */
+ .landingBackdrop{position:relative;isolation:isolate}
+ .landingBackdrop::before, .landingBackdrop::after{content:"";position:absolute;z-index:-1;pointer-events:none;clip-path:polygon(50% 0,61% 13%,75% 22%,86% 37%,86% 100%,14% 100%,14% 37%,25% 22%,39% 13%);border:0}
+ .landingBackdrop::before{top:24px;right:-3.5vw;width:clamp(210px,32vw,440px);height:clamp(300px,44vw,570px);background:linear-gradient(180deg,color-mix(in srgb,var(--primary) 5%,transparent),color-mix(in srgb,var(--gold) 3%,transparent));opacity:.72;animation:mpaAmbientFloat 13s ease-in-out infinite alternate}
+ .landingBackdrop::after{top:100px;right:clamp(28px,7vw,110px);width:clamp(150px,23vw,310px);height:clamp(220px,34vw,430px);background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 4%,transparent),transparent);opacity:.75;animation:mpaAmbientFloat 16s ease-in-out -4s infinite alternate-reverse}
+.heroCopy{animation:mpaCopyEnter .7s cubic-bezier(.2,.7,.2,1) both}
+.heroVisual{animation:mpaVisualEnter .9s cubic-bezier(.2,.7,.2,1) .08s both}
+.heroVisual :global(.card){animation:mpaPreviewFloat 8s ease-in-out 1s infinite}
+.visualLogo{animation:mpaLogoFloat 7s ease-in-out 1.2s infinite}
+.heroActions :global(.btn),.loginLink{transition:transform .2s ease,box-shadow .2s ease,background-color .2s ease}
+.heroActions :global(.btn):hover,.loginLink:hover{transform:translateY(-2px)}
+.journeys :global(.card){transition:transform .24s ease,border-color .24s ease,box-shadow .24s ease}
+.journeys :global(.card):hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--primary) 24%,var(--border));box-shadow:0 14px 34px color-mix(in srgb,var(--primary) 9%,transparent)}
+@keyframes mpaAmbientFloat{from{transform:translate3d(0,0,0) rotate(-2deg)}to{transform:translate3d(-10px,13px,0) rotate(1deg)}}
+@keyframes mpaCopyEnter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes mpaVisualEnter{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes mpaPreviewFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes mpaLogoFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@media(max-width:760px){ .landingBackdrop::before{top:8px;right:-62px;width:240px;height:330px;opacity:.48} .landingBackdrop::after{top:58px;right:-10px;width:170px;height:245px;opacity:.42}.heroVisual :global(.card){animation-duration:9s}}
+@media(max-width:480px){ .landingBackdrop::before{right:-105px;top:0;width:220px;height:300px} .landingBackdrop::after{right:-54px;top:44px;width:155px;height:215px}}
+@media(hover:none){.journeys :global(.card):hover{transform:none;box-shadow:none}}
+@media(prefers-reduced-motion:reduce){ .landingBackdrop::before, .landingBackdrop::after,.heroCopy,.heroVisual,.heroVisual :global(.card),.visualLogo,.journeys :global(.card){animation:none;transition:none}.heroActions :global(.btn),.loginLink{transition:none}.heroActions :global(.btn):hover,.loginLink:hover,.journeys :global(.card):hover{transform:none}}
+:global(.dark) .landingBackdrop::before{background:linear-gradient(180deg,color-mix(in srgb,var(--primary) 12%,transparent),color-mix(in srgb,var(--gold) 5%,transparent));opacity:.6}
+:global(.dark) .landingBackdrop::after{background:linear-gradient(180deg,color-mix(in srgb,var(--gold) 7%,transparent),transparent);opacity:.52}

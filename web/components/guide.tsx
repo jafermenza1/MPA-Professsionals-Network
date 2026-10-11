@@ -1,0 +1,14 @@
+"use client";
+import {HelpCircle,X,ChevronLeft,ChevronRight,PlayCircle} from "lucide-react";
+import {useEffect,useMemo,useState} from "react";
+import {api} from "../lib/api";
+type Step={target:string;title:string;text:string};
+type Guide={id:string;guide_key:string;route_pattern:string;title:string;description:string;steps:Step[]};
+export function GuideLauncher(){const [open,setOpen]=useState(false);const [started,setStarted]=useState(false);const [index,setIndex]=useState(0);const [guides,setGuides]=useState<Guide[]>([]);const path=typeof window==="undefined"?"/":window.location.pathname;
+useEffect(()=>{api<Guide[]>("/api/v1/experience/guides?route="+encodeURIComponent(path)).then(setGuides).catch(()=>setGuides([]))},[path]);
+const guide=useMemo(()=>guides.find(g=>g.route_pattern===path)||guides.find(g=>g.route_pattern==="*"),[guides,path]);const step=guide?.steps[index];
+useEffect(()=>{if(!started||!step)return;const el=document.querySelector(step.target) as HTMLElement|null;el?.scrollIntoView({behavior:"smooth",block:"center"})},[started,index,step]);
+function begin(){setIndex(0);setStarted(true);setOpen(true)}return <>
+<button id="mpa-help" className="guide-help" aria-label="Open user guide" onClick={begin}><HelpCircle size={18}/> Guide</button>
+{open&&guide?<div className="guide-overlay"><div className="guide-dim"/>{started&&step?<GuideSpotlight target={step.target}/>:null}<aside className="guide-card" role="dialog" aria-modal="true" aria-label={guide.title}><div className="row"><span className="badge badge-green"><PlayCircle size={13}/> Guided tour</span><button className="icon-btn" onClick={()=>setOpen(false)} aria-label="Close guide"><X size={17}/></button></div><div className="eyebrow" style={{marginTop:16}}>{guide.title}</div><h2>{step?.title||guide.title}</h2><p className="muted">{step?.text||guide.description}</p><div className="guide-progress">{guide.steps.map((_,i)=><span key={i} className={i<=index?"done":""}/>)}</div><div className="row" style={{marginTop:18}}><button className="btn btn-ghost" disabled={index===0} onClick={()=>setIndex(i=>i-1)}><ChevronLeft size={16}/> Back</button>{index<guide.steps.length-1?<button className="btn btn-primary" onClick={()=>setIndex(i=>i+1)}>Next <ChevronRight size={16}/></button>:<button className="btn btn-primary" onClick={()=>{setStarted(false);setOpen(false)}}>Finish</button>}</div></aside></div>:null}</>}
+function GuideSpotlight({target}:{target:string}){const [rect,setRect]=useState<DOMRect|null>(null);useEffect(()=>{const update=()=>setRect(document.querySelector(target)?.getBoundingClientRect()||null);update();window.addEventListener("resize",update);window.addEventListener("scroll",update,true);return()=>{window.removeEventListener("resize",update);window.removeEventListener("scroll",update,true)}},[target]);if(!rect)return null;return <div className="guide-spotlight" style={{top:rect.top-7,left:rect.left-7,width:rect.width+14,height:rect.height+14}}/>}
