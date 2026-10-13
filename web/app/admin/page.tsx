@@ -116,7 +116,7 @@ export default function AdminPage() {
       setCurrentUserId(String(claims?.sub ?? claims?.user_id ?? ""));
       setIsPlatformAdmin(currentRoles.includes("system_admin") || currentRoles.includes("admin") || currentRoles.includes("platform_admin"));
       setCanReviewInquiries(currentRoles.includes("supporting_staff") || currentRoles.includes("system_admin") || currentRoles.includes("admin") || currentRoles.includes("platform_admin"));
-      setScopeResolved(true);
+      if (currentRoles.includes("system_admin")) {\n        try { const permissions = await api<ManagedPermission[]>("/api/v1/admin/permissions", {}, token); setPermissionCatalog(Array.isArray(permissions) ? permissions : []); }\n        catch { errors.push("permission catalog"); }\n      } else setPermissionCatalog([]);\n      setScopeResolved(true);
     } catch (cause) {
       setScopeResolved(true);
       if (cause instanceof Error) setError(cause.message);
