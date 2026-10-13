@@ -122,6 +122,7 @@ export default function Profile() {
     certifications: "",
     portfolioUrl: "",
   });
+  const [experienceDrafts, setExperienceDrafts] = useState<ExperienceDraft[]>([]);
   const [talentVisibility, setTalentVisibility] = useState<TalentVisibility>(
     emptyTalentVisibility,
   );
