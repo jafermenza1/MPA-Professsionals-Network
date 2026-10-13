@@ -11,7 +11,7 @@ export function formatTrackingReference(type,year,serial){
 }
 
 export async function nextTrackingReference(db,type){
-  const result=await db.query("select to_char(current_date,'YY') year,nextval('application_tracking_reference_seq')::text serial");
+  const result=await db.query("select to_char(current_date,'YY') as "year",nextval('application_tracking_reference_seq')::text as serial");
   const row=result.rows[0];
   return formatTrackingReference(type,row.year,row.serial);
 }
