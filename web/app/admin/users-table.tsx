@@ -129,7 +129,7 @@ export function UsersTable({
                         onClick={() => void updateUser(user, "permissions:" + user.id, () => api("/api/v1/admin/users/" + user.id + "/permissions", { method: "PATCH", body: JSON.stringify({ permissionCodes: permissionDrafts[user.id] ?? user.permissions ?? [], reason }) }, token))}>Save permission matrix</button>
                       <small className={styles.muted}>Changing direct permissions revokes the user's active sessions. Organization and job scope, ownership, privacy, reviewer independence, and workflow validation still apply.</small>
                     </div>
-                  </details>
+                  </details>}
                 </th>
                 <td>
                   <Badge tone={user.status === "active" ? "green" : "gold"}>
