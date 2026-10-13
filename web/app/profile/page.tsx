@@ -168,7 +168,7 @@ export default function Profile() {
         qualifications: tp.qualifications || "",
         skills: Array.isArray(tp.skills) ? tp.skills.join(", ") : "",
         languages: Array.isArray(tp.languages) ? tp.languages.join(", ") : "",
-        certifications: Array.isArray(tp.certifications) ? tp.certifications.join("\\n") : "",
+        certifications: Array.isArray(tp.certifications) ? tp.certifications.join("\n") : "",
         portfolioUrl: tp.portfolio_url || "",
       });
       setExperienceDrafts((tp.experience || []).map((item) => ({ employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
@@ -266,7 +266,7 @@ export default function Profile() {
             qualifications: talentForm.qualifications.trim() || null,
             skills: talentForm.skills.split(",").map((value) => value.trim()).filter(Boolean),
             languages: talentForm.languages.split(",").map((value) => value.trim()).filter(Boolean),
-            certifications: talentForm.certifications.split("\\n").map((value) => value.trim()).filter(Boolean),
+            certifications: talentForm.certifications.split("\n").map((value) => value.trim()).filter(Boolean),
             portfolioUrl: talentForm.portfolioUrl.trim() || null,
             experience: experienceDrafts.map((item) => ({ employerName: item.employerName.trim() || null, roleTitle: item.roleTitle.trim(), startDate: item.startDate || null, endDate: item.currentRole ? null : item.endDate || null, currentRole: item.currentRole, description: item.description.trim() || null, visibility: item.visibility } )).filter((item) => item.roleTitle),
           }),
@@ -354,7 +354,7 @@ export default function Profile() {
   const update = (key: keyof typeof blank, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
   return (
-    <div className={`grid ${styles.page}`} style={{ gap: 18 }}>
+    <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
       <div>
         <div className="eyebrow">Profile & preferences</div>
         <h1 className="h1">Your controls, your trust boundary.</h1>
@@ -521,7 +521,7 @@ export default function Profile() {
             <div className="row">
               <div>
                 <div className="eyebrow">Professional directory</div>
-                <div className="h2">Your professional projection</div>
+                <h2 className="h2">Your professional profile</h2>
                 <p className="muted">
                   Only opted-in profiles with an eligible verified professional
                   claim appear in the directory. Private evidence and reviewer
