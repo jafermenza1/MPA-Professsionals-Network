@@ -490,10 +490,9 @@ test("organization screen uploads private evidence and submits verification",asy
     const created=await api.post("/api/v1/organizations",{headers:{authorization:"Bearer "+token},data:{legalName:name,displayName:name,organizationType:"company"}});
     expect(created.status()).toBe(201);
     const organization=(await created.json()).data;
-    await browserLogin(page);
-    // Rehydrate the page from the exact API fixture identity before loading organization-scoped UI data.
-    await page.evaluate((sessionToken)=>sessionStorage.setItem("mpa-session-token",sessionToken),token);
-    await page.reload();
+    // Install the API fixture's exact owner token before the organization page hydrates.
+    await page.addInitScript(sessionToken=>sessionStorage.setItem("mpa-session-token",sessionToken),token);
+    await page.goto("/organizations");
     await expect(page.getByRole("heading",{name:"Build a trusted organization profile."})).toBeVisible();
     await expect(page.getByText(name,{exact:true})).toBeVisible({timeout:15000});
     const uploadDiagnostics=[];
