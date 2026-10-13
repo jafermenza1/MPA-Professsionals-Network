@@ -121,7 +121,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && p==="api/v1/admin/roles") { const identity=await auth(req); return ok(res,await userAdmin.listRoles(identity.sub),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/permissions") { const identity=await auth(req); return ok(res,await userAdmin.listPermissions(identity.sub),requestId); }
     if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="permissions") { const identity=await auth(req); return ok(res,await userAdmin.updateUserPermissions(identity.sub,parts[4],await body(req),requestId),requestId); }
-    if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/admin/users/")) { const identity=await auth(req); return ok(res,await userAdmin.updateUser(identity.sub,parts[4],await body(req),requestId),requestId); }
+    if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/admin/users/")) { const identity=await auth(req); return ok(res,await userAdmin.updateUser(identity,parts[4],await body(req),requestId),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="revoke-sessions") { const identity=await auth(req); const b=await body(req); return ok(res,await userAdmin.revokeSessions(identity.sub,parts[4],requestId,b.reason),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="reset-password") { const identity=await auth(req); const b=await body(req); return ok(res,await userAdmin.resetPassword(identity.sub,parts[4],b.password,requestId,b.reason),requestId); }
     if(req.method==="GET" && p==="api/v1/experience/demo-cases") return ok(res,await experience.listDemoCases(),requestId);
@@ -259,7 +259,9 @@ const server=http.createServer(async (req,res)=>{
       anyRole(identity,["reviewer","finance_officer","system_admin"]); return ok(res,await membership.verifyPayment(parts[3],identity.sub,await body(req),requestId),requestId);
     }
     if(req.method==="GET" && p==="api/v1/review/membership/applications") {
-      anyRole(identity,["reviewer","finance_officer","system_admin"]); return ok(res,await membership.listApplicationsForReview(),requestId);
+      const roles=Array.isArray(identity.roles)?identity.roles:[]; const permissions=Array.isArray(identity.permissions)?identity.permissions:[];
+      if(!roles.some(role=>["reviewer","finance_officer","system_admin"].includes(role))&&!permissions.some(permission=>["members.view","members.manage","finance.view","finance.manage"].includes(permission))) throw Object.assign(new Error("Forbidden."),{statusCode:403,code:"FORBIDDEN"});
+      return ok(res,await membership.listApplicationsForReview(),requestId);
     }
 
     if(req.method==="GET" && p==="api/v1/me/talent-profile") return ok(res,await talent.getProfessionalProfile(identity.sub),requestId);
