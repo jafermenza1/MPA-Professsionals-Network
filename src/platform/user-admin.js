@@ -85,8 +85,8 @@ export async function updateUser(actor,userId,input,requestId){
   if(!u)throw err(404,"User not found.","NOT_FOUND");
   const status=input.status, roleCode=input.roleCode, removeRoleCode=input.removeRoleCode;
   if(status!==undefined && !["active","suspended","disabled"].includes(status))throw err(400,"Invalid user status.","VALIDATION_ERROR");
-  if(status && userId===actor && status!=="active")throw err(400,"You cannot suspend or disable your own account.","SELF_LOCKOUT");
-  if((roleCode!==undefined||removeRoleCode!==undefined)&&userId===actor)throw err(403,"Administrators cannot change their own roles. Use a separately authorized administrator account.","SELF_ROLE_CHANGE");
+  if(status && userId===actorId && status!=="active")throw err(400,"You cannot suspend or disable your own account.","SELF_LOCKOUT");
+  if((roleCode!==undefined||removeRoleCode!==undefined)&&userId===actorId)throw err(403,"Administrators cannot change their own roles. Use a separately authorized administrator account.","SELF_ROLE_CHANGE");
   const reason=String(input.reason||"").trim().slice(0,500)||null;
   if((status!==undefined||roleCode!==undefined||removeRoleCode!==undefined)&&!reason)throw err(400,"An audit reason is required for account status and role changes.","AUDIT_REASON_REQUIRED");
 
