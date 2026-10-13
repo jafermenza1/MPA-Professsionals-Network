@@ -1,12 +1,10 @@
 name: Comprehensive CI
 
 on:
+  # Feature/fix branches are validated by pull_request to avoid running the same
+  # expensive suite twice for every commit. Main still validates direct pushes. 
   push:
-    branches:
-      - main
-      - "feat/**"
-      - "fix/**"
-      - "reconciliation/**"
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
