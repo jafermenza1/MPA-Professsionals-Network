@@ -364,7 +364,7 @@ test("ATS workspace loads the authorized organization's persisted candidate pipe
   await page.getByLabel("Recruiting job",{exact:true}).selectOption(fixture.jobId);
   await page.getByLabel("Job team member user ID",{exact:true}).fill(teamFixture.user.id);
   await page.getByRole("button",{name:"Add team member"}).click();
-  await expect(page.getByText(teamFixture.user.displayName||teamFixture.user.email,{exact:true})).toBeVisible();
+  await expect(page.getByText("Gate4 ATSInterviewer",{exact:true})).toBeVisible();
   await expect(page.getByText(candidate.displayName,{exact:true})).toBeVisible();
   const candidateRow=()=>page.locator(".case-row").filter({hasText:applicationId});
   await expect(candidateRow().getByText("submitted",{exact:true})).toBeVisible();
