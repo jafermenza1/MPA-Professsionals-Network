@@ -49,7 +49,15 @@ type TalentProfile = {
   bio: string | null;
   visibility: string;
   completion_percent: number;
+  education_summary?: string | null;
+  qualifications?: string | null;
+  skills?: string[] | null;
+  languages?: string[] | null;
+  certifications?: string[] | null;
+  portfolio_url?: string | null;
+  experience?: { employer_name?: string | null; role_title: string; start_date?: string | null; end_date?: string | null; is_current: boolean; description?: string | null; visibility?: string }[];
 };
+type ExperienceDraft = { employerName: string; roleTitle: string; startDate: string; endDate: string; currentRole: boolean; description: string; visibility: string };
 type TalentVisibility = {
   user_id: string;
   directory_visible: boolean;
@@ -107,6 +115,12 @@ export default function Profile() {
     headline: "",
     bio: "",
     visibility: "members",
+    educationSummary: "",
+    qualifications: "",
+    skills: "",
+    languages: "",
+    certifications: "",
+    portfolioUrl: "",
   });
   const [talentVisibility, setTalentVisibility] = useState<TalentVisibility>(
     emptyTalentVisibility,
@@ -150,7 +164,14 @@ export default function Profile() {
         headline: tp.headline || "",
         bio: tp.bio || "",
         visibility: tp.visibility || "members",
+        educationSummary: tp.education_summary || "",
+        qualifications: tp.qualifications || "",
+        skills: Array.isArray(tp.skills) ? tp.skills.join(", ") : "",
+        languages: Array.isArray(tp.languages) ? tp.languages.join(", ") : "",
+        certifications: Array.isArray(tp.certifications) ? tp.certifications.join("\\n") : "",
+        portfolioUrl: tp.portfolio_url || "",
       });
+      setExperienceDrafts((tp.experience || []).map((item) => ({ employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
       setForm({
         firstName: me.first_name || "",
         middleName: me.middle_name || "",
@@ -241,11 +262,19 @@ export default function Profile() {
             headline: talentForm.headline.trim() || null,
             bio: talentForm.bio.trim() || null,
             visibility: talentForm.visibility,
+            educationSummary: talentForm.educationSummary.trim() || null,
+            qualifications: talentForm.qualifications.trim() || null,
+            skills: talentForm.skills.split(",").map((value) => value.trim()).filter(Boolean),
+            languages: talentForm.languages.split(",").map((value) => value.trim()).filter(Boolean),
+            certifications: talentForm.certifications.split("\\n").map((value) => value.trim()).filter(Boolean),
+            portfolioUrl: talentForm.portfolioUrl.trim() || null,
+            experience: experienceDrafts.map((item) => ({ employerName: item.employerName.trim() || null, roleTitle: item.roleTitle.trim(), startDate: item.startDate || null, endDate: item.currentRole ? null : item.endDate || null, currentRole: item.currentRole, description: item.description.trim() || null, visibility: item.visibility } )).filter((item) => item.roleTitle),
           }),
         },
         token,
       );
       setTalentProfile(saved);
+      setExperienceDrafts((saved.experience || []).map((item) => ({ employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
       setNotice("Professional directory profile saved.");
     } catch (e) {
       setError(
@@ -598,6 +627,26 @@ export default function Profile() {
                   }
                 />
               </label>
+              <div className="grid" style={{ gap: 12, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <div><h3 className="h2">Education and professional credentials</h3><p className="muted">Add a concise education summary, qualifications, skills, languages, and certifications. These details help employers and service requesters assess relevant experience. Do not list a credential as verified unless it has been verified by the platform.</p></div>
+                <label>Education summary<textarea rows={3} value={talentForm.educationSummary} onChange={(e) => setTalentForm((f) => ({ ...f, educationSummary: e.target.value }))} maxLength={3000} placeholder="Institutions, degrees, fields of study, and graduation years"/></label>
+                <label>Qualifications and licenses<textarea rows={3} value={talentForm.qualifications} onChange={(e) => setTalentForm((f) => ({ ...f, qualifications: e.target.value }))} maxLength={3000} placeholder="Professional qualifications, licenses, and issuing bodies"/></label>
+                <label>Skills (comma-separated)<input value={talentForm.skills} onChange={(e) => setTalentForm((f) => ({ ...f, skills: e.target.value }))} maxLength={2000} placeholder="Project management, accounting, data analysis"/></label>
+                <label>Languages (comma-separated)<input value={talentForm.languages} onChange={(e) => setTalentForm((f) => ({ ...f, languages: e.target.value }))} maxLength={1000} placeholder="Afaan Oromoo, Amharic, English"/></label>
+                <label>Certifications (one per line)<textarea rows={3} value={talentForm.certifications} onChange={(e) => setTalentForm((f) => ({ ...f, certifications: e.target.value }))} maxLength={3000} placeholder="Credential — issuer — year"/></label>
+                <label>Portfolio or professional website (HTTPS)<input type="url" value={talentForm.portfolioUrl} onChange={(e) => setTalentForm((f) => ({ ...f, portfolioUrl: e.target.value }))} placeholder="https://example.com"/></label>
+              </div>
+              <div className="grid" style={{ gap: 12, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><div><h3 className="h2">Work experience</h3><p className="muted">Describe relevant roles, dates, responsibilities, and outcomes. You can keep entries member-only or make them part of your public-safe profile.</p></div><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => [...rows, { employerName: "", roleTitle: "", startDate: "", endDate: "", currentRole: false, description: "", visibility: "members" }])}>Add experience</button></div>
+                {experienceDrafts.length === 0 && <p className="muted">No work experience entries added. Add one to improve your professional profile.</p>}
+                {experienceDrafts.map((item, index) => <div className="grid" key={index} style={{ gap: 10, padding: 12, border: "1px solid var(--border)", borderRadius: 12, minWidth: 0 }}>
+                  <div className="row" style={{ justifyContent: "space-between" }}><b>Experience {index + 1}</b><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => rows.filter((_, i) => i !== index))}>Remove</button></div>
+                  <div className="grid grid-2"><label>Role / job title<input required value={item.roleTitle} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, roleTitle: e.target.value } : row))} maxLength={180}/></label><label>Employer / organization<input value={item.employerName} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, employerName: e.target.value } : row))} maxLength={180}/></label><label>Start date<input type="date" value={item.startDate} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, startDate: e.target.value } : row))}/></label><label>End date<input type="date" value={item.endDate} disabled={item.currentRole} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, endDate: e.target.value } : row))}/></label></div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}><input type="checkbox" checked={item.currentRole} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, currentRole: e.target.checked, endDate: e.target.checked ? "" : row.endDate } : row))}/>I currently work in this role</label>
+                  <label>Description and achievements<textarea rows={3} value={item.description} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, description: e.target.value } : row))} maxLength={3000} placeholder="Responsibilities, projects, measurable outcomes, and relevant tools"/></label>
+                  <label>Experience visibility<select value={item.visibility} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, visibility: e.target.value } : row))}><option value="private">Private</option><option value="members">Members only</option><option value="public">Public-safe</option></select></label>
+                </div>)}
+              </div>
               <label>
                 Profile audience
                 <select
