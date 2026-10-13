@@ -7,7 +7,7 @@
 
 ## Latest observed result
 
-The comprehensive GitHub Actions run [38385825710](https://github.com/jafermenza1/MPA-Professsionals-Network/actions/runs/38385825710) failed on the E2E step. The following stages passed on that exact head:
+The comprehensive GitHub Actions runs [38385825710](https://github.com/jafermenza1/MPA-Professsionals-Network/actions/runs/38385825710) and [38390783621](https://github.com/jafermenza1/MPA-Professsionals-Network/actions/runs/38390783621) failed on the E2E step. Serializing workers did not resolve the remaining failures, so this is not treated as fixed by serialization alone. The following stages passed on that exact head:
 
 - PostgreSQL startup, locked dependency install and migrations
 - Migration rerun safety and legacy-database adoption/rollback checks
@@ -16,11 +16,12 @@ The comprehensive GitHub Actions run [38385825710](https://github.com/jafermenza
 - Playwright installation and E2E test discovery
 - API smoke checks, including authentication, private upload/evidence privacy, organization review, jobs, services, mentorship and session behavior
 
-Three Playwright tests failed:
+The first run had three Playwright failures. After serializing browser tests, 23 passed and two still failed:
 
-1. Organization evidence upload: the newly created organization did not appear in the evidence-form selector.
-2. Profile persistence: the professional headline was empty after the profile/preferences workflow and page reload.
-3. Services/mentorship empty and retryable error states: the mentorship outage route fixture did not observe the expected request.
+1. Organization evidence upload: the organization summary row was visible but its option was not present in the evidence-form selector at assertion time. The test now explicitly refreshes the owner-scoped organization list before checking the selector.
+2. Services/mentorship empty and retryable error states: the mentorship outage fixture used a custom route predicate plus page reload; it failed to observe the expected request. The test now uses the same shared route helper as the passing services/jobs outage cases and explicitly triggers search, then verifies both the 503 response and retry request.
+
+The previous profile-persistence failure passed in the serialized run. These are targeted test synchronization/fixture corrections; they do not remove assertions or skip tests.
 
 The log contains the test assertions and trace artifact paths. These are test failures, not a runner-startup failure. No passing result is inferred from earlier commits.
 
@@ -32,7 +33,7 @@ This is a containment fix, not the final goal: tests should eventually create is
 
 ## Current release gate
 
-**Not validated / do not merge yet.** The workflow must run again on the updated PR head. Review the next run's complete logs and resolve any remaining application or test-fixture defects without skipping tests, weakening assertions, or hiding failures.
+**Not validated / do not merge yet.** The two targeted E2E corrections must run on the updated PR head, and the entire suite must pass. Review the next run's complete logs and resolve any remaining application or test-fixture defects without skipping tests, weakening assertions, or hiding failures.
 
 Required acceptance evidence:
 

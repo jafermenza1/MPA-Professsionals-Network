@@ -495,6 +495,9 @@ test("organization screen uploads private evidence and submits verification",asy
     await page.goto("/organizations");
     await expect(page.getByRole("heading",{name:"Build a trusted organization profile."})).toBeVisible();
     await expect(page.locator(".case-row").filter({hasText:name}).first()).toBeVisible({timeout:15000});
+    // The summary row and evidence selector are separate render paths. Explicitly
+    // refresh the owner-scoped organization list before asserting its select option.
+    await page.getByRole("button",{name:"Refresh",exact:true}).click();
     const uploadDiagnostics=[];
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
@@ -837,16 +840,13 @@ test("services and mentorship expose explicit empty and retryable API-failure st
  await expect(page.getByRole("button",{name:"Search mentors"})).toBeEnabled();
  await page.unroute("**/api/v1/mentors**");
  let mentorFailureResponses=0;
- // Count the request in the route handler itself so this assertion proves the browser
- // really called the search endpoint; the subsequent UI assertions still require an
- // explicit 503 error state and a second, successful interception on retry.
- await page.route(url=>new URL(url).pathname==="/api/v1/mentors",async route=>{
-   if(route.request().method()==="OPTIONS") return route.fulfill({status:204,headers:{"access-control-allow-origin":"http://127.0.0.1:3001","access-control-allow-headers":"authorization,content-type","access-control-allow-methods":"GET,OPTIONS","access-control-allow-credentials":"true"}});
-   mentorFailureResponses++;
-   return route.fulfill({status:503,headers:{"access-control-allow-origin":"http://127.0.0.1:3001","access-control-allow-headers":"authorization,content-type","access-control-allow-methods":"GET,OPTIONS","access-control-allow-credentials":"true"},contentType:"application/json",body:JSON.stringify({error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}})});
+ // Reuse the same route helper that is already proven by the services/jobs
+ // outage cases. Trigger search explicitly rather than relying on reload timing.
+ await mockApiResponse(page,"**/api/v1/mentors**",503,{error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}});
+ page.on("response",response=>{
+   if(new URL(response.url()).pathname==="/api/v1/mentors"&&response.status()===503) mentorFailureResponses++;
  });
- // Trigger a fresh browser fetch while the route is installed; retry must issue another fetch.
- await page.reload();
+ await page.getByRole("button",{name:"Search mentors"}).click();
  await expect.poll(()=>mentorFailureResponses,{message:"the mentorship API failure fixture must intercept the real browser request"}).toBe(1);
  await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
  await page.getByRole("button",{name:"Retry"}).click();
