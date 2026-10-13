@@ -42,7 +42,7 @@ export async function updateProfessionalProfile(userId,input,requestId){
     if(!["private","members","public"].includes(visibility)) throw error(400,"Experience visibility must be private, members or public.","VALIDATION_ERROR");
     if(String(item?.employerName||"").length>180||String(item?.description||"").length>3000) throw error(400,"Work-experience employer or description is too long.","VALIDATION_ERROR");
     const start=item?.startDate?new Date(item.startDate):null,end=item?.endDate?new Date(item.endDate):null;
-    if((start&&!Number.isFinite(start.getTime()))||(end&&!Number.isFinite(end.getTime()))||(start&&end&&end<start)) throw error(400,"Work-experience dates are invalid or out of order.","VALIDATION_ERROR");
+    if((start&&!Number.isFinite(start.getTime()))||(end&&!Number.isFinite(end.getTime()))||(start&&end&&end.getTime()<start.getTime())) throw error(400,"Work-experience dates are invalid or out of order.","VALIDATION_ERROR");
    }
    await db.query("delete from professional_experience where profile_id=$1",[p.id]);
    for(const item of input.experience) await db.query("insert into professional_experience(profile_id,employer_name,role_title,start_date,end_date,is_current,description,visibility) values($1,$2,$3,$4,$5,$6,$7,$8)",[p.id,String(item.employerName||"").trim()||null,String(item.roleTitle).trim(),item.startDate||null,item.currentRole?null:item.endDate||null,Boolean(item.currentRole),String(item.description||"").trim()||null,item.visibility||"members"]);
