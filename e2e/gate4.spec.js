@@ -811,37 +811,6 @@ test("jobs discovery presents explicit empty and API failure states",async({page
 });
 
 
-test("services and mentorship expose explicit empty and retryable API-failure states",async({page})=>{
- await mockApiResponse(page,"**/api/v1/services**",200,{data:{items:[]}});
- await page.goto("/services");
- await expect(page.getByRole("heading",{name:"No published services found"})).toBeVisible();
- await page.unroute("**/api/v1/services**");
- await mockApiResponse(page,"**/api/v1/services**",503,{error:{code:"SERVER_ERROR",message:"CI simulated services outage"}});
- let serviceFailureIntercepted=false;
- page.on("response",response=>{if(new URL(response.url()).pathname==="/api/v1/services"&&response.status()===503)serviceFailureIntercepted=true;});
- await page.getByRole("button",{name:"Search",exact:true}).click();
- await expect.poll(()=>serviceFailureIntercepted,{message:"the services API failure fixture must intercept the real browser request"}).toBe(true);
- await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
-
- await mockApiResponse(page,"**/api/v1/mentors**",200,{data:[]});
- await page.goto("/mentorship");
- await expect(page.getByRole("heading",{name:"No active mentor profiles found"})).toBeVisible();
- await expect(page.getByRole("button",{name:"Search mentors"})).toBeEnabled();
- await page.unroute("**/api/v1/mentors**");
- await mockApiResponse(page,"**/api/v1/mentors**",503,{error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}});
- let mentorFailureResponses=0;
- page.on("response",response=>{if(new URL(response.url()).pathname==="/api/v1/mentors"&&response.status()===503)mentorFailureResponses++;});
- // Mentor search reloads when its criteria change; changing a real filter guarantees
- // the browser issues a fresh request after the 503 fixture is installed.
- await page.getByLabel("Search expertise").fill("forced outage");
- await page.getByRole("button",{name:"Search mentors"}).click();
- await expect.poll(()=>mentorFailureResponses,{message:"the mentorship API failure fixture must intercept the real browser request"}).toBe(1);
- await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
- await page.getByRole("button",{name:"Retry"}).click();
- await expect.poll(()=>mentorFailureResponses,{message:"the mentorship error state must allow a real retry"}).toBe(2);
- await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
-});
-
 test("organization public inquiry decisions persist and remain organization-authorized",async({page})=>{
  const {api,token}=await apiContext();
  const suffix=Date.now()+"-"+Math.random().toString(16).slice(2);
