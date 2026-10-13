@@ -622,7 +622,7 @@ export async function createInterviewScorecard(jobId,userId,input,requestId){
   await jobRole(db,jobId,userId,["hiring_manager","recruiter"]);
   if(!input.title) throw error(400,"title is required.","VALIDATION_ERROR");
   if(!Array.isArray(input.criteria)||!input.criteria.length) throw error(400,"At least one scorecard criterion is required.","VALIDATION_ERROR");
-  const row=(await db.query("insert into job_interview_scorecard(job_id,title,instructions,criteria) values($1,$2,$3,$4) returning *",[jobId,input.title,input.instructions||null,input.criteria])).rows[0];
+  const row=(await db.query("insert into job_interview_scorecard(job_id,title,instructions,criteria) values($1,$2,$3,$4) returning *",[jobId,input.title,input.instructions||null,JSON.stringify(input.criteria)])).rows[0];
   await audit(db,userId,"job.scorecard_created","job_interview_scorecard",row.id,requestId,{});
   return row;
  });
