@@ -466,6 +466,7 @@ export default function AdminPage() {
           <UsersTable
             users={users}
             roleCatalog={roleCatalog}
+            permissionCatalog={permissionCatalog}
             currentRoles={roles}
             currentUserId={currentUserId}
             token={token}
