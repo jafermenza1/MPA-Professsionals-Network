@@ -490,6 +490,13 @@ test("organization screen uploads private evidence and submits verification",asy
     const created=await api.post("/api/v1/organizations",{headers:{authorization:"Bearer "+token},data:{legalName:name,displayName:name,organizationType:"company"}});
     expect(created.status()).toBe(201);
     const organization=(await created.json()).data;
+    // Prove the owner-scoped API returns the organization before diagnosing the UI.
+    const ownerOrganizationsResponse=await api.get("/api/v1/organizations",{headers:{authorization:"Bearer "+token}});
+    expect(ownerOrganizationsResponse.status(),"owner organization list response").toBe(200);
+    const ownerOrganizations=(await ownerOrganizationsResponse.json()).data;
+    expect(ownerOrganizations.some(item=>item.id===organization.id),
+      "newly created organization must be present in the authenticated owner's organization list; returned IDs: "+
+      ownerOrganizations.map(item=>item.id).join(", ")).toBeTruthy();
     // Install the API fixture's exact owner token before the organization page hydrates.
     await page.addInitScript(sessionToken=>sessionStorage.setItem("mpa-session-token",sessionToken),token);
     await page.goto("/organizations");
@@ -505,7 +512,10 @@ test("organization screen uploads private evidence and submits verification",asy
     // not merely the organization summary row elsewhere on the page.
     const evidenceForm=page.locator("form").filter({has:page.getByLabel("Private document")});
     const evidenceOrganization=evidenceForm.getByLabel("Organization",{exact:true});
-    await expect(evidenceOrganization.locator(`option[value="${organization.id}"]`)).toHaveCount(1,{timeout:15000});
+    await expect.poll(
+      async()=>await evidenceOrganization.locator("option").evaluateAll(options=>options.map(option=>({value:option.value,label:option.textContent?.trim()||""}))),
+      {timeout:15000,message:"Evidence organization options should include the organization returned by GET /api/v1/organizations"}
+    ).toContainEqual({value:organization.id,label:name});
     await evidenceOrganization.selectOption(organization.id);
     await page.getByLabel("Private document").setInputFiles({
       name:"registration-evidence.pdf",
