@@ -87,7 +87,7 @@ export async function submitOrganizationVerification(orgId,userId,requestId){
 
 export async function listOrganizationVerificationQueue(reviewerId){
  const db=getPool();
- const allowed=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin') limit 1",[reviewerId])).rows[0];
+ const allowed=(await db.query("select 1 where exists (select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin')) or exists (select 1 from app_user_permission up where up.user_id=$1 and up.permission_code='organizations.review')",[reviewerId])).rows[0];
  if(!allowed) throw error(403,"Organization verification reviewer role required.","FORBIDDEN");
  return (await db.query(`select o.id organization_id,o.legal_name,o.display_name,o.organization_type,o.verification_status,
    c.id case_id,c.status case_status,c.submitted_by,c.submitted_at,c.decision_reason,
