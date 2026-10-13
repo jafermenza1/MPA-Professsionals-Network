@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t e2e_specs < <(find e2e -type f | grep -E '\.(spec|test)\.(js|mjs|cjs|jsx|ts|mts|cts|tsx) | sort || true)
+          mapfile -t e2e_specs < <(find e2e -type f | grep -E '\.(spec|test)\.(js|mjs|cjs|jsx|ts|mts|cts|tsx)$' | sort || true)
           if [[ ${#e2e_specs[@]} -eq 0 ]]; then
             echo "::error::No Playwright spec/test files were discovered under e2e/."
             exit 1
