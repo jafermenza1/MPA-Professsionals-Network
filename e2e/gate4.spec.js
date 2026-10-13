@@ -358,10 +358,10 @@ test("ATS workspace loads the authorized organization's persisted candidate pipe
   const failures=[];page.on("pageerror",e=>failures.push(e.message));
   await page.goto("/recruitment");
   await expect(page.getByRole("heading",{name:"Move candidates through a traceable pipeline."})).toBeVisible();
-  await expect(page.getByLabel("Organization")).toBeVisible();
-  await page.getByLabel("Organization").selectOption(organizationId);
-  await expect(page.getByLabel("Job")).toBeVisible();
-  await page.getByLabel("Job").selectOption(fixture.jobId);
+  await expect(page.getByLabel("Organization workspace",{exact:true})).toBeVisible();
+  await page.getByLabel("Organization workspace",{exact:true}).selectOption(organizationId);
+  await expect(page.getByLabel("Recruiting job",{exact:true})).toBeVisible();
+  await page.getByLabel("Recruiting job",{exact:true}).selectOption(fixture.jobId);
   await page.getByLabel("Organization member user ID").fill(teamFixture.user.id);
   await page.getByRole("button",{name:"Add team member"}).click();
   await expect(page.getByText(teamFixture.user.id,{exact:true})).toBeVisible();
@@ -493,7 +493,7 @@ test("organization screen uploads private evidence and submits verification",asy
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
     await page.goto("/organizations");
-    await page.getByLabel("Organization").selectOption(organization.id);
+    await page.getByLabel("Organization workspace",{exact:true}).selectOption(organization.id);
     await page.getByLabel("Private document").setInputFiles({
       name:"registration-evidence.pdf",
       mimeType:"application/pdf",
@@ -767,7 +767,7 @@ test("organization onboarding rejects duplicate names, cross-organization reads 
    const duplicate=await api.post("/api/v1/organizations",{headers:{authorization:"Bearer "+token},data:{legalName:name+" B",displayName:name+" B",organizationType:"company"}});
    expect(duplicate.status()).toBe(409);
    const crossRead=await api.get("/api/v1/organizations/"+organization.id,{headers:headersA});
-   expect(crossRead.status()).toBe(404);
+   expect(crossRead.status(), "a foreign owner receives the explicit forbidden response for private organization details").toBe(403);
    const crossWrite=await api.post("/api/v1/organizations/"+organization.id+"/verification-evidence",{headers:headersA,data:{fileObjectId:"00000000-0000-4000-8000-000000000001",evidenceType:"registration_document"}});
    expect(crossWrite.status()).toBe(403);
    const bytes=Buffer.from("%PDF-1.7\nprivate ownership fixture\n%%EOF");
