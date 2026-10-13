@@ -498,9 +498,12 @@ test("organization screen uploads private evidence and submits verification",asy
     const uploadDiagnostics=[];
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
-    // Keep the already-hydrated organizations page; a redundant navigation here raced the organizations fetch and left the select without the newly-created option.
-    await expect(page.locator(".case-row").filter({hasText:name}).first()).toBeVisible({timeout:15000});
-    await page.getByLabel("Organization",{exact:true}).selectOption(organization.id);
+    // Scope the selector to the evidence form and wait for its asynchronously loaded option,
+    // not merely the organization summary row elsewhere on the page.
+    const evidenceForm=page.locator("form").filter({has:page.getByLabel("Private document")});
+    const evidenceOrganization=evidenceForm.getByLabel("Organization",{exact:true});
+    await expect(evidenceOrganization.locator("option").filter({hasText:name})).toHaveCount(1,{timeout:15000});
+    await evidenceOrganization.selectOption(organization.id);
     await page.getByLabel("Private document").setInputFiles({
       name:"registration-evidence.pdf",
       mimeType:"application/pdf",
@@ -837,14 +840,13 @@ test("services and mentorship expose explicit empty and retryable API-failure st
  // Count the request in the route handler itself so this assertion proves the browser
  // really called the search endpoint; the subsequent UI assertions still require an
  // explicit 503 error state and a second, successful interception on retry.
- await page.route("**/api/v1/mentors**",async route=>{
+ await page.route(url=>new URL(url).pathname==="/api/v1/mentors",async route=>{
    if(route.request().method()==="OPTIONS") return route.fulfill({status:204,headers:{"access-control-allow-origin":"http://127.0.0.1:3001","access-control-allow-headers":"authorization,content-type","access-control-allow-methods":"GET,OPTIONS","access-control-allow-credentials":"true"}});
    mentorFailureResponses++;
    return route.fulfill({status:503,headers:{"access-control-allow-origin":"http://127.0.0.1:3001","access-control-allow-headers":"authorization,content-type","access-control-allow-methods":"GET,OPTIONS","access-control-allow-credentials":"true"},contentType:"application/json",body:JSON.stringify({error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}})});
  });
- // Changing a real filter submits a fresh search request; retry must issue another request.
- await page.getByLabel("Search expertise").fill("forced outage");
- await page.getByRole("button",{name:"Search mentors"}).click();
+ // Trigger a fresh browser fetch while the route is installed; retry must issue another fetch.
+ await page.reload();
  await expect.poll(()=>mentorFailureResponses,{message:"the mentorship API failure fixture must intercept the real browser request"}).toBe(1);
  await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
  await page.getByRole("button",{name:"Retry"}).click();
