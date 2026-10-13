@@ -43,7 +43,7 @@ export async function getOrganization(orgId,viewerId=null){
  const db=getPool();
  const org=(await db.query("select o.*,ri.code geography_code,ri.label geography_label from organization o left join reference_item ri on ri.id=o.geography_reference_item_id where o.id=$1",[orgId])).rows[0];
  if(!org) throw error(404,"Organization not found.","NOT_FOUND");
- if(!org.public_visible && (!viewerId || !(await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active'",[orgId,viewerId])).rows[0])) throw error(404,"Organization not found.","NOT_FOUND");
+ if(!org.public_visible && (!viewerId || !(await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active'",[orgId,viewerId])).rows[0])) throw error(403,"You do not have access to this organization.","FORBIDDEN");
  const users=(await db.query("select om.user_id,om.role_code,om.status from organization_membership om where om.organization_id=$1 and om.status='active'",[orgId])).rows;
  return {...org,users};
 }
