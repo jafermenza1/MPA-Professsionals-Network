@@ -362,7 +362,7 @@ test("ATS workspace loads the authorized organization's persisted candidate pipe
   await page.getByLabel("Organization workspace",{exact:true}).selectOption(organizationId);
   await expect(page.getByLabel("Recruiting job",{exact:true})).toBeVisible();
   await page.getByLabel("Recruiting job",{exact:true}).selectOption(fixture.jobId);
-  await page.getByLabel("Organization member user ID").fill(teamFixture.user.id);
+  await page.getByLabel("Job team member user ID",{exact:true}).fill(teamFixture.user.id);
   await page.getByRole("button",{name:"Add team member"}).click();
   await expect(page.getByText(teamFixture.user.id,{exact:true})).toBeVisible();
   await expect(page.getByText(candidate.displayName,{exact:true})).toBeVisible();
@@ -464,7 +464,9 @@ test("jobs search, saved state and alert criteria persist across browser reload"
     await page.getByPlaceholder("Search job title or description").fill(title);
     await page.getByRole("button",{name:"Apply filters"}).click();
     await expect(page.getByRole("heading",{name:title,exact:true})).toBeVisible();
-    await page.getByRole("button",{name:"Save opportunity"}).click();
+    const matchingJobCard=page.locator("section").filter({has:page.getByRole("heading",{name:title,exact:true})});
+    await expect(matchingJobCard.getByRole("button",{name:"Save opportunity"})).toHaveCount(1);
+    await matchingJobCard.getByRole("button",{name:"Save opportunity"}).click();
     await expect(page.getByRole("status")).toContainText("Opportunity saved to your account.");
     await page.getByRole("button",{name:"Save job alert"}).click();
     await expect(page.getByRole("status")).toContainText("daily in-app job alert was saved");
@@ -493,7 +495,7 @@ test("organization screen uploads private evidence and submits verification",asy
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
     await page.goto("/organizations");
-    await page.getByLabel("Organization workspace",{exact:true}).selectOption(organization.id);
+    await page.getByLabel("Organization",{exact:true}).selectOption(organization.id);
     await page.getByLabel("Private document").setInputFiles({
       name:"registration-evidence.pdf",
       mimeType:"application/pdf",
@@ -826,11 +828,16 @@ test("services and mentorship expose explicit empty and retryable API-failure st
  await expect(page.getByRole("heading",{name:"No active mentor profiles found"})).toBeVisible();
  await expect(page.getByRole("button",{name:"Search mentors"})).toBeEnabled();
  await page.unroute("**/api/v1/mentors**");
- await mockApiResponse(page,"**/api/v1/mentors**",503,{error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}});
  let mentorFailureResponses=0;
- page.on("response",response=>{if(new URL(response.url()).pathname==="/api/v1/mentors"&&response.status()===503)mentorFailureResponses++;});
- // Mentor search reloads when its criteria change; changing a real filter guarantees
- // the browser issues a fresh request after the 503 fixture is installed.
+ // Count the request in the route handler itself so this assertion proves the browser
+ // really called the search endpoint; the subsequent UI assertions still require an
+ // explicit 503 error state and a second, successful interception on retry.
+ await page.route("**/api/v1/mentors**",async route=>{
+   if(route.request().method()==="OPTIONS") return route.fulfill({status:204,headers:{"access-control-allow-origin":"http://127.0.0.1:3001","access-control-allow-headers":"authorization,content-type","access-control-allow-methods":"GET,OPTIONS","access-control-allow-credentials":"true"}});
+   mentorFailureResponses++;
+   return route.fulfill({status:503,headers:{"access-control-allow-origin":"http://127.0.0.1:3001","access-control-allow-headers":"authorization,content-type","access-control-allow-methods":"GET,OPTIONS","access-control-allow-credentials":"true"},contentType:"application/json",body:JSON.stringify({error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}})});
+ });
+ // Changing a real filter submits a fresh search request; retry must issue another request.
  await page.getByLabel("Search expertise").fill("forced outage");
  await page.getByRole("button",{name:"Search mentors"}).click();
  await expect.poll(()=>mentorFailureResponses,{message:"the mentorship API failure fixture must intercept the real browser request"}).toBe(1);
