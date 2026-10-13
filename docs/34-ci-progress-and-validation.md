@@ -3,7 +3,7 @@
 **Updated:** 2026-10-13  
 **Pull request:** [#1 — comprehensive CI coverage](https://github.com/jafermenza1/MPA-Professsionals-Network/pull/1)  
 **Branch:** `fix/comprehensive-test-ci`  
-**Observed head before this update:** `6fff070a4889e3846feaeca3bef1f279fc672749`
+**Observed heads:** `2acf264e87453861967f28a4a9358e5e79be6c66` and follow-up `82dd35ae2d8e1cc66a386e6e68bc00225487b221`
 
 ## Latest observed result
 
@@ -16,9 +16,9 @@ The comprehensive GitHub Actions runs [38385825710](https://github.com/jafermenz
 - Playwright installation and E2E test discovery
 - API smoke checks, including authentication, private upload/evidence privacy, organization review, jobs, services, mentorship and session behavior
 
-The first run had three Playwright failures. After serializing browser tests, 23 passed and two still failed:
+The first run had three Playwright failures. After serializing browser tests, the earlier run had 23 passed and two failed. On commit `2acf264e87453861967f28a4a9358e5e79be6c66`, the mentorship failure was resolved, but the organization evidence test still failed (24 passed, 1 failed):
 
-1. Organization evidence upload: the organization summary row was visible but its option was not present in the evidence-form selector at assertion time. The test now explicitly refreshes the owner-scoped organization list before checking the selector.
+1. Organization evidence upload: the organization summary row was visible but its option was not present in the evidence-form selector at assertion time. The organization summary row was visible, but a label-text lookup could not find the matching dropdown option. A follow-up test correction now locates the option by the created organization's stable database ID rather than assuming the option's display text equals the submitted legal name. This preserves the requirement that the exact organization must be selectable; it does not skip the upload flow or remove the assertion.
 2. Services/mentorship empty and retryable error states: the mentorship outage fixture used a custom route predicate plus page reload; it failed to observe the expected request. The test now uses the same shared route helper as the passing services/jobs outage cases and explicitly triggers search, then verifies both the 503 response and retry request.
 
 The previous profile-persistence failure passed in the serialized run. These are targeted test synchronization/fixture corrections; they do not remove assertions or skip tests.
@@ -33,7 +33,7 @@ This is a containment fix, not the final goal: tests should eventually create is
 
 ## Current release gate
 
-**Not validated / do not merge yet.** The two targeted E2E corrections must run on the updated PR head, and the entire suite must pass. Review the next run's complete logs and resolve any remaining application or test-fixture defects without skipping tests, weakening assertions, or hiding failures.
+**Not validated / do not merge yet.** The stable-ID selector assertion and all prior changes must run on the latest PR head, and the entire suite must pass. Review the next run's complete logs and resolve any remaining application or test-fixture defects without skipping tests, weakening assertions, or hiding failures.
 
 Required acceptance evidence:
 
@@ -41,5 +41,5 @@ Required acceptance evidence:
 - All Playwright tests under `e2e/` are discovered and run.
 - Database migration, migration rerun, legacy adoption and rollback-safety checks pass.
 - Production web build and API smoke checks pass.
-- The three previously failing E2E cases pass, including the real error/retry behavior.
+- The organization private-evidence flow and the previously failing profile/mentorship cases pass, including the real error/retry behavior.
 - The exact updated commit's GitHub Actions run concludes successfully before merge.
