@@ -505,7 +505,7 @@ test("organization screen uploads private evidence and submits verification",asy
     // not merely the organization summary row elsewhere on the page.
     const evidenceForm=page.locator("form").filter({has:page.getByLabel("Private document")});
     const evidenceOrganization=evidenceForm.getByLabel("Organization",{exact:true});
-    await expect(evidenceOrganization.locator("option").filter({hasText:name})).toHaveCount(1,{timeout:15000});
+    await expect(evidenceOrganization.locator("option").filter({value:organization.id})).toHaveCount(1,{timeout:15000});
     await evidenceOrganization.selectOption(organization.id);
     await page.getByLabel("Private document").setInputFiles({
       name:"registration-evidence.pdf",
