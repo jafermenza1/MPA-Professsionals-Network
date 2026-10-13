@@ -724,7 +724,7 @@ export async function jobDashboard(jobId,userId){
  const db=getPool(); await jobRole(db,jobId,userId,["hiring_manager","recruiter","interviewer","observer"]);
  const job=(await db.query("select j.*,o.display_name organization_name from job j join organization o on o.id=j.organization_id where j.id=$1",[jobId])).rows[0];
  const funnel=(await db.query("select status,count(*)::int count from job_application where job_id=$1 group by status order by status",[jobId])).rows;
- const interviews=(await db.query("select status,count(*)::int count from job_interview ji join job_application a on a.id=ji.application_id where a.job_id=$1 group by status",[jobId])).rows;
+ const interviews=(await db.query("select ji.status,count(*)::int count from job_interview ji join job_application a on a.id=ji.application_id where a.job_id=$1 group by ji.status",[jobId])).rows;
  const avg=(await db.query("select round(avg(extract(epoch from (coalesce(hired_at,updated_at)-submitted_at))/86400)::numeric,2) avg_days from job_application where job_id=$1 and submitted_at is not null",[jobId])).rows[0];
  const outcome=(await db.query("select * from job_outcome where job_id=$1 order by recorded_at desc",[jobId])).rows;
  return {job,funnel,interviews,averageApplicationAgeDays:avg?.avg_days||null,outcomes:outcome};
