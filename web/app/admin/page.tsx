@@ -36,7 +36,8 @@ type Guide = {
   steps: any[];
   active: boolean;
 };
-type CurrentUser = { user_id: string; roles: string[] };\ntype ManagedPermission = { permission_code: string; area: string; label: string; description: string; sensitive: boolean; system_only: boolean };
+type CurrentUser = { user_id: string; roles: string[] };
+type ManagedPermission = { permission_code: string; area: string; label: string; description: string; sensitive: boolean; system_only: boolean };
 type Inquiry = {
   id: string;
   public_reference: string;
@@ -62,7 +63,8 @@ export default function AdminPage() {
   const [guides, setGuides] = useState<Guide[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [roleCatalog, setRoleCatalog] = useState<ManagedRole[]>([]);\n  const [permissionCatalog, setPermissionCatalog] = useState<ManagedPermission[]>([]);
+  const [roleCatalog, setRoleCatalog] = useState<ManagedRole[]>([]);
+  const [permissionCatalog, setPermissionCatalog] = useState<ManagedPermission[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [scopeResolved, setScopeResolved] = useState(false);
