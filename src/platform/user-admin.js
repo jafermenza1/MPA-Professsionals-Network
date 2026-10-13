@@ -3,7 +3,7 @@ import {hashPassword} from "../membership/identity.js";
 
 function err(status,message,code="BUSINESS_RULE"){const e=new Error(message);e.statusCode=status;e.code=code;return e}
 async function allowed(db,userId){const r=await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);return r.rows.map(x=>x.role_code)}
-function admin(roles){if(!roles.some(x=>["system_admin","admin"].includes(x)))throw err(403,"Administrator role required.","FORBIDDEN")}
+function admin(roles,permissions=[],requiredPermission="users.manage"){if(!roles.some(x=>["system_admin","admin"].includes(x))&&!permissions.includes(requiredPermission))throw err(403,"Administrator role or explicit user-administration permission required.","FORBIDDEN")}
 const SYSTEM_ROLE="system_admin";
 const PRIVILEGED_ROLES=new Set([SYSTEM_ROLE,"super_admin","admin","reviewer","verification_reviewer","ethics_reviewer","appeal_reviewer","finance_officer"]);
 const NON_PLATFORM_ROLES={
@@ -59,7 +59,7 @@ export async function logout(userId,sessionId,requestId){
 }
 
 export async function listUsers(actor,input={}){
- const db=getPool(); const actorId=typeof actor==="string"?actor:actor?.sub; admin(await allowed(db,actorId)); const q=String(input.q||"").trim(); const status=input.status;
+ const db=getPool(); const actorId=typeof actor==="string"?actor:actor?.sub; const actorPermissions=Array.isArray(actor?.permissions)?actor.permissions:[]; admin(await allowed(db,actorId),actorPermissions,"users.view"); const q=String(input.q||"").trim(); const status=input.status;
  const sql="select u.id,u.email,u.username,u.status,u.created_at,u.updated_at,coalesce(json_agg(distinct r.role_code) filter(where r.role_code is not null),'[]') roles,coalesce((select json_agg(up.permission_code order by up.permission_code) from app_user_permission up where up.user_id=u.id),'[]'::json) permissions from app_user u left join app_user_role ur on ur.user_id=u.id left join app_role r on r.id=ur.role_id where ($1='' or lower(u.email) like lower('%'||$1||'%') or lower(u.username) like lower('%'||$1||'%')) and ($2::text is null or u.status=$2) group by u.id order by u.created_at desc limit 200";
  return (await db.query(sql,[q,status||null])).rows;
 }
@@ -76,9 +76,11 @@ export async function listRoles(actor){
 
 export async function updateUser(actor,userId,input,requestId){
  const db=getPool();
+ const actorId=typeof actor==="string"?actor:actor?.sub;
+ const actorPermissions=Array.isArray(actor?.permissions)?actor.permissions:[];
  return withTransaction(async tx=>{
   // Resolve authority from the current database state inside the same transaction as the mutation.
-  const actorRoles=await allowed(tx,actor); admin(actorRoles);
+  const actorRoles=await allowed(tx,actorId); admin(actorRoles,actorPermissions,"users.manage");
   const u=(await tx.query("select id,status from app_user where id=$1 for update",[userId])).rows[0];
   if(!u)throw err(404,"User not found.","NOT_FOUND");
   const status=input.status, roleCode=input.roleCode, removeRoleCode=input.removeRoleCode;
@@ -106,7 +108,7 @@ export async function updateUser(actor,userId,input,requestId){
    if(roleCode===SYSTEM_ROLE){
     await tx.query("select pg_advisory_xact_lock(hashtext('system_admin_role_membership'))");
    }
-   await tx.query("insert into app_user_role(user_id,role_id,assigned_by) values($1,$2,$3) on conflict do nothing",[userId,rr.id,actor]);
+   await tx.query("insert into app_user_role(user_id,role_id,assigned_by) values($1,$2,$3) on conflict do nothing",[userId,rr.id,actorId]);
   }
   if(removeRoleCode!==undefined){
    const rr=(await tx.query("select id from app_role where role_code=$1",[removeRoleCode])).rows[0];
@@ -122,7 +124,7 @@ export async function updateUser(actor,userId,input,requestId){
    await tx.query("update auth_session set revoked_at=now() where user_id=$1 and revoked_at is null",[userId]);
   const newRoles=await allowed(tx,userId);
   await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.user.updated','app_user',$2,$3,'success',$4)",[
-   actor,userId,requestId,JSON.stringify({scope:"platform",previousStatus:u.status,currentStatus:status??u.status,status:status??null,previousRoles:currentRoles,currentRoles:newRoles,roleCode:roleCode??null,removeRoleCode:removeRoleCode??null,reason})
+   actorId,userId,requestId,JSON.stringify({scope:"platform",previousStatus:u.status,currentStatus:status??u.status,status:status??null,previousRoles:currentRoles,currentRoles:newRoles,roleCode:roleCode??null,removeRoleCode:removeRoleCode??null,reason})
   ]);
   return {id:userId,status:status||u.status,roles:newRoles};
  });
