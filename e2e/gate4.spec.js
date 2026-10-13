@@ -371,7 +371,7 @@ test("ATS workspace loads the authorized organization's persisted candidate pipe
   await page.getByLabel("Scorecard title").fill("Gate 4 Interview Rubric");
   await page.getByRole("button",{name:"Save scorecard"}).click();
   await expect(page.getByText("Gate 4 Interview Rubric",{exact:true})).toBeVisible();
-  await page.getByLabel("Question").fill("Can you work in the listed location?");
+  await page.locator("form").filter({hasText:"Screening questions"}).getByLabel("Question",{exact:true}).fill("Can you work in the listed location?");
   await page.getByRole("button",{name:"Add screening question"}).click();
   await expect(page.getByText("Can you work in the listed location?",{exact:true})).toBeVisible();
   for(const stage of ["screening","shortlisted","interview"]){
@@ -494,7 +494,7 @@ test("organization screen uploads private evidence and submits verification",asy
     await page.addInitScript(sessionToken=>sessionStorage.setItem("mpa-session-token",sessionToken),token);
     await page.goto("/organizations");
     await expect(page.getByRole("heading",{name:"Build a trusted organization profile."})).toBeVisible();
-    await expect(page.getByText(name,{exact:true})).toBeVisible({timeout:15000});
+    await expect(page.locator(".case-row").filter({hasText:name}).first()).toBeVisible({timeout:15000});
     const uploadDiagnostics=[];
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
