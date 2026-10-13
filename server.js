@@ -58,6 +58,7 @@ async function auth(req){
     if(!r.rows[0]||r.rows[0].status!=="active"||r.rows[0].user_id!==identity.sub) throw Object.assign(new Error("Session expired or revoked."),{statusCode:401});
     // Authorization must use current database roles, never stale role claims from a signed token.
     identity.roles=withCurrentRoles(identity,Array.isArray(r.rows[0].roles)?r.rows[0].roles:JSON.parse(r.rows[0].roles||"[]")).roles;
+    identity.permissions=(await db.query("select permission_code from app_user_permission where user_id=$1",[identity.sub])).rows.map(row=>row.permission_code);
     await db.query("update auth_session set last_seen_at=now() where id=$1",[identity.sid]);
     return identity;
   } catch(e){ throw Object.assign(new Error(e.message),{statusCode:e.statusCode===403?403:401,code:"UNAUTHENTICATED"}); }
@@ -66,8 +67,11 @@ function optionalIdentity(req){
   if(!req.headers.authorization?.startsWith("Bearer ")) return null;
   try { return verifyToken(req.headers.authorization.slice(7),config.jwtSecret); } catch { return null; }
 }
+const ROLE_PERMISSION={finance_officer:"finance.manage",reviewer:"members.manage",verification_reviewer:"verification.manage",ethics_reviewer:"verification.manage",appeal_reviewer:"verification.manage",organization_admin:"organizations.manage",recruiter:"jobs.manage",project_manager:"jobs.manage",mentor:"mentorship.manage",supporting_staff:"reviews.view",admin:"users.manage"};
 function anyRole(identity,allowed){
-  if(!allowed.some(role=>Array.isArray(identity.roles)&&identity.roles.includes(role))) throw Object.assign(new Error("Forbidden."),{statusCode:403,code:"FORBIDDEN"});
+  const roles=Array.isArray(identity.roles)?identity.roles:[];
+  const permissions=Array.isArray(identity.permissions)?identity.permissions:[];
+  if(!allowed.some(role=>roles.includes(role)||(ROLE_PERMISSION[role]&&permissions.includes(ROLE_PERMISSION[role])))) throw Object.assign(new Error("Forbidden."),{statusCode:403,code:"FORBIDDEN"});
   return identity;
 }
 function ok(res,data,requestId,status=200){ return json(res,status,{data},requestId); }
@@ -114,7 +118,9 @@ const server=http.createServer(async (req,res)=>{
 
     if(req.method==="POST" && p==="api/v1/auth/logout") { const identity=await auth(req); return ok(res,await userAdmin.logout(identity.sub,identity.sid,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/users") { const identity=await auth(req); return ok(res,await userAdmin.listUsers(identity,{q:query(req.url).get("q"),status:query(req.url).get("status")}),requestId); }
-    if(req.method==="GET" && p==="api/v1/admin/roles") { const identity=await auth(req); return ok(res,await userAdmin.listRoles(identity.sub),requestId); }\n    if(req.method==="GET" && p==="api/v1/admin/permissions") { const identity=await auth(req); return ok(res,await userAdmin.listPermissions(identity.sub),requestId); }\n    if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="permissions") { const identity=await auth(req); return ok(res,await userAdmin.updateUserPermissions(identity.sub,parts[4],await body(req),requestId),requestId); }
+    if(req.method==="GET" && p==="api/v1/admin/roles") { const identity=await auth(req); return ok(res,await userAdmin.listRoles(identity.sub),requestId); }
+    if(req.method==="GET" && p==="api/v1/admin/permissions") { const identity=await auth(req); return ok(res,await userAdmin.listPermissions(identity.sub),requestId); }
+    if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="permissions") { const identity=await auth(req); return ok(res,await userAdmin.updateUserPermissions(identity.sub,parts[4],await body(req),requestId),requestId); }
     if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/admin/users/")) { const identity=await auth(req); return ok(res,await userAdmin.updateUser(identity.sub,parts[4],await body(req),requestId),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="revoke-sessions") { const identity=await auth(req); const b=await body(req); return ok(res,await userAdmin.revokeSessions(identity.sub,parts[4],requestId,b.reason),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="reset-password") { const identity=await auth(req); const b=await body(req); return ok(res,await userAdmin.resetPassword(identity.sub,parts[4],b.password,requestId,b.reason),requestId); }
