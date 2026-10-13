@@ -20,9 +20,9 @@ export async function updateProfessionalProfile(userId,input,requestId){
   const skills=Array.isArray(input.skills)?input.skills.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
   const languages=Array.isArray(input.languages)?input.languages.map(x=>String(x).trim()).filter(Boolean).slice(0,20):null;
   const certifications=Array.isArray(input.certifications)?input.certifications.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
-  const portfolioUrl=input.portfolioUrl===undefined?null:String(input.portfolioUrl||"").trim()||null;
+  const portfolioUrl=input.portfolioUrl===undefined?null:String(input.portfolioUrl||"").trim();
   if(portfolioUrl){let parsed;try{parsed=new URL(portfolioUrl)}catch{throw error(400,"portfolioUrl must be a valid HTTPS URL.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"portfolioUrl must use HTTPS.","VALIDATION_ERROR")}
-  await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),education_summary=coalesce($9,education_summary),qualifications=coalesce($10,qualifications),skills=coalesce($11::jsonb,skills),languages=coalesce($12::jsonb,languages),certifications=coalesce($13::jsonb,certifications),portfolio_url=coalesce($14,portfolio_url),updated_at=now() where id=$15",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,input.educationSummary===undefined?null:String(input.educationSummary||"").trim()||null,input.qualifications===undefined?null:String(input.qualifications||"").trim()||null,skills===null?null:JSON.stringify(skills),languages===null?null:JSON.stringify(languages),certifications===null?null:JSON.stringify(certifications),portfolioUrl,p.id]);
+  await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),education_summary=coalesce($9,education_summary),qualifications=coalesce($10,qualifications),skills=coalesce($11::jsonb,skills),languages=coalesce($12::jsonb,languages),certifications=coalesce($13::jsonb,certifications),portfolio_url=coalesce($14,portfolio_url),updated_at=now() where id=$15",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,input.educationSummary===undefined?null:String(input.educationSummary||"").trim(),input.qualifications===undefined?null:String(input.qualifications||"").trim(),skills===null?null:JSON.stringify(skills),languages===null?null:JSON.stringify(languages),certifications===null?null:JSON.stringify(certifications),portfolioUrl,p.id]);
   if(Array.isArray(input.references)){
    for(const ref of input.references){
     const allowed=["occupation","industry","education_level","qualification_type","field_of_study"];
@@ -34,8 +34,18 @@ export async function updateProfessionalProfile(userId,input,requestId){
    }
   }
   if(Array.isArray(input.experience)){
+   if(input.experience.length>30) throw error(400,"A maximum of 30 work-experience entries is allowed.","VALIDATION_ERROR");
+   for(const item of input.experience){
+    const roleTitle=String(item?.roleTitle||"").trim();
+    const visibility=item?.visibility||"members";
+    if(!roleTitle||roleTitle.length>180) throw error(400,"Every work-experience entry needs a role title of 1 to 180 characters.","VALIDATION_ERROR");
+    if(!["private","members","public"].includes(visibility)) throw error(400,"Experience visibility must be private, members or public.","VALIDATION_ERROR");
+    if(String(item?.employerName||"").length>180||String(item?.description||"").length>3000) throw error(400,"Work-experience employer or description is too long.","VALIDATION_ERROR");
+    const start=item?.startDate?new Date(item.startDate):null,end=item?.endDate?new Date(item.endDate):null;
+    if((start&&!Number.isFinite(start.getTime()))||(end&&!Number.isFinite(end.getTime()))||(start&&end&&end<start)) throw error(400,"Work-experience dates are invalid or out of order.","VALIDATION_ERROR");
+   }
    await db.query("delete from professional_experience where profile_id=$1",[p.id]);
-   for(const item of input.experience) await db.query("insert into professional_experience(profile_id,employer_name,role_title,start_date,end_date,is_current,description,visibility) values($1,$2,$3,$4,$5,$6,$7,$8)",[p.id,item.employerName||null,item.roleTitle,item.startDate||null,item.endDate||null,Boolean(item.currentRole),item.description||null,item.visibility||"members"]);
+   for(const item of input.experience) await db.query("insert into professional_experience(profile_id,employer_name,role_title,start_date,end_date,is_current,description,visibility) values($1,$2,$3,$4,$5,$6,$7,$8)",[p.id,String(item.employerName||"").trim()||null,String(item.roleTitle).trim(),item.startDate||null,item.currentRole?null:item.endDate||null,Boolean(item.currentRole),String(item.description||"").trim()||null,item.visibility||"members"]);
   }
   await audit(db,userId,"talent.profile_updated","professional_profile",p.id,requestId,{referenceCount:Array.isArray(input.references)?input.references.length:0,experienceCount:Array.isArray(input.experience)?input.experience.length:0});
   const saved=(await db.query("select id,professional_title,headline,bio,years_experience,availability_status,location_label,directory_summary,directory_visibility as visibility,education_summary,qualifications,skills,languages,certifications,portfolio_url,completion_percent from professional_profile where id=$1",[p.id])).rows[0];
