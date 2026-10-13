@@ -429,7 +429,7 @@ test("verification UI opens an owned case and preserves private case state on re
  await expect(page.getByText("Verification case created.",{exact:false})).toBeVisible();
  await expect(page.getByText("Gate 4 UI Verification "+suffix.slice(0,8),{exact:true})).toBeVisible();
  await page.reload();
- await expect(page.getByText("Gate 4 UI Verification "+suffix.slice(0,8))).toBeVisible();
+ await expect(page.getByText("Gate 4 UI Verification "+suffix.slice(0,8),{exact:true})).toBeVisible();
  expect(failures,"verification UI must not raise browser runtime errors").toEqual([]);
 });
 
