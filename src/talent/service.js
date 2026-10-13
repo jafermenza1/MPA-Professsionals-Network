@@ -17,7 +17,12 @@ export async function updateProfessionalProfile(userId,input,requestId){
   if(years!==null&&(!Number.isInteger(years)||years<0)) throw error(400,"yearsExperience must be a non-negative integer.","VALIDATION_ERROR");
   if(input.availabilityStatus!==undefined&&input.availabilityStatus!==null&&input.availabilityStatus!==""&&!["not_specified","available","limited","unavailable"].includes(input.availabilityStatus)) throw error(400,"availabilityStatus must be not_specified, available, limited or unavailable.","VALIDATION_ERROR");
   if(input.visibility!==undefined&&input.visibility!==null&&!["private","members","public"].includes(input.visibility)) throw error(400,"visibility must be private, members or public.","VALIDATION_ERROR");
-  await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),updated_at=now() where id=$9",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,p.id]);
+  const skills=Array.isArray(input.skills)?input.skills.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
+  const languages=Array.isArray(input.languages)?input.languages.map(x=>String(x).trim()).filter(Boolean).slice(0,20):null;
+  const certifications=Array.isArray(input.certifications)?input.certifications.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
+  const portfolioUrl=input.portfolioUrl===undefined?null:String(input.portfolioUrl||"").trim();
+  if(portfolioUrl){let parsed;try{parsed=new URL(portfolioUrl)}catch{throw error(400,"portfolioUrl must be a valid HTTPS URL.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"portfolioUrl must use HTTPS.","VALIDATION_ERROR")}
+  await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),education_summary=coalesce($9,education_summary),qualifications=coalesce($10,qualifications),skills=coalesce($11::jsonb,skills),languages=coalesce($12::jsonb,languages),certifications=coalesce($13::jsonb,certifications),portfolio_url=coalesce($14,portfolio_url),updated_at=now() where id=$15",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,input.educationSummary===undefined?null:String(input.educationSummary||"").trim(),input.qualifications===undefined?null:String(input.qualifications||"").trim(),skills===null?null:JSON.stringify(skills),languages===null?null:JSON.stringify(languages),certifications===null?null:JSON.stringify(certifications),portfolioUrl,p.id]);
   if(Array.isArray(input.references)){
    for(const ref of input.references){
     const allowed=["occupation","industry","education_level","qualification_type","field_of_study"];
@@ -29,18 +34,31 @@ export async function updateProfessionalProfile(userId,input,requestId){
    }
   }
   if(Array.isArray(input.experience)){
+   if(input.experience.length>30) throw error(400,"A maximum of 30 work-experience entries is allowed.","VALIDATION_ERROR");
+   for(const item of input.experience){
+    const roleTitle=String(item?.roleTitle||"").trim();
+    const visibility=item?.visibility||"members";
+    if(!roleTitle||roleTitle.length>180) throw error(400,"Every work-experience entry needs a role title of 1 to 180 characters.","VALIDATION_ERROR");
+    if(!["private","members","public"].includes(visibility)) throw error(400,"Experience visibility must be private, members or public.","VALIDATION_ERROR");
+    if(String(item?.employerName||"").length>180||String(item?.description||"").length>3000) throw error(400,"Work-experience employer or description is too long.","VALIDATION_ERROR");
+    const start=item?.startDate?new Date(item.startDate):null,end=item?.endDate?new Date(item.endDate):null;
+    if((start&&!Number.isFinite(start.getTime()))||(end&&!Number.isFinite(end.getTime()))||(start&&end&&end.getTime()<start.getTime())) throw error(400,"Work-experience dates are invalid or out of order.","VALIDATION_ERROR");
+   }
    await db.query("delete from professional_experience where profile_id=$1",[p.id]);
-   for(const item of input.experience) await db.query("insert into professional_experience(profile_id,employer_name,role_title,start_date,end_date,is_current,description,visibility) values($1,$2,$3,$4,$5,$6,$7,$8)",[p.id,item.employerName||null,item.roleTitle,item.startDate||null,item.endDate||null,Boolean(item.currentRole),item.description||null,item.visibility||"members"]);
+   for(const item of input.experience) await db.query("insert into professional_experience(profile_id,employer_name,role_title,start_date,end_date,is_current,description,visibility) values($1,$2,$3,$4,$5,$6,$7,$8)",[p.id,String(item.employerName||"").trim()||null,String(item.roleTitle).trim(),item.startDate||null,item.currentRole?null:item.endDate||null,Boolean(item.currentRole),String(item.description||"").trim()||null,item.visibility||"members"]);
   }
   await audit(db,userId,"talent.profile_updated","professional_profile",p.id,requestId,{referenceCount:Array.isArray(input.references)?input.references.length:0,experienceCount:Array.isArray(input.experience)?input.experience.length:0});
-  return (await db.query("select id,professional_title,headline,bio,years_experience,availability_status,location_label,directory_summary,directory_visibility as visibility,completion_percent from professional_profile where id=$1",[p.id])).rows[0];
+  const saved=(await db.query("select id,professional_title,headline,bio,years_experience,availability_status,location_label,directory_summary,directory_visibility as visibility,education_summary,qualifications,skills,languages,certifications,portfolio_url,completion_percent from professional_profile where id=$1",[p.id])).rows[0];
+  saved.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[p.id])).rows;
+  return saved;
  });
 }
 
 export async function getProfessionalProfile(userId){
  const db=getPool();
- const row=(await db.query("select pp.id,pp.professional_title,pp.years_experience,pp.availability_status,pp.location_label,pp.directory_summary,pp.headline,pp.bio,pp.directory_visibility as visibility,pp.completion_percent from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1",[userId])).rows[0];
+ const row=(await db.query("select pp.id,pp.professional_title,pp.years_experience,pp.availability_status,pp.location_label,pp.directory_summary,pp.headline,pp.bio,pp.directory_visibility as visibility,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.completion_percent from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1",[userId])).rows[0];
  if(!row) throw error(404,"Professional profile not found.","NOT_FOUND");
+ row.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[row.id])).rows;
  return row;
 }
 
@@ -67,7 +85,7 @@ export async function searchTalent(viewerId,filters={}){
  if(filters.location){ args.push("%"+String(filters.location).trim()+"%"); where.push("vv.show_location=true and pp.location_label ilike $"+args.length); }
  if(filters.verifiedClaim){ const claim=String(filters.verifiedClaim).toLowerCase(); if(!isEligibleVerifiedClaim(claim)) throw error(400,"Unsupported verified professional claim filter.","INVALID_VERIFIED_CLAIM"); args.push(claim); where.push("exists (select 1 from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot)=$"+args.length+")"); } else { where.push("exists (select 1 from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability'))"); }
  const limit=limitValue(filters.limit),offset=Math.max(Number(filters.offset)||0,0);
- const sql="select distinct u.id user_id,p.display_name,pp.id profile_id,pp.professional_title,pp.headline,pp.directory_summary,pp.years_experience,pp.availability_status,"+
+ const sql="select distinct u.id user_id,p.display_name,pp.id profile_id,pp.professional_title,pp.headline,pp.directory_summary,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.years_experience,pp.availability_status,"+
  "(case when vv.show_location then pp.location_label else null end) location_label,"+
  "vv.show_location,vv.show_identity_badge,vv.show_professional_badge,vv.show_experience_badge,vv.show_experience,"+
  "(select count(*)::int from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability')) verified_claim_count "+
@@ -81,11 +99,11 @@ export async function getTalent(userId,viewerId){
  const db=getPool();
  const viewerMember=viewerId?Boolean((await db.query("select 1 from membership_record where user_id=$1 and status='active' limit 1",[viewerId])).rows[0]):false;
  const where=viewerMember?"pp.directory_visibility in ('members','public')":"pp.directory_visibility='public'";
- const row=(await db.query("select u.id user_id,p.display_name,pp.id profile_id,pp.professional_title,pp.headline,pp.bio,pp.directory_summary,pp.years_experience,pp.availability_status,case when vv.show_location then pp.location_label else null end location_label,case when vv.show_contact and u.id=$2 then p.phone else null end phone,vv.show_identity_badge,vv.show_professional_badge,vv.show_experience_badge,vv.show_experience from app_user u join person p on p.user_id=u.id join professional_profile pp on pp.person_id=p.id join membership_record m on m.user_id=u.id and m.status='active' join verification_visibility vv on vv.user_id=u.id where u.id=$1 and vv.directory_visible=true and "+where+" and exists (select 1 from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability'))",[userId,viewerId||null])).rows[0];
+ const row=(await db.query("select u.id user_id,p.display_name,pp.id profile_id,pp.professional_title,pp.headline,pp.bio,pp.directory_summary,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.years_experience,pp.availability_status,case when vv.show_location then pp.location_label else null end location_label,case when vv.show_contact and u.id=$2 then p.phone else null end phone,vv.show_identity_badge,vv.show_professional_badge,vv.show_experience_badge,vv.show_experience from app_user u join person p on p.user_id=u.id join professional_profile pp on pp.person_id=p.id join membership_record m on m.user_id=u.id and m.status='active' join verification_visibility vv on vv.user_id=u.id where u.id=$1 and vv.directory_visible=true and "+where+" and exists (select 1 from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability'))",[userId,viewerId||null])).rows[0];
  if(!row) throw error(404,"Professional not found or not visible.","NOT_FOUND");
  const refs=(await db.query("select prf.relation_type,ri.code,ri.label,ri.dataset_version_id from professional_profile_reference prf join reference_item ri on ri.id=prf.reference_item_id where prf.profile_id=$1 order by prf.relation_type,prf.is_primary desc,ri.label",[row.profile_id])).rows;
  const claims=(await db.query("select distinct vc.claim_code_snapshot claim_code from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=$1 and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability')",[userId])).rows;
- const experience=row.show_experience?(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description from professional_experience where profile_id=$1 and visibility in ('members','public') order by start_date desc nulls last",[row.profile_id])).rows:[];
+ const experience=row.show_experience?(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description from professional_experience where profile_id=$1 and visibility=any($2::text[]) order by start_date desc nulls last",[row.profile_id,viewerMember?["members","public"]:["public"]])).rows:[];
  return {...row,references:refs,verifiedClaims:claims,experience};
 }
 

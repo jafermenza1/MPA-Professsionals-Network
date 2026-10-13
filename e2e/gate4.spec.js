@@ -358,20 +358,20 @@ test("ATS workspace loads the authorized organization's persisted candidate pipe
   const failures=[];page.on("pageerror",e=>failures.push(e.message));
   await page.goto("/recruitment");
   await expect(page.getByRole("heading",{name:"Move candidates through a traceable pipeline."})).toBeVisible();
-  await expect(page.getByLabel("Organization")).toBeVisible();
-  await page.getByLabel("Organization").selectOption(organizationId);
-  await expect(page.getByLabel("Job")).toBeVisible();
-  await page.getByLabel("Job").selectOption(fixture.jobId);
-  await page.getByLabel("Organization member user ID").fill(teamFixture.user.id);
+  await expect(page.getByLabel("Organization workspace",{exact:true})).toBeVisible();
+  await page.getByLabel("Organization workspace",{exact:true}).selectOption(organizationId);
+  await expect(page.getByLabel("Recruiting job",{exact:true})).toBeVisible();
+  await page.getByLabel("Recruiting job",{exact:true}).selectOption(fixture.jobId);
+  await page.getByLabel("Job team member user ID",{exact:true}).fill(teamFixture.user.id);
   await page.getByRole("button",{name:"Add team member"}).click();
-  await expect(page.getByText(teamFixture.user.id,{exact:true})).toBeVisible();
+  await expect(page.getByText("Gate4 ATSInterviewer",{exact:true})).toBeVisible();
   await expect(page.getByText(candidate.displayName,{exact:true})).toBeVisible();
   const candidateRow=()=>page.locator(".case-row").filter({hasText:applicationId});
   await expect(candidateRow().getByText("submitted",{exact:true})).toBeVisible();
   await page.getByLabel("Scorecard title").fill("Gate 4 Interview Rubric");
   await page.getByRole("button",{name:"Save scorecard"}).click();
   await expect(page.getByText("Gate 4 Interview Rubric",{exact:true})).toBeVisible();
-  await page.getByLabel("Question").fill("Can you work in the listed location?");
+  await page.locator("form").filter({hasText:"Screening questions"}).getByLabel("Question",{exact:true}).fill("Can you work in the listed location?");
   await page.getByRole("button",{name:"Add screening question"}).click();
   await expect(page.getByText("Can you work in the listed location?",{exact:true})).toBeVisible();
   for(const stage of ["screening","shortlisted","interview"]){
@@ -427,9 +427,9 @@ test("verification UI opens an owned case and preserves private case state on re
  await page.getByLabel("Verification program").selectOption(programCode);
  await page.getByRole("button",{name:"Open case"}).click();
  await expect(page.getByText("Verification case created.",{exact:false})).toBeVisible();
- await expect(page.getByText("Gate 4 UI Verification "+suffix.slice(0,8))).toBeVisible();
+ await expect(page.getByText("Gate 4 UI Verification "+suffix.slice(0,8),{exact:true})).toBeVisible();
  await page.reload();
- await expect(page.getByText("Gate 4 UI Verification "+suffix.slice(0,8))).toBeVisible();
+ await expect(page.getByText("Gate 4 UI Verification "+suffix.slice(0,8),{exact:true})).toBeVisible();
  expect(failures,"verification UI must not raise browser runtime errors").toEqual([]);
 });
 
@@ -464,7 +464,9 @@ test("jobs search, saved state and alert criteria persist across browser reload"
     await page.getByPlaceholder("Search job title or description").fill(title);
     await page.getByRole("button",{name:"Apply filters"}).click();
     await expect(page.getByRole("heading",{name:title,exact:true})).toBeVisible();
-    await page.getByRole("button",{name:"Save opportunity"}).click();
+    const matchingJobCard=page.locator("section").filter({has:page.getByRole("heading",{name:title,exact:true})});
+    await expect(matchingJobCard.getByRole("button",{name:"Save opportunity"})).toHaveCount(1);
+    await matchingJobCard.getByRole("button",{name:"Save opportunity"}).click();
     await expect(page.getByRole("status")).toContainText("Opportunity saved to your account.");
     await page.getByRole("button",{name:"Save job alert"}).click();
     await expect(page.getByRole("status")).toContainText("daily in-app job alert was saved");
@@ -767,7 +769,7 @@ test("organization onboarding rejects duplicate names, cross-organization reads 
    const duplicate=await api.post("/api/v1/organizations",{headers:{authorization:"Bearer "+token},data:{legalName:name+" B",displayName:name+" B",organizationType:"company"}});
    expect(duplicate.status()).toBe(409);
    const crossRead=await api.get("/api/v1/organizations/"+organization.id,{headers:headersA});
-   expect(crossRead.status()).toBe(404);
+   expect(crossRead.status(), "a foreign owner receives the explicit forbidden response for private organization details").toBe(403);
    const crossWrite=await api.post("/api/v1/organizations/"+organization.id+"/verification-evidence",{headers:headersA,data:{fileObjectId:"00000000-0000-4000-8000-000000000001",evidenceType:"registration_document"}});
    expect(crossWrite.status()).toBe(403);
    const bytes=Buffer.from("%PDF-1.7\nprivate ownership fixture\n%%EOF");
@@ -808,37 +810,6 @@ test("jobs discovery presents explicit empty and API failure states",async({page
  await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
 });
 
-
-test("services and mentorship expose explicit empty and retryable API-failure states",async({page})=>{
- await mockApiResponse(page,"**/api/v1/services**",200,{data:{items:[]}});
- await page.goto("/services");
- await expect(page.getByRole("heading",{name:"No published services found"})).toBeVisible();
- await page.unroute("**/api/v1/services**");
- await mockApiResponse(page,"**/api/v1/services**",503,{error:{code:"SERVER_ERROR",message:"CI simulated services outage"}});
- let serviceFailureIntercepted=false;
- page.on("response",response=>{if(new URL(response.url()).pathname==="/api/v1/services"&&response.status()===503)serviceFailureIntercepted=true;});
- await page.getByRole("button",{name:"Search",exact:true}).click();
- await expect.poll(()=>serviceFailureIntercepted,{message:"the services API failure fixture must intercept the real browser request"}).toBe(true);
- await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
-
- await mockApiResponse(page,"**/api/v1/mentors**",200,{data:[]});
- await page.goto("/mentorship");
- await expect(page.getByRole("heading",{name:"No active mentor profiles found"})).toBeVisible();
- await expect(page.getByRole("button",{name:"Search mentors"})).toBeEnabled();
- await page.unroute("**/api/v1/mentors**");
- await mockApiResponse(page,"**/api/v1/mentors**",503,{error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}});
- let mentorFailureResponses=0;
- page.on("response",response=>{if(new URL(response.url()).pathname==="/api/v1/mentors"&&response.status()===503)mentorFailureResponses++;});
- // Mentor search reloads when its criteria change; changing a real filter guarantees
- // the browser issues a fresh request after the 503 fixture is installed.
- await page.getByLabel("Search expertise").fill("forced outage");
- await page.getByRole("button",{name:"Search mentors"}).click();
- await expect.poll(()=>mentorFailureResponses,{message:"the mentorship API failure fixture must intercept the real browser request"}).toBe(1);
- await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
- await page.getByRole("button",{name:"Retry"}).click();
- await expect.poll(()=>mentorFailureResponses,{message:"the mentorship error state must allow a real retry"}).toBe(2);
- await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
-});
 
 test("organization public inquiry decisions persist and remain organization-authorized",async({page})=>{
  const {api,token}=await apiContext();

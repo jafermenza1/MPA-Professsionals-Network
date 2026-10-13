@@ -1,21 +1,27 @@
-name: CI
+name: Comprehensive CI
 
 on:
+  # Feature/fix branches are validated by pull_request to avoid running the same
+  # expensive suite twice for every commit. Main still validates direct pushes. 
   push:
-    branches: ["main","feat/**","fix/**","reconciliation/**"]
+    branches: [main]
   pull_request:
-    branches: ["main"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: reconciliation-ci-${{ github.event.pull_request.number || github.ref }}
+  group: comprehensive-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
+    name: Database, unit, build, API and E2E tests
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+
     services:
       postgres:
         image: postgres:16
@@ -30,6 +36,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://mpa:mpa_ci@localhost:5432/mpa
@@ -38,59 +45,138 @@ jobs:
       BOOTSTRAP_ADMIN_EMAIL: ci-admin@example.test
       BOOTSTRAP_ADMIN_PASSWORD: ci-only-admin-password-12345
       BOOTSTRAP_ADMIN_NAME: CI Test Administrator
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out exact commit
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci --no-audit --no-fund
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
       - name: Apply database migrations
         run: npm run migrate
+
       - name: Verify migration rerun safety
         run: npm run migrate
+
       - name: Verify legacy database adoption on isolated PostgreSQL
         env:
           PGPASSWORD: mpa_ci
-        run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE mpa_migration_upgrade"
-          DATABASE_URL=postgresql://mpa:mpa_ci@localhost:5432/mpa_migration_upgrade bash scripts/ci-migration-upgrade.sh
-      - run: npm test
-      - run: npm run web:build
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-      - name: Application and browser workflow smoke test
         shell: bash
         run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE mpa_migration_upgrade"
+          DATABASE_URL=postgresql://mpa:mpa_ci@localhost:5432/mpa_migration_upgrade bash scripts/ci-migration-upgrade.sh
+
+      - name: Discover and run every unit test under test/
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t unit_tests < <(find test -type f -name '*.test.js' -print | sort)
+          if [[ ${#unit_tests[@]} -eq 0 ]]; then
+            echo "::error::No *.test.js files were discovered under test/."
+            exit 1
+          fi
+          printf 'Discovered %s unit test files:\n' "${#unit_tests[@]}"
+          printf '  %s\n' "${unit_tests[@]}"
+          node --test "${unit_tests[@]}"
+
+      - name: Build production web application
+        run: npm run web:build
+
+      - name: Install Playwright Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Discover all Playwright tests under e2e/
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t e2e_specs < <(find e2e -type f | grep -E '\.(spec|test)\.(js|mjs|cjs|jsx|ts|mts|cts|tsx)$' | sort || true)
+          if [[ ${#e2e_specs[@]} -eq 0 ]]; then
+            echo "::error::No Playwright spec/test files were discovered under e2e/."
+            exit 1
+          fi
+          printf 'Discovered %s browser test files:\n' "${#e2e_specs[@]}"
+          printf '  %s\n' "${e2e_specs[@]}"
+          npx playwright test e2e --list
+
+      - name: Start API, wait for readiness, and run API smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
           export JWT_SECRET="$(openssl rand -hex 32)"
           CORS_ORIGIN=http://127.0.0.1:3001 node server.js > /tmp/mpa-server.log 2>&1 &
-          pid=$!
-          web_pid=''
-          trap 'kill "${web_pid:-}" "$pid" 2>/dev/null || true' EXIT
-          healthy=0
-          for i in {1..20}; do
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+
+          api_healthy=0
+          for i in {1..40}; do
             if curl --fail --silent http://127.0.0.1:3000/healthz >/dev/null; then
-              healthy=1
+              api_healthy=1
               break
+            fi
+            if ! kill -0 "$api_pid" 2>/dev/null; then
+              echo "::error::API process exited before becoming healthy."
+              cat /tmp/mpa-server.log
+              exit 1
             fi
             sleep 0.5
           done
-          if [ "$healthy" -ne 1 ]; then
+          if [[ "$api_healthy" -ne 1 ]]; then
+            echo "::error::API health check timed out."
             cat /tmp/mpa-server.log
             exit 1
           fi
-          node scripts/ci-api-smoke.js
+
+          CI_API_BASE_URL=http://127.0.0.1:3000 node scripts/ci-api-smoke.js
+
           API_SERVER_BASE_URL=http://127.0.0.1:3000 npm run dev --workspace @mpa/web -- --hostname 127.0.0.1 --port 3001 > /tmp/mpa-web.log 2>&1 &
           web_pid=$!
+          trap 'kill "$web_pid" "$api_pid" 2>/dev/null || true' EXIT
+
           web_healthy=0
           for i in {1..60}; do
             if curl --fail --silent http://127.0.0.1:3001/jobs >/dev/null; then
               web_healthy=1
               break
             fi
+            if ! kill -0 "$web_pid" 2>/dev/null; then
+              echo "::error::Web process exited before becoming healthy."
+              cat /tmp/mpa-web.log
+              exit 1
+            fi
             sleep 1
           done
-          if [ "$web_healthy" -ne 1 ]; then
+          if [[ "$web_healthy" -ne 1 ]]; then
+            echo "::error::Web health check timed out."
             cat /tmp/mpa-web.log
             exit 1
           fi
-          WEB_BASE_URL=http://127.0.0.1:3001 API_BASE_URL=http://127.0.0.1:3000 npx playwright test
+
+          WEB_BASE_URL=http://127.0.0.1:3001 API_BASE_URL=http://127.0.0.1:3000 npx playwright test e2e
+
+      - name: Print service logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "===== API server log ====="
+          if [[ -f /tmp/mpa-server.log ]]; then cat /tmp/mpa-server.log; else echo "API log was not created."; fi
+          echo "===== Web server log ====="
+          if [[ -f /tmp/mpa-web.log ]]; then cat /tmp/mpa-web.log; else echo "Web log was not created."; fi
+
+      - name: Upload Playwright report and traces when available
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

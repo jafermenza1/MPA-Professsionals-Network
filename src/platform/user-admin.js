@@ -3,7 +3,7 @@ import {hashPassword} from "../membership/identity.js";
 
 function err(status,message,code="BUSINESS_RULE"){const e=new Error(message);e.statusCode=status;e.code=code;return e}
 async function allowed(db,userId){const r=await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);return r.rows.map(x=>x.role_code)}
-function admin(roles){if(!roles.some(x=>["system_admin","admin"].includes(x)))throw err(403,"Administrator role required.","FORBIDDEN")}
+function admin(roles,permissions=[],requiredPermission="users.manage"){if(!roles.some(x=>["system_admin","admin"].includes(x))&&!permissions.includes(requiredPermission))throw err(403,"Administrator role or explicit user-administration permission required.","FORBIDDEN")}
 const SYSTEM_ROLE="system_admin";
 const PRIVILEGED_ROLES=new Set([SYSTEM_ROLE,"super_admin","admin","reviewer","verification_reviewer","ethics_reviewer","appeal_reviewer","finance_officer"]);
 const NON_PLATFORM_ROLES={
@@ -13,6 +13,40 @@ const NON_PLATFORM_ROLES={
  read_only:{scope:"organization",reason:"Use an organization membership role instead."},
  mentor:{scope:"profile",reason:"Mentor eligibility is based on a verified professional profile, not a platform role."}
 };
+
+
+async function requireSystemAdmin(actor){
+ const actorRoles=await allowed(getPool(),actor);
+ if(!actorRoles.includes(SYSTEM_ROLE))throw err(403,"Only a system administrator may manage per-user permissions.","SYSTEM_ADMIN_REQUIRED");
+ return actorRoles;
+}
+export async function listPermissions(actor){
+ await requireSystemAdmin(actor);
+ return (await getPool().query("select permission_code,area,label,description,sensitive,system_only from app_permission order by area,label,permission_code")).rows;
+}
+export async function updateUserPermissions(actor,userId,input,requestId){
+ return withTransaction(async tx=>{
+  const actorRoles=await allowed(tx,actor);
+  if(!actorRoles.includes(SYSTEM_ROLE))throw err(403,"Only a system administrator may manage per-user permissions.","SYSTEM_ADMIN_REQUIRED");
+  if(userId===actor)throw err(403,"You cannot change your own direct permissions.","SELF_PERMISSION_CHANGE");
+  const target=(await tx.query("select id,status from app_user where id=$1 for update",[userId])).rows[0];
+  if(!target)throw err(404,"User not found.","NOT_FOUND");
+  const reason=String(input.reason||"").trim().slice(0,500);
+  if(!reason)throw err(400,"An audit reason is required for permission changes.","AUDIT_REASON_REQUIRED");
+  if(!Array.isArray(input.permissionCodes))throw err(400,"permissionCodes must be an array.","VALIDATION_ERROR");
+  const requested=[...new Set(input.permissionCodes.map(value=>String(value)))];
+  if(requested.length>100)throw err(400,"Too many permissions were submitted.","VALIDATION_ERROR");
+  const catalog=(await tx.query("select permission_code,system_only from app_permission where permission_code=any($1::text[])",[requested])).rows;
+  if(catalog.length!==requested.length)throw err(400,"One or more permission codes are unknown.","INVALID_PERMISSION");
+  if(catalog.some(permission=>permission.system_only))throw err(403,"One or more requested permissions are reserved to system administrators.","SYSTEM_ONLY_PERMISSION");
+  const previous=(await tx.query("select permission_code from app_user_permission where user_id=$1 order by permission_code",[userId])).rows.map(row=>row.permission_code);
+  await tx.query("delete from app_user_permission where user_id=$1",[userId]);
+  for(const code of requested)await tx.query("insert into app_user_permission(user_id,permission_code,assigned_by) values($1,$2,$3)",[userId,code,actor]);
+  await tx.query("update auth_session set revoked_at=now() where user_id=$1 and revoked_at is null",[userId]);
+  await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.user.permissions_updated','app_user',$2,$3,'success',$4)",[actor,userId,requestId,JSON.stringify({previousPermissions:previous,permissions:requested,reason})]);
+  return {id:userId,permissions:requested,sessionRevoked:true};
+ });
+}
 
 export async function logout(userId,sessionId,requestId){
  return withTransaction(async tx=>{
@@ -25,8 +59,8 @@ export async function logout(userId,sessionId,requestId){
 }
 
 export async function listUsers(actor,input={}){
- const db=getPool(); const actorId=typeof actor==="string"?actor:actor?.sub; admin(await allowed(db,actorId)); const q=String(input.q||"").trim(); const status=input.status;
- const sql="select u.id,u.email,u.username,u.status,u.created_at,u.updated_at,coalesce(json_agg(distinct r.role_code) filter(where r.role_code is not null),'[]') roles from app_user u left join app_user_role ur on ur.user_id=u.id left join app_role r on r.id=ur.role_id where ($1='' or lower(u.email) like lower('%'||$1||'%') or lower(u.username) like lower('%'||$1||'%')) and ($2::text is null or u.status=$2) group by u.id order by u.created_at desc limit 200";
+ const db=getPool(); const actorId=typeof actor==="string"?actor:actor?.sub; const actorPermissions=Array.isArray(actor?.permissions)?actor.permissions:[]; admin(await allowed(db,actorId),actorPermissions,"users.view"); const q=String(input.q||"").trim(); const status=input.status;
+ const sql="select u.id,u.email,u.username,u.status,u.created_at,u.updated_at,coalesce(json_agg(distinct r.role_code) filter(where r.role_code is not null),'[]') roles,coalesce((select json_agg(up.permission_code order by up.permission_code) from app_user_permission up where up.user_id=u.id),'[]'::json) permissions from app_user u left join app_user_role ur on ur.user_id=u.id left join app_role r on r.id=ur.role_id where ($1='' or lower(u.email) like lower('%'||$1||'%') or lower(u.username) like lower('%'||$1||'%')) and ($2::text is null or u.status=$2) group by u.id order by u.created_at desc limit 200";
  return (await db.query(sql,[q,status||null])).rows;
 }
 
@@ -42,15 +76,17 @@ export async function listRoles(actor){
 
 export async function updateUser(actor,userId,input,requestId){
  const db=getPool();
+ const actorId=typeof actor==="string"?actor:actor?.sub;
+ const actorPermissions=Array.isArray(actor?.permissions)?actor.permissions:[];
  return withTransaction(async tx=>{
   // Resolve authority from the current database state inside the same transaction as the mutation.
-  const actorRoles=await allowed(tx,actor); admin(actorRoles);
+  const actorRoles=await allowed(tx,actorId); admin(actorRoles,actorPermissions,"users.manage");
   const u=(await tx.query("select id,status from app_user where id=$1 for update",[userId])).rows[0];
   if(!u)throw err(404,"User not found.","NOT_FOUND");
   const status=input.status, roleCode=input.roleCode, removeRoleCode=input.removeRoleCode;
   if(status!==undefined && !["active","suspended","disabled"].includes(status))throw err(400,"Invalid user status.","VALIDATION_ERROR");
-  if(status && userId===actor && status!=="active")throw err(400,"You cannot suspend or disable your own account.","SELF_LOCKOUT");
-  if((roleCode!==undefined||removeRoleCode!==undefined)&&userId===actor)throw err(403,"Administrators cannot change their own roles. Use a separately authorized administrator account.","SELF_ROLE_CHANGE");
+  if(status && userId===actorId && status!=="active")throw err(400,"You cannot suspend or disable your own account.","SELF_LOCKOUT");
+  if((roleCode!==undefined||removeRoleCode!==undefined)&&userId===actorId)throw err(403,"Administrators cannot change their own roles. Use a separately authorized administrator account.","SELF_ROLE_CHANGE");
   const reason=String(input.reason||"").trim().slice(0,500)||null;
   if((status!==undefined||roleCode!==undefined||removeRoleCode!==undefined)&&!reason)throw err(400,"An audit reason is required for account status and role changes.","AUDIT_REASON_REQUIRED");
 
@@ -72,7 +108,7 @@ export async function updateUser(actor,userId,input,requestId){
    if(roleCode===SYSTEM_ROLE){
     await tx.query("select pg_advisory_xact_lock(hashtext('system_admin_role_membership'))");
    }
-   await tx.query("insert into app_user_role(user_id,role_id,assigned_by) values($1,$2,$3) on conflict do nothing",[userId,rr.id,actor]);
+   await tx.query("insert into app_user_role(user_id,role_id,assigned_by) values($1,$2,$3) on conflict do nothing",[userId,rr.id,actorId]);
   }
   if(removeRoleCode!==undefined){
    const rr=(await tx.query("select id from app_role where role_code=$1",[removeRoleCode])).rows[0];
@@ -88,14 +124,14 @@ export async function updateUser(actor,userId,input,requestId){
    await tx.query("update auth_session set revoked_at=now() where user_id=$1 and revoked_at is null",[userId]);
   const newRoles=await allowed(tx,userId);
   await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.user.updated','app_user',$2,$3,'success',$4)",[
-   actor,userId,requestId,JSON.stringify({scope:"platform",previousStatus:u.status,currentStatus:status??u.status,status:status??null,previousRoles:currentRoles,currentRoles:newRoles,roleCode:roleCode??null,removeRoleCode:removeRoleCode??null,reason})
+   actorId,userId,requestId,JSON.stringify({scope:"platform",previousStatus:u.status,currentStatus:status??u.status,status:status??null,previousRoles:currentRoles,currentRoles:newRoles,roleCode:roleCode??null,removeRoleCode:removeRoleCode??null,reason})
   ]);
   return {id:userId,status:status||u.status,roles:newRoles};
  });
 }
 
 export async function revokeSessions(actor,userId,requestId,reasonInput){
- const db=getPool(); const actorRoles=await allowed(db,actor); admin(actorRoles);
+ const db=getPool(); const actorId=typeof actor==="string"?actor:actor?.sub; const actorPermissions=Array.isArray(actor?.permissions)?actor.permissions:[]; const actorRoles=await allowed(db,actorId); admin(actorRoles,actorPermissions,"users.manage");
  const reason=String(reasonInput||"").trim().slice(0,500);
  if(!reason)throw err(400,"An audit reason is required to revoke sessions.","AUDIT_REASON_REQUIRED");
  return withTransaction(async tx=>{
@@ -104,12 +140,12 @@ export async function revokeSessions(actor,userId,requestId,reasonInput){
   const targetRoles=await allowed(tx,userId);
   if(targetRoles.some(r=>PRIVILEGED_ROLES.has(r))&&!actorRoles.includes(SYSTEM_ROLE))throw err(403,"Only a system administrator may revoke sessions for a privileged account.","PRIVILEGED_ACCOUNT_CHANGE");
   const r=await tx.query("update auth_session set revoked_at=now() where user_id=$1 and revoked_at is null",[userId]);
-  await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.sessions.revoked','app_user',$2,$3,'success',$4)",[actor,userId,requestId,JSON.stringify({count:r.rowCount,reason})]);
+  await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.sessions.revoked','app_user',$2,$3,'success',$4)",[actorId,userId,requestId,JSON.stringify({count:r.rowCount,reason})]);
   return {revoked:r.rowCount};
  });
 }
 export async function resetPassword(actor,userId,newPassword,requestId,reasonInput){
- const db=getPool(); const actorRoles=await allowed(db,actor); admin(actorRoles);
+ const db=getPool(); const actorId=typeof actor==="string"?actor:actor?.sub; const actorPermissions=Array.isArray(actor?.permissions)?actor.permissions:[]; const actorRoles=await allowed(db,actorId); admin(actorRoles,actorPermissions,"users.manage");
  if(String(newPassword||"").length<12)throw err(400,"Password must be at least 12 characters.","VALIDATION_ERROR");
  const reason=String(reasonInput||"").trim().slice(0,500);
  if(!reason)throw err(400,"An audit reason is required to reset a password.","AUDIT_REASON_REQUIRED");
@@ -120,7 +156,7 @@ export async function resetPassword(actor,userId,newPassword,requestId,reasonInp
   if(targetRoles.some(r=>PRIVILEGED_ROLES.has(r))&&!actorRoles.includes(SYSTEM_ROLE))throw err(403,"Only a system administrator may reset a privileged account.","PRIVILEGED_ACCOUNT_CHANGE");
   await tx.query("update app_user set password_hash=$1,updated_at=now() where id=$2",[hashPassword(newPassword),userId]);
   await tx.query("update auth_session set revoked_at=now() where user_id=$1 and revoked_at is null",[userId]);
-  await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.password.reset','app_user',$2,$3,'success',$4)",[actor,userId,requestId,JSON.stringify({reason})]);
+  await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.password.reset','app_user',$2,$3,'success',$4)",[actorId,userId,requestId,JSON.stringify({reason})]);
   return {id:userId,sessionsRevoked:true};
  });
 }

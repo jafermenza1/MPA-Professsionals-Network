@@ -1,5 +1,5 @@
 "use client";
-import {FormEvent,useCallback,useEffect,useState} from "react";
+import {FormEvent,useCallback,useEffect,useRef,useState} from "react";
 import {Clock3,HeartHandshake,Languages,RefreshCw,Target} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
@@ -41,8 +41,7 @@ export default function Mentorship(){
  const [showRequestForm,setShowRequestForm]=useState(false);
  const [query,setQuery]=useState("");
  const [topic,setTopic]=useState("");
- const [submittedQuery,setSubmittedQuery]=useState("");
- const [submittedTopic,setSubmittedTopic]=useState("");
+ const lastSearch=useRef({query:"",topic:""});
  const [goals,setGoals]=useState("");
  const [topics,setTopics]=useState("");
  const [languages,setLanguages]=useState("");
@@ -50,16 +49,19 @@ export default function Mentorship(){
  const [submitting,setSubmitting]=useState(false);
  const [created,setCreated]=useState<RequestResult|null>(null);
 
- const load=useCallback(async()=>{
+ const load=useCallback(async(queryValue?:string,topicValue?:string)=>{
+   const q=queryValue===undefined?lastSearch.current.query:queryValue;
+   const t=topicValue===undefined?lastSearch.current.topic:topicValue;
+   lastSearch.current={query:q,topic:t};
    setLoading(true);setError("");
-   const params=new URLSearchParams();if(submittedQuery.trim())params.set("q",submittedQuery.trim());if(submittedTopic.trim())params.set("topic",submittedTopic.trim());
+   const params=new URLSearchParams();if(q.trim())params.set("q",q.trim());if(t.trim())params.set("topic",t.trim());
    try{
      const result=await api<Mentor[]>(`/api/v1/mentors${params.toString()?"?"+params.toString():""}`,{},token||undefined);
      setMentors(Array.isArray(result)?result:[]);
    }catch(e){setMentors([]);setError(e instanceof ApiError?e.message:"We couldn't load mentor profiles right now.");}
    finally{setLoading(false);}
- },[submittedQuery,submittedTopic,token]);
- useEffect(()=>{void load()},[load]);
+ },[token]);
+ useEffect(()=>{void load("","")},[load]);
  const loadOwnMentorProfile=useCallback(async()=>{if(!token){setOwnMentorProfile(null);return;}try{const rawProfile=await api<any>("/api/v1/me/mentor-profile",{},token);const profile=(rawProfile&&typeof rawProfile==="object"&&"data" in rawProfile&&rawProfile.data===null)?null:rawProfile as MentorProfile|null;setOwnMentorProfile(profile);if(profile)setMentorForm({headline:profile.headline||"",bio:profile.bio||"",expertise:(profile.expertise||[]).join(", "),languages:(profile.languages||[]).join(", "),mentoringModes:(profile.mentoring_modes||["remote"]).join(", "),visibility:profile.visibility||"members",maxActiveMentees:String(profile.max_active_mentees||3)});}catch(e){setError(e instanceof ApiError?e.message:"We couldn't load your mentor profile.");}},[token]);
  useEffect(()=>{void loadOwnMentorProfile()},[loadOwnMentorProfile]);
  async function saveMentorProfile(e:FormEvent){e.preventDefault();if(!token)return;setMentorSaving(true);setError("");setNotice("");try{const body={headline:mentorForm.headline.trim(),bio:mentorForm.bio.trim(),expertise:mentorForm.expertise.split(",").map(x=>x.trim()).filter(Boolean),languages:mentorForm.languages.split(",").map(x=>x.trim()).filter(Boolean),mentoringModes:mentorForm.mentoringModes.split(",").map(x=>x.trim()).filter(Boolean),visibility:mentorForm.visibility,maxActiveMentees:Number(mentorForm.maxActiveMentees)};const saved=await api<MentorProfile>(ownMentorProfile?"/api/v1/mentor-profiles/"+encodeURIComponent(ownMentorProfile.id):"/api/v1/me/mentor-profile",{method:ownMentorProfile?"PATCH":"POST",body:JSON.stringify(body)},token);setOwnMentorProfile(saved);setNotice("Mentor profile saved. The server enforces membership and professional verification requirements.");await load();}catch(e){setError(e instanceof ApiError?e.message:"Mentor profile could not be saved. Active membership and a verified professional claim are required.");}finally{setMentorSaving(false);}}
@@ -99,11 +101,11 @@ export default function Mentorship(){
  return <div>
    <div className="eyebrow">Mentorship match</div><h1 className="h1">One goal. One good match.</h1>
    <p className="muted">Discover current mentor profiles and submit a goal-based request. We show only details returned by the platform; availability and matching are not guessed or guaranteed.</p>
-   <Card><form onSubmit={e=>{e.preventDefault();setSubmittedQuery(query);setSubmittedTopic(topic)}} className="row" style={{gap:10,flexWrap:"wrap"}}>
+   <Card><form onSubmit={e=>{e.preventDefault();void load(query,topic)}} className="row" style={{gap:10,flexWrap:"wrap"}}>
      <label style={{flex:"1 1 220px"}}>Search expertise<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Mentor headline or bio"/></label>
      <label style={{flex:"1 1 180px"}}>Topic<input value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Expertise topic"/></label>
      <button className="btn btn-primary" type="submit" disabled={loading}>{loading?"Searching…":"Search mentors"}</button>
-     <button className="btn btn-ghost" type="button" onClick={()=>{setQuery("");setTopic("");setSubmittedQuery("");setSubmittedTopic("")}}>Clear</button>
+     <button className="btn btn-ghost" type="button" onClick={()=>{setQuery("");setTopic("");void load("","")}}>Clear</button>
    </form></Card>
    <div style={{marginTop:14}}><button className="btn btn-ghost" type="button" onClick={()=>{setSelected(null);setShowRequestForm(true);setCreated(null);setNotice("");setError("");}}>Request mentorship without a preferred mentor</button><p className="muted">You can submit your goal now; the platform will not invent a match or confirm a mentor until one is eligible and accepts.</p></div>
    {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" type="button" onClick={()=>void load()}>Retry</button></div>}

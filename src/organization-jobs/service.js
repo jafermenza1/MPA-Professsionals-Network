@@ -87,7 +87,7 @@ export async function submitOrganizationVerification(orgId,userId,requestId){
 
 export async function listOrganizationVerificationQueue(reviewerId){
  const db=getPool();
- const allowed=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin') limit 1",[reviewerId])).rows[0];
+ const allowed=(await db.query("select 1 where exists (select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin')) or exists (select 1 from app_user_permission up where up.user_id=$1 and up.permission_code='organizations.review')",[reviewerId])).rows[0];
  if(!allowed) throw error(403,"Organization verification reviewer role required.","FORBIDDEN");
  return (await db.query(`select o.id organization_id,o.legal_name,o.display_name,o.organization_type,o.verification_status,
    c.id case_id,c.status case_status,c.submitted_by,c.submitted_at,c.decision_reason,
@@ -98,7 +98,7 @@ export async function listOrganizationVerificationQueue(reviewerId){
 }
 export async function reviewOrganization(orgId,reviewerId,input,requestId){
  return withTransaction(async db=>{
-  const allowed=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin') limit 1",[reviewerId])).rows[0];
+  const allowed=(await db.query("select 1 where exists (select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin')) or exists (select 1 from app_user_permission up where up.user_id=$1 and up.permission_code='organizations.review')",[reviewerId])).rows[0];
   if(!allowed) throw error(403,"Organization verification reviewer role required.","FORBIDDEN");
   if(!["verified","rejected","correction_required"].includes(input.decision)) throw error(400,"Invalid organization verification decision.","VALIDATION_ERROR");
   const c=(await db.query("select id,status,submitted_by from organization_verification_case where organization_id=$1 for update",[orgId])).rows[0];
@@ -622,7 +622,7 @@ export async function createInterviewScorecard(jobId,userId,input,requestId){
   await jobRole(db,jobId,userId,["hiring_manager","recruiter"]);
   if(!input.title) throw error(400,"title is required.","VALIDATION_ERROR");
   if(!Array.isArray(input.criteria)||!input.criteria.length) throw error(400,"At least one scorecard criterion is required.","VALIDATION_ERROR");
-  const row=(await db.query("insert into job_interview_scorecard(job_id,title,instructions,criteria) values($1,$2,$3,$4) returning *",[jobId,input.title,input.instructions||null,input.criteria])).rows[0];
+  const row=(await db.query("insert into job_interview_scorecard(job_id,title,instructions,criteria) values($1,$2,$3,$4) returning *",[jobId,input.title,input.instructions||null,JSON.stringify(input.criteria)])).rows[0];
   await audit(db,userId,"job.scorecard_created","job_interview_scorecard",row.id,requestId,{});
   return row;
  });
@@ -724,7 +724,7 @@ export async function jobDashboard(jobId,userId){
  const db=getPool(); await jobRole(db,jobId,userId,["hiring_manager","recruiter","interviewer","observer"]);
  const job=(await db.query("select j.*,o.display_name organization_name from job j join organization o on o.id=j.organization_id where j.id=$1",[jobId])).rows[0];
  const funnel=(await db.query("select status,count(*)::int count from job_application where job_id=$1 group by status order by status",[jobId])).rows;
- const interviews=(await db.query("select status,count(*)::int count from job_interview ji join job_application a on a.id=ji.application_id where a.job_id=$1 group by status",[jobId])).rows;
+ const interviews=(await db.query("select ji.status,count(*)::int count from job_interview ji join job_application a on a.id=ji.application_id where a.job_id=$1 group by ji.status",[jobId])).rows;
  const avg=(await db.query("select round(avg(extract(epoch from (coalesce(hired_at,updated_at)-submitted_at))/86400)::numeric,2) avg_days from job_application where job_id=$1 and submitted_at is not null",[jobId])).rows[0];
  const outcome=(await db.query("select * from job_outcome where job_id=$1 order by recorded_at desc",[jobId])).rows;
  return {job,funnel,interviews,averageApplicationAgeDays:avg?.avg_days||null,outcomes:outcome};

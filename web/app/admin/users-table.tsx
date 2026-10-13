@@ -12,6 +12,7 @@ export type ManagedUser = {
   username: string;
   status: string;
   roles: string[];
+  permissions?: string[];
 };
 
 export type ManagedRole = {
@@ -24,9 +25,12 @@ export type ManagedRole = {
   assignmentNote?: string | null;
 };
 
+export type ManagedPermission = { permission_code: string; area: string; label: string; description: string; sensitive: boolean; system_only: boolean };
+
 type Props = {
   users: ManagedUser[];
   roleCatalog: ManagedRole[];
+  permissionCatalog: ManagedPermission[];
   currentRoles: string[];
   currentUserId: string;
   token: string;
@@ -37,6 +41,7 @@ type Props = {
 export function UsersTable({
   users,
   roleCatalog,
+  permissionCatalog,
   currentRoles,
   currentUserId,
   token,
@@ -45,6 +50,7 @@ export function UsersTable({
 }: Props) {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [permissionDrafts, setPermissionDrafts] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState("");
   const isSystemAdmin = currentRoles.includes("system_admin");
   const choices = roleCatalog.filter(
@@ -108,6 +114,22 @@ export function UsersTable({
                 <th scope="row" className={styles.account}>
                   <b>{user.email}</b>
                   <small>{user.username}</small>
+                  {isSystemAdmin && permissionCatalog.length > 0 && <details style={{ marginTop: 8, maxWidth: 330 }}>
+                    <summary>Detailed permission matrix ({(permissionDrafts[user.id] ?? user.permissions ?? []).length} assigned)</summary>
+                    <div className={styles.roleList} style={{ marginTop: 8 }}>
+                      {permissionCatalog.map(permission => {
+                        const selected = permissionDrafts[user.id] ?? user.permissions ?? [];
+                        return <label key={permission.permission_code} style={{ display: "flex", gap: 7, alignItems: "flex-start", whiteSpace: "normal", fontWeight: 400 }}>
+                          <input type="checkbox" checked={selected.includes(permission.permission_code)} disabled={!manageable || permission.system_only || busy === "permissions:" + user.id}
+                            onChange={event => setPermissionDrafts(current => ({ ...current, [user.id]: event.target.checked ? [...selected, permission.permission_code] : selected.filter(code => code !== permission.permission_code) }))} />
+                          <span><b>{permission.area} · {permission.label}{permission.system_only ? " · System-only" : ""}</b><small>{permission.description}{permission.sensitive ? " Sensitive capability; changes are audited." : ""}</small></span>
+                        </label>;
+                      })}
+                      <button className="btn btn-primary" type="button" disabled={!manageable || !reason.trim() || busy === "permissions:" + user.id}
+                        onClick={() => void updateUser(user, "permissions:" + user.id, () => api("/api/v1/admin/users/" + user.id + "/permissions", { method: "PATCH", body: JSON.stringify({ permissionCodes: permissionDrafts[user.id] ?? user.permissions ?? [], reason }) }, token))}>Save permission matrix</button>
+                      <small className={styles.muted}>Changing direct permissions revokes the user's active sessions. Organization and job scope, ownership, privacy, reviewer independence, and workflow validation still apply.</small>
+                    </div>
+                  </details>}
                 </th>
                 <td>
                   <Badge tone={user.status === "active" ? "green" : "gold"}>

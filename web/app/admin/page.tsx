@@ -37,6 +37,7 @@ type Guide = {
   active: boolean;
 };
 type CurrentUser = { user_id: string; roles: string[] };
+type ManagedPermission = { permission_code: string; area: string; label: string; description: string; sensitive: boolean; system_only: boolean };
 type Inquiry = {
   id: string;
   public_reference: string;
@@ -52,24 +53,114 @@ type Inquiry = {
   preferred_mentor_name?: string;
 };
 
-            Account records are retained for audit and history. Suspend or
-            disable access rather than deleting an account. Each action needs a
-            reason in that account’s row. Invitations are not implemented yet.
+
+export default function AdminPage() {
   const hydrated = useUiStore((s) => s.hydrated);
-  const [tab, setTab] = useState<"cases" | "guides" | "inquiries" | "users">(
-            Showing up to 200 matching accounts. “Remove role” changes a
-            platform role only; organization/job roles remain in their scoped
-            workspaces.
-  const [cases, setCases] = useState<Demo[]>([]),
-          <UsersTable
-            users={users}
-            roleCatalog={roleCatalog}
-            currentRoles={roles}
-            currentUserId={currentUserId}
-            token={token}
-            onChanged={load}
-            onError={setError}
-          />
+  const token = useUiStore((s) => s.token);
+  const hydrateToken = useUiStore((s) => s.hydrateToken);
+  const [tab, setTab] = useState<"cases" | "guides" | "inquiries" | "users">("cases");
+  const [cases, setCases] = useState<Demo[]>([]);
+  const [guides, setGuides] = useState<Guide[]>([]);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [roleCatalog, setRoleCatalog] = useState<ManagedRole[]>([]);
+  const [permissionCatalog, setPermissionCatalog] = useState<ManagedPermission[]>([]);
+  const [roles, setRoles] = useState<string[]>([]);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [scopeResolved, setScopeResolved] = useState(false);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [canReviewInquiries, setCanReviewInquiries] = useState(false);
+  const [error, setError] = useState("");
+  const [sectionErrors, setSectionErrors] = useState<string[]>([]);
+  const [userQuery, setUserQuery] = useState("");
+  const [userStatus, setUserStatus] = useState("");
+  const [editing, setEditing] = useState<Demo | null>(null);
+
+  useEffect(() => { hydrateToken(); }, [hydrateToken]);
+
+  async function load() {
+    if (!token) return;
+    setError("");
+    const errors: string[] = [];
+    const getList = async <T,>(path: string, key?: string): Promise<T[]> => {
+      const payload = await api<any>(path, {}, token);
+      const rows = Array.isArray(payload) ? payload : (key && Array.isArray(payload?.[key]) ? payload[key] : Array.isArray(payload?.items) ? payload.items : []);
+      return rows as T[];
+    };
+    const settle = async <T,>(name: string, request: Promise<T>, apply: (value: T) => void) => {
+      try { apply(await request); } catch (cause) {
+        errors.push(name);
+        if (cause instanceof Error && !error) setError(cause.message);
+      }
+    };
+    const tasks: Promise<void>[] = [
+      settle("demo cases", getList<Demo>("/api/v1/experience/demo-cases", "cases"), setCases),
+      settle("user guides", getList<Guide>("/api/v1/experience/guides", "guides"), setGuides),
+      settle("opportunity inquiries", getList<Inquiry>("/api/v1/opportunity-inquiries", "inquiries"), setInquiries),
+    ];
+    if (userQuery.trim() || userStatus) {
+      const params = new URLSearchParams();
+      if (userQuery.trim()) params.set("q", userQuery.trim());
+      if (userStatus) params.set("status", userStatus);
+      params.set("limit", "200");
+      tasks.push(settle("users", getList<ManagedUser>("/api/v1/admin/users?" + params.toString(), "users"), setUsers));
+    } else {
+      tasks.push(settle("users", getList<ManagedUser>("/api/v1/admin/users?limit=200", "users"), setUsers));
+    }
+    try {
+      const catalog = await api<any>("/api/v1/admin/roles", {}, token);
+      const normalizedCatalog = Array.isArray(catalog) ? catalog : (Array.isArray(catalog?.roles) ? catalog.roles : []);
+      setRoleCatalog(normalizedCatalog as ManagedRole[]);
+      let claims: any = {};
+      try { const segment = token.split(".")[1]; if (segment) claims = JSON.parse(atob(segment.replace(/-/g, "+").replace(/_/g, "/"))); } catch { /* Display hints only; server authorization remains authoritative. */ }
+      const currentRoles = Array.isArray(claims?.roles) ? claims.roles.map((role: any) => typeof role === "string" ? role : role?.role_code).filter(Boolean) : [];
+      setRoles(currentRoles);
+      setCurrentUserId(String(claims?.sub ?? claims?.user_id ?? ""));
+      setIsPlatformAdmin(currentRoles.includes("system_admin") || currentRoles.includes("admin") || currentRoles.includes("platform_admin"));
+      setCanReviewInquiries(currentRoles.includes("supporting_staff") || currentRoles.includes("system_admin") || currentRoles.includes("admin") || currentRoles.includes("platform_admin"));
+      if (currentRoles.includes("system_admin")) {
+        try { const permissions = await api<ManagedPermission[]>("/api/v1/admin/permissions", {}, token); setPermissionCatalog(Array.isArray(permissions) ? permissions : []); }
+        catch { errors.push("permission catalog"); }
+      } else setPermissionCatalog([]);
+      setScopeResolved(true);
+    } catch (cause) {
+      setScopeResolved(true);
+      if (cause instanceof Error) setError(cause.message);
+    }
+    await Promise.all(tasks);
+    setSectionErrors(errors);
+  }
+
+  useEffect(() => {
+    if (hydrated && token) void load();
+  }, [hydrated, token]);
+
+  async function patchCase(item: Demo, active: boolean) {
+    try {
+      await api("/api/v1/admin/experience/demo-cases/" + item.id, { method: "PATCH", body: JSON.stringify({ active }) }, token);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update the demo case."); }
+  }
+  async function patchGuide(item: Guide, active: boolean) {
+    try {
+      await api("/api/v1/admin/experience/guides/" + item.id, { method: "PATCH", body: JSON.stringify({ active }) }, token);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update the guide."); }
+  }
+  async function decideInquiry(item: Inquiry, status: string, considerNonMember: boolean) {
+    try {
+      await api("/api/v1/opportunity-inquiries/" + item.id, { method: "PATCH", body: JSON.stringify({ status, consider_non_member: considerNonMember }) }, token);
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update the inquiry."); }
+  }
+  function launch(item: Demo) {
+    if (!item.active) return;
+    if (typeof window !== "undefined") window.location.assign(item.start_path || "/");
+  }
+
+  if (!hydrated) return <div className="auth-page"><Card><p className="muted">Loading administrator workspace…</p></Card></div>;
+  if (!token)
+
     return (
       <div className="auth-page">
         <Card>
@@ -375,6 +466,7 @@ type Inquiry = {
           <UsersTable
             users={users}
             roleCatalog={roleCatalog}
+            permissionCatalog={permissionCatalog}
             currentRoles={roles}
             currentUserId={currentUserId}
             token={token}
