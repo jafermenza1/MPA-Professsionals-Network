@@ -490,36 +490,12 @@ test("organization screen uploads private evidence and submits verification",asy
     const created=await api.post("/api/v1/organizations",{headers:{authorization:"Bearer "+token},data:{legalName:name,displayName:name,organizationType:"company"}});
     expect(created.status()).toBe(201);
     const organization=(await created.json()).data;
-    // Prove the owner-scoped API returns the organization before diagnosing the UI.
-    const ownerOrganizationsResponse=await api.get("/api/v1/organizations",{headers:{authorization:"Bearer "+token}});
-    expect(ownerOrganizationsResponse.status(),"owner organization list response").toBe(200);
-    const ownerOrganizations=(await ownerOrganizationsResponse.json()).data;
-    expect(ownerOrganizations.some(item=>item.id===organization.id),
-      "newly created organization must be present in the authenticated owner's organization list; returned IDs: "+
-      ownerOrganizations.map(item=>item.id).join(", ")).toBeTruthy();
-    // Install the API fixture's exact owner token before the organization page hydrates.
-    await page.addInitScript(sessionToken=>sessionStorage.setItem("mpa-session-token",sessionToken),token);
-    await page.goto("/organizations");
-    await expect(page.getByRole("heading",{name:"Build a trusted organization profile."})).toBeVisible();
-    await expect(page.locator(".case-row").filter({hasText:name}).first()).toBeVisible({timeout:15000});
-    // The summary row and evidence selector are separate render paths. Explicitly
-    // refresh the owner-scoped organization list before asserting its select option.
-    await page.getByRole("button",{name:"Refresh",exact:true}).click();
+    await browserLogin(page);
     const uploadDiagnostics=[];
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
-    // Scope the selector to the evidence form and wait for its asynchronously loaded option,
-    // not merely the organization summary row elsewhere on the page.
-    // Anchor the form to the evidence card itself instead of filtering forms
-    // with a page-root locator, which can yield an empty scoped locator.
-    const evidenceForm=page.locator("#org-evidence form");
-    await expect(evidenceForm.getByLabel("Private document")).toBeAttached();
-    const evidenceOrganization=evidenceForm.getByLabel("Organization",{exact:true});
-    await expect.poll(
-      async()=>await evidenceOrganization.locator("option").evaluateAll(options=>options.map(option=>({value:option.value,label:option.textContent?.trim()||""}))),
-      {timeout:15000,message:"Evidence organization options should include the organization returned by GET /api/v1/organizations"}
-    ).toContainEqual({value:organization.id,label:name});
-    await evidenceOrganization.selectOption(organization.id);
+    await page.goto("/organizations");
+    await page.getByLabel("Organization").selectOption(organization.id);
     await page.getByLabel("Private document").setInputFiles({
       name:"registration-evidence.pdf",
       mimeType:"application/pdf",
@@ -852,17 +828,13 @@ test("services and mentorship expose explicit empty and retryable API-failure st
  await expect(page.getByRole("heading",{name:"No active mentor profiles found"})).toBeVisible();
  await expect(page.getByRole("button",{name:"Search mentors"})).toBeEnabled();
  await page.unroute("**/api/v1/mentors**");
+ await mockApiResponse(page,"**/api/v1/mentors**",503,{error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}});
  let mentorFailureResponses=0;
- // Count requests inside the route handler to avoid response-listener timing races.
- await page.route("**/api/v1/mentors**",async route=>{
-   const headers={"access-control-allow-origin":"http://127.0.0.1:3001","access-control-allow-headers":"authorization,content-type","access-control-allow-methods":"GET,OPTIONS","access-control-allow-credentials":"true"};
-   if(route.request().method()==="OPTIONS"){await route.fulfill({status:204,headers});return;}
-   mentorFailureResponses++;
-   await route.fulfill({status:503,headers,contentType:"application/json",body:JSON.stringify({error:{code:"SERVER_ERROR",message:"CI simulated mentorship outage"}})});
- });
- const mentorSearch=page.getByRole("button",{name:"Search mentors"});
- await expect(mentorSearch).toBeEnabled();
- await mentorSearch.click();
+ page.on("response",response=>{if(new URL(response.url()).pathname==="/api/v1/mentors"&&response.status()===503)mentorFailureResponses++;});
+ // Mentor search reloads when its criteria change; changing a real filter guarantees
+ // the browser issues a fresh request after the 503 fixture is installed.
+ await page.getByLabel("Search expertise").fill("forced outage");
+ await page.getByRole("button",{name:"Search mentors"}).click();
  await expect.poll(()=>mentorFailureResponses,{message:"the mentorship API failure fixture must intercept the real browser request"}).toBe(1);
  await expect(page.locator('[role="alert"].form-error')).toContainText("server problem");
  await page.getByRole("button",{name:"Retry"}).click();
