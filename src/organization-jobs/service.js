@@ -98,7 +98,7 @@ export async function listOrganizationVerificationQueue(reviewerId){
 }
 export async function reviewOrganization(orgId,reviewerId,input,requestId){
  return withTransaction(async db=>{
-  const allowed=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin') limit 1",[reviewerId])).rows[0];
+  const allowed=(await db.query("select 1 where exists (select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('reviewer','system_admin')) or exists (select 1 from app_user_permission up where up.user_id=$1 and up.permission_code='organizations.review')",[reviewerId])).rows[0];
   if(!allowed) throw error(403,"Organization verification reviewer role required.","FORBIDDEN");
   if(!["verified","rejected","correction_required"].includes(input.decision)) throw error(400,"Invalid organization verification decision.","VALIDATION_ERROR");
   const c=(await db.query("select id,status,submitted_by from organization_verification_case where organization_id=$1 for update",[orgId])).rows[0];
