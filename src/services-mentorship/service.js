@@ -288,7 +288,7 @@ export async function reviewServiceDelivery(deliveryId,userId,input,requestIdHea
 
 export async function listServicePaymentsForReview(reviewerId){
  const db=getPool();
- const allowed=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('finance_officer','system_admin') limit 1",[reviewerId])).rows[0];
+ const allowed=(await db.query("select 1 where exists (select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=reviewerId and r.role_code in ('finance_officer','system_admin')) or exists (select 1 from app_user_permission up where up.user_id=reviewerId and up.permission_code='finance.manage')",[reviewerId])).rows[0];
  if(!allowed) throw error(403,"Finance reviewer role required.","FORBIDDEN");
  return (await db.query(`select sp.id,sp.request_id,sp.payment_transaction_id,sp.payer_user_id,sp.provider_user_id,sp.amount,sp.currency,sp.channel,sp.status,sp.created_at,
   pt.status transaction_status,pt.idempotency_key,pt.purpose_reference,
@@ -300,7 +300,7 @@ export async function listServicePaymentsForReview(reviewerId){
 }
 export async function verifyServicePayment(servicePaymentId,verifierId,input,requestIdHeader){
  return withTransaction(async db=>{
-  const allowed=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code in ('finance_officer','system_admin') limit 1",[verifierId])).rows[0];
+  const allowed=(await db.query("select 1 where exists (select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=verifierId and r.role_code in ('finance_officer','system_admin')) or exists (select 1 from app_user_permission up where up.user_id=verifierId and up.permission_code='finance.manage')",[verifierId])).rows[0];
   if(!allowed) throw error(403,"Finance reviewer role required.","FORBIDDEN");
   const row=(await db.query(`select sp.*,pt.status transaction_status,pt.channel transaction_channel,pt.source,sp.payer_user_id,sp.provider_user_id
    from service_payment sp join payment_transaction pt on pt.id=sp.payment_transaction_id where sp.id=$1 for update of sp,pt`,[servicePaymentId])).rows[0];
