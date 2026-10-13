@@ -498,7 +498,8 @@ test("organization screen uploads private evidence and submits verification",asy
     const uploadDiagnostics=[];
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
-    await page.goto("/organizations");
+    // Keep the already-hydrated organizations page; a redundant navigation here raced the organizations fetch and left the select without the newly-created option.
+    await expect(page.locator(".case-row").filter({hasText:name}).first()).toBeVisible({timeout:15000});
     await page.getByLabel("Organization",{exact:true}).selectOption(organization.id);
     await page.getByLabel("Private document").setInputFiles({
       name:"registration-evidence.pdf",
