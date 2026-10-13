@@ -364,7 +364,7 @@ test("ATS workspace loads the authorized organization's persisted candidate pipe
   await page.getByLabel("Recruiting job",{exact:true}).selectOption(fixture.jobId);
   await page.getByLabel("Job team member user ID",{exact:true}).fill(teamFixture.user.id);
   await page.getByRole("button",{name:"Add team member"}).click();
-  await expect(page.getByText(teamFixture.user.id,{exact:true})).toBeVisible();
+  await expect(page.getByText(teamFixture.user.displayName||teamFixture.user.email,{exact:true})).toBeVisible();
   await expect(page.getByText(candidate.displayName,{exact:true})).toBeVisible();
   const candidateRow=()=>page.locator(".case-row").filter({hasText:applicationId});
   await expect(candidateRow().getByText("submitted",{exact:true})).toBeVisible();
@@ -491,6 +491,11 @@ test("organization screen uploads private evidence and submits verification",asy
     expect(created.status()).toBe(201);
     const organization=(await created.json()).data;
     await browserLogin(page);
+    // Rehydrate the page from the exact API fixture identity before loading organization-scoped UI data.
+    await page.evaluate((sessionToken)=>sessionStorage.setItem("mpa-session-token",sessionToken),token);
+    await page.reload();
+    await expect(page.getByRole("heading",{name:"Build a trusted organization profile."})).toBeVisible();
+    await expect(page.getByText(name,{exact:true})).toBeVisible({timeout:15000});
     const uploadDiagnostics=[];
     page.on("requestfailed",request=>{if(request.url().includes("/api/v1/files/")||request.url().includes("verification-evidence"))uploadDiagnostics.push("request failed "+request.method()+" "+request.url()+" "+(request.failure()?.errorText||""));});
     page.on("response",response=>{if((response.url().includes("/api/v1/files/")||response.url().includes("verification-evidence"))&&response.status()>=400)void response.text().then(body=>uploadDiagnostics.push("HTTP "+response.status()+" "+response.url()+" "+body.slice(0,500)));});
