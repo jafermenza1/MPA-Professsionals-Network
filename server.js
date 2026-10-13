@@ -67,11 +67,17 @@ function optionalIdentity(req){
   if(!req.headers.authorization?.startsWith("Bearer ")) return null;
   try { return verifyToken(req.headers.authorization.slice(7),config.jwtSecret); } catch { return null; }
 }
-const ROLE_PERMISSION={finance_officer:"finance.manage",reviewer:"members.manage",verification_reviewer:"verification.manage",ethics_reviewer:"verification.manage",appeal_reviewer:"verification.manage",organization_admin:"organizations.manage",recruiter:"jobs.manage",project_manager:"jobs.manage",mentor:"mentorship.manage",supporting_staff:"reviews.view",admin:"users.manage"};
+const ROLE_PERMISSION={finance_officer:"finance.manage",verification_reviewer:"verification.manage",ethics_reviewer:"verification.manage",appeal_reviewer:"verification.manage",organization_admin:"organizations.manage",recruiter:"jobs.manage",project_manager:"jobs.manage",mentor:"mentorship.manage",supporting_staff:"reviews.view",admin:"users.manage"};
 function anyRole(identity,allowed){
   const roles=Array.isArray(identity.roles)?identity.roles:[];
   const permissions=Array.isArray(identity.permissions)?identity.permissions:[];
   if(!allowed.some(role=>roles.includes(role)||(ROLE_PERMISSION[role]&&permissions.includes(ROLE_PERMISSION[role])))) throw Object.assign(new Error("Forbidden."),{statusCode:403,code:"FORBIDDEN"});
+  return identity;
+}
+function anyRoleOrPermission(identity,allowed,permissionCodes=[]){
+  const roles=Array.isArray(identity.roles)?identity.roles:[];
+  const permissions=Array.isArray(identity.permissions)?identity.permissions:[];
+  if(!allowed.some(role=>roles.includes(role)||(ROLE_PERMISSION[role]&&permissions.includes(ROLE_PERMISSION[role])))&&!permissions.some(permission=>permissionCodes.includes(permission))) throw Object.assign(new Error("Forbidden."),{statusCode:403,code:"FORBIDDEN"});
   return identity;
 }
 function ok(res,data,requestId,status=200){ return json(res,status,{data},requestId); }
@@ -153,7 +159,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/organizations/") && parts[4]==="users") return ok(res,await organizationJobs.updateOrganizationUser(parts[3],identity.sub,parts[5],await body(req),requestId),requestId);
     if(req.method==="GET" && parts.length===5 && p.startsWith("api/v1/organizations/") && parts[4]==="users") return ok(res,await organizationJobs.listOrganizationUsers(parts[3],identity.sub),requestId);
     if(req.method==="GET" && p==="api/v1/review/organizations") return ok(res,await organizationJobs.listOrganizationVerificationQueue(identity.sub),requestId);
-    if(req.method==="POST" && p==="api/v1/review/organizations") { anyRole(identity,["reviewer","system_admin"]); const b=await body(req); return ok(res,await organizationJobs.reviewOrganization(b.organizationId,identity.sub,b,requestId),requestId); }
+    if(req.method==="POST" && p==="api/v1/review/organizations") { anyRoleOrPermission(identity,["reviewer","system_admin"],["organizations.review"]); const b=await body(req); return ok(res,await organizationJobs.reviewOrganization(b.organizationId,identity.sub,b,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/organization-verification-requirements") return ok(res,await organizationJobs.listOrganizationVerificationRequirements(identity.sub),requestId);
     if(req.method==="POST" && p==="api/v1/admin/organization-verification-requirements") return ok(res,await organizationJobs.createOrganizationVerificationRequirement(identity.sub,await body(req),requestId),requestId,201);
     if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/admin/organization-verification-requirements/")) return ok(res,await organizationJobs.updateOrganizationVerificationRequirement(parts[4],identity.sub,await body(req),requestId),requestId);
@@ -238,7 +244,7 @@ const server=http.createServer(async (req,res)=>{
       requireRole(identity,"member"); return ok(res,await membership.createApplication(identity.sub,await body(req),requestId),requestId,201);
     }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/membership/applications/") && parts[5]==="review") {
-      anyRole(identity,["reviewer","finance_officer","system_admin"]); return ok(res,await membership.reviewApplication(parts[4],identity.sub,await body(req),requestId),requestId);
+      anyRoleOrPermission(identity,["reviewer","finance_officer","system_admin"],["members.manage"]); return ok(res,await membership.reviewApplication(parts[4],identity.sub,await body(req),requestId),requestId);
     }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/membership/applications/") && parts[5]==="correction") {
       requireRole(identity,"member"); return ok(res,await membership.respondCorrection(parts[4],identity.sub,await body(req),requestId),requestId);
@@ -250,13 +256,13 @@ const server=http.createServer(async (req,res)=>{
       requireRole(identity,"member"); const b=await body(req); return ok(res,await membership.createManualPayment(parts[4],identity.sub,b,requestId),requestId,201);
     }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/membership/applications/") && parts[5]==="activate") {
-      anyRole(identity,["reviewer","finance_officer","system_admin"]); return ok(res,await membership.activateApplication(parts[4],identity.sub,requestId),requestId);
+      anyRoleOrPermission(identity,["reviewer","finance_officer","system_admin"],["members.manage"]); return ok(res,await membership.activateApplication(parts[4],identity.sub,requestId),requestId);
     }
     if(req.method==="POST" && p==="api/v1/membership/renew") {
       requireRole(identity,"member"); const b=await body(req); return ok(res,await membership.renew(identity.sub,b.productCode,requestId),requestId,201);
     }
     if(req.method==="POST" && parts.length===5 && parts[0]==="api" && parts[1]==="v1" && parts[2]==="payments" && parts[4]==="verify") {
-      anyRole(identity,["reviewer","finance_officer","system_admin"]); return ok(res,await membership.verifyPayment(parts[3],identity.sub,await body(req),requestId),requestId);
+      anyRoleOrPermission(identity,["reviewer","finance_officer","system_admin"],["finance.manage"]); return ok(res,await membership.verifyPayment(parts[3],identity.sub,await body(req),requestId),requestId);
     }
     if(req.method==="GET" && p==="api/v1/review/membership/applications") {
       const roles=Array.isArray(identity.roles)?identity.roles:[]; const permissions=Array.isArray(identity.permissions)?identity.permissions:[];
