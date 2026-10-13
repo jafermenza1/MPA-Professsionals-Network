@@ -2,7 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: false,
+  fullyParallel: true,
+  workers: process.env.CI ? 3 : undefined,
   retries: 0,
   reporter: "list",
   timeout: 60000,
