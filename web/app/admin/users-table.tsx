@@ -44,7 +44,7 @@ export function UsersTable({
   onError,
 }: Props) {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
-  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [reasons, setReasons] = useState<Record<string, string>>({});\n  const [permissionDrafts, setPermissionDrafts] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState("");
   const isSystemAdmin = currentRoles.includes("system_admin");
   const choices = roleCatalog.filter(
