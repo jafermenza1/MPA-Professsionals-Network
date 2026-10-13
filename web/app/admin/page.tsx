@@ -92,9 +92,9 @@ export default function AdminPage() {
       }
     };
     const tasks: Promise<void>[] = [
-      settle("demo cases", getList<Demo>("/api/v1/admin/experience/demo-cases", "cases"), setCases),
-      settle("user guides", getList<Guide>("/api/v1/admin/experience/guides", "guides"), setGuides),
-      settle("opportunity inquiries", getList<Inquiry>("/api/v1/admin/opportunity-inquiries", "inquiries"), setInquiries),
+      settle("demo cases", getList<Demo>("/api/v1/experience/demo-cases", "cases"), setCases),
+      settle("user guides", getList<Guide>("/api/v1/experience/guides", "guides"), setGuides),
+      settle("opportunity inquiries", getList<Inquiry>("/api/v1/opportunity-inquiries", "inquiries"), setInquiries),
     ];
     if (userQuery.trim() || userStatus) {
       const params = new URLSearchParams();
@@ -105,15 +105,17 @@ export default function AdminPage() {
     } else {
       tasks.push(settle("users", getList<ManagedUser>("/api/v1/admin/users?limit=200", "users"), setUsers));
     }
-    tasks.push(settle("role catalog", getList<ManagedRole>("/api/v1/admin/roles", "roles"), setRoleCatalog));
     try {
-      const me = await api<any>("/api/v1/auth/me", {}, token);
-      const current = me?.user ?? me?.currentUser ?? me;
-      const currentRoles = Array.isArray(current?.roles) ? current.roles.map((role: any) => typeof role === "string" ? role : role?.role_code).filter(Boolean) : [];
+      const catalog = await api<any>("/api/v1/admin/roles", {}, token);
+      const normalizedCatalog = Array.isArray(catalog) ? catalog : (Array.isArray(catalog?.roles) ? catalog.roles : []);
+      setRoleCatalog(normalizedCatalog as ManagedRole[]);
+      let claims: any = {};
+      try { const segment = token.split(".")[1]; if (segment) claims = JSON.parse(atob(segment.replace(/-/g, "+").replace(/_/g, "/"))); } catch { /* Display hints only; server authorization remains authoritative. */ }
+      const currentRoles = Array.isArray(claims?.roles) ? claims.roles.map((role: any) => typeof role === "string" ? role : role?.role_code).filter(Boolean) : [];
       setRoles(currentRoles);
-      setCurrentUserId(String(current?.id ?? current?.user_id ?? ""));
-      setIsPlatformAdmin(currentRoles.includes("system_admin") || currentRoles.includes("platform_admin"));
-      setCanReviewInquiries(currentRoles.includes("supporting_staff") || currentRoles.includes("system_admin") || currentRoles.includes("platform_admin"));
+      setCurrentUserId(String(claims?.sub ?? claims?.user_id ?? ""));
+      setIsPlatformAdmin(currentRoles.includes("system_admin") || currentRoles.includes("admin") || currentRoles.includes("platform_admin"));
+      setCanReviewInquiries(currentRoles.includes("supporting_staff") || currentRoles.includes("system_admin") || currentRoles.includes("admin") || currentRoles.includes("platform_admin"));
       setScopeResolved(true);
     } catch (cause) {
       setScopeResolved(true);
@@ -141,7 +143,7 @@ export default function AdminPage() {
   }
   async function decideInquiry(item: Inquiry, status: string, considerNonMember: boolean) {
     try {
-      await api("/api/v1/admin/opportunity-inquiries/" + item.id, { method: "PATCH", body: JSON.stringify({ status, consider_non_member: considerNonMember }) }, token);
+      await api("/api/v1/opportunity-inquiries/" + item.id, { method: "PATCH", body: JSON.stringify({ status, consider_non_member: considerNonMember }) }, token);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update the inquiry."); }
   }
