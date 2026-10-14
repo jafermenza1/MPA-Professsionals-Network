@@ -505,6 +505,7 @@ export async function history(userId){
 export async function listApplicationsForReview(){
   const db=getPool();
   const r=await db.query(`select a.id,a.user_id,a.application_type,a.status,a.submitted_at,a.created_at,a.updated_at,a.data_snapshot,a.fee_snapshot,p.product_code,p.name,
+      (select mr.end_date from membership_record mr where mr.id=a.previous_membership_id) previous_membership_end_date,
       (select jsonb_build_object('id',pt.id,'status',pt.status,'amount',pt.amount,'currency',pt.currency,'channel',pt.channel,'created_at',pt.created_at)
        from membership_application_payment ap join payment_transaction pt on pt.id=ap.payment_transaction_id
        where ap.application_id=a.id order by pt.created_at desc limit 1) payment,
