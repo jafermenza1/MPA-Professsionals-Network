@@ -142,8 +142,92 @@ export async function listMyApplications(userId){
 
 export async function listMembershipProducts(){
   const db=getPool();
-  return (await db.query(`select product_code,name,description,billing_model,price,currency,duration_days,renewal_required,benefits,grace_period_days,eligibility,effective_from,effective_to
-    from membership_product where active=true and (effective_from is null or effective_from<=current_date) and (effective_to is null or effective_to>=current_date) order by price asc,name asc`)).rows;
+  return (await db.query(`select p.product_code,coalesce(r.plan_name,p.name) name,
+    coalesce(r.plan_description,p.description) description,
+    coalesce(r.billing_model,p.billing_model) billing_model,
+    (coalesce(r.base_amount,p.price)+coalesce(r.tax_amount,0)+coalesce(r.service_fee,0)) price,
+    coalesce(r.currency,p.currency) currency,coalesce(r.duration_days,p.duration_days) duration_days,
+    coalesce(r.renewal_required,p.renewal_required) renewal_required,
+    coalesce(r.benefits,p.benefits) benefits,coalesce(r.grace_period_days,p.grace_period_days) grace_period_days,
+    coalesce(r.eligibility,p.eligibility) eligibility,coalesce(r.effective_from,p.effective_from) effective_from,
+    coalesce(r.effective_to,p.effective_to) effective_to,r.version fee_rule_version
+    from membership_product p
+    left join lateral (select fr.* from membership_fee_rule fr where fr.membership_product_id=p.id
+      and fr.effective_from<=current_date and (fr.effective_to is null or fr.effective_to>=current_date)
+      order by fr.version desc limit 1) r on true
+    where p.active=true and (p.effective_from is null or p.effective_from<=current_date)
+      and (p.effective_to is null or p.effective_to>=current_date)
+    order by (coalesce(r.base_amount,p.price)+coalesce(r.tax_amount,0)+coalesce(r.service_fee,0)) asc,coalesce(r.plan_name,p.name) asc`)).rows;
+}
+
+export async function listMembershipProductsForAdmin(){
+  const db=getPool();
+  return (await db.query(`select p.*,coalesce(jsonb_agg(jsonb_build_object(
+      'id',r.id,'version',r.version,'baseAmount',r.base_amount,'currency',r.currency,
+      'taxAmount',r.tax_amount,'serviceFee',r.service_fee,'effectiveFrom',r.effective_from,
+      'effectiveTo',r.effective_to,'billingModel',r.billing_model,'durationDays',r.duration_days,
+      'renewalRequired',r.renewal_required,'gracePeriodDays',r.grace_period_days,
+      'benefits',r.benefits,'eligibility',r.eligibility,'createdAt',r.created_at
+    ) order by r.version desc) filter(where r.id is not null),'[]'::jsonb) fee_rule_history
+    from membership_product p left join membership_fee_rule r on r.membership_product_id=p.id
+    group by p.id order by p.created_at desc`)).rows;
+}
+
+export async function saveMembershipProduct(actorId,productCode,input,requestId){
+  return withTransaction(async db=>{
+    const code=String(productCode||input.productCode||"").trim().toUpperCase();
+    const name=String(input.name||"").trim();
+    const billingModel=String(input.billingModel||"recurring");
+    const currency=String(input.currency||"ETB").trim().toUpperCase();
+    const amount=Number(input.amount);
+    const effectiveFrom=String(input.effectiveFrom||new Date().toISOString().slice(0,10)).slice(0,10);
+    const durationDays=input.durationDays===null||input.durationDays===""||input.durationDays===undefined?null:Number(input.durationDays);
+    const gracePeriodDays=input.gracePeriodDays===undefined?0:Number(input.gracePeriodDays);
+    const renewalRequired=billingModel==="lifetime"?false:Boolean(input.renewalRequired);
+    if(!/^[A-Z0-9][A-Z0-9_-]{1,39}$/.test(code)) throw httpError(400,"Plan code must use 2–40 letters, numbers, dashes or underscores.","VALIDATION_ERROR");
+    if(!name||name.length>120) throw httpError(400,"Enter a plan name up to 120 characters.","VALIDATION_ERROR");
+    if(!["recurring","one_time","lifetime"].includes(billingModel)) throw httpError(400,"Choose a supported billing model.","VALIDATION_ERROR");
+    if(!Number.isFinite(amount)||amount<0||!/^([A-Z]{3})$/.test(currency)) throw httpError(400,"Enter a valid non-negative fee and three-letter currency.","VALIDATION_ERROR");
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)||Number.isNaN(Date.parse(effectiveFrom))) throw httpError(400,"Choose a valid effective date.","VALIDATION_ERROR");
+    if(billingModel==="lifetime"&&durationDays!==null) throw httpError(400,"Lifetime plans cannot have an expiry duration.","VALIDATION_ERROR");
+    if(billingModel!=="lifetime"&&(!Number.isInteger(durationDays)||durationDays<1||durationDays>3650)) throw httpError(400,"Choose a validity duration from 1 to 3,650 days for non-lifetime plans.","VALIDATION_ERROR");
+    if(!Number.isInteger(gracePeriodDays)||gracePeriodDays<0||gracePeriodDays>365) throw httpError(400,"Grace period must be between 0 and 365 days.","VALIDATION_ERROR");
+    const benefits=Array.isArray(input.benefits)?input.benefits.map(x=>String(x).trim()).filter(Boolean).slice(0,40):[];
+    const eligibility=input.eligibility&&typeof input.eligibility==="object"&&!Array.isArray(input.eligibility)?input.eligibility:{};
+    const existing=(await db.query("select * from membership_product where product_code=$1 for update",[code])).rows[0];
+    if(!existing&&productCode) throw httpError(404,"Membership plan not found.","NOT_FOUND");
+    if(existing&&String(input.expectedVersion||"")&&String(input.expectedVersion)!==String((await db.query("select coalesce(max(version),0) version from membership_fee_rule where membership_product_id=$1",[existing.id])).rows[0].version)) {
+      throw httpError(409,"This plan changed while you were editing it. Refresh the plan history before saving again.","PLAN_VERSION_CONFLICT");
+    }
+    let product;
+    if(existing){
+      product=(await db.query(`update membership_product set name=$1,description=$2,billing_model=$3,price=$4,currency=$5,
+        duration_days=$6,renewal_required=$7,grace_period_days=$8,benefits=$9::jsonb,eligibility=$10::jsonb,
+        active=$11,updated_at=now() where id=$12 returning *`,[
+        name,String(input.description||"").trim()||null,billingModel,amount,currency,durationDays,renewalRequired,
+        gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility),input.active!==false,existing.id
+      ])).rows[0];
+    }else{
+      product=(await db.query(`insert into membership_product(product_code,name,description,billing_model,price,currency,duration_days,renewal_required,grace_period_days,benefits,eligibility,active,effective_from)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13) returning *`,[
+        code,name,String(input.description||"").trim()||null,billingModel,amount,currency,durationDays,renewalRequired,
+        gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility),input.active!==false,effectiveFrom
+      ])).rows[0];
+    }
+    const nextVersion=Number((await db.query("select coalesce(max(version),0)+1 version from membership_fee_rule where membership_product_id=$1",[product.id])).rows[0].version);
+    // Close the previously open rule at the day before the new rule takes effect.
+    await db.query("update membership_fee_rule set effective_to=($1::date-1) where membership_product_id=$2 and effective_from<$1::date and (effective_to is null or effective_to >= $1::date)",[effectiveFrom,product.id]);
+    const rule=(await db.query(`insert into membership_fee_rule(membership_product_id,version,base_amount,currency,billing_period,tax_amount,service_fee,eligibility_rules,effective_from,created_by,plan_name,plan_description,billing_model,duration_days,renewal_required,grace_period_days,benefits,eligibility)
+      values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb) returning *`,[
+      product.id,nextVersion,amount,currency,billingModel,Number(input.taxAmount||0),Number(input.serviceFee||0),
+      JSON.stringify(eligibility),effectiveFrom,actorId,name,String(input.description||"").trim()||null,billingModel,
+      durationDays,renewalRequired,gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility)
+    ])).rows[0];
+    await audit(db,actorId,existing?"membership.plan_version_created":"membership.plan_created","membership_product",product.id,requestId,{
+      productCode:code,version:nextVersion,effectiveFrom,active:product.active
+    });
+    return {product,feeRule:rule};
+  });
 }
 
 async function product(db,code){
@@ -177,10 +261,12 @@ export async function createApplication(userId,input,requestId){
       ? Number(activeFeeRule.base_amount)+Number(activeFeeRule.tax_amount||0)+Number(activeFeeRule.service_fee||0)
       : amountFromProduct(prod);
     const fee={
-      productCode:prod.product_code,productName:prod.name,amount:feeAmount,
-      currency:activeFeeRule?.currency||prod.currency,billingModel:prod.billing_model,
-      durationDays:prod.duration_days,feeRuleId:activeFeeRule?.id||null,
-      feeRuleVersion:activeFeeRule?.version??null,
+      productCode:prod.product_code,productName:activeFeeRule?.plan_name||prod.name,amount:feeAmount,
+      currency:activeFeeRule?.currency||prod.currency,billingModel:activeFeeRule?.billing_model||prod.billing_model,
+      durationDays:activeFeeRule?.duration_days??prod.duration_days,renewalRequired:activeFeeRule?.renewal_required??prod.renewal_required,
+      gracePeriodDays:activeFeeRule?.grace_period_days??prod.grace_period_days,
+      benefits:activeFeeRule?.benefits||prod.benefits,eligibility:activeFeeRule?.eligibility||prod.eligibility,
+      feeRuleId:activeFeeRule?.id||null,feeRuleVersion:activeFeeRule?.version??null,
       feeBreakdown:activeFeeRule?{baseAmount:Number(activeFeeRule.base_amount),taxAmount:Number(activeFeeRule.tax_amount||0),serviceFee:Number(activeFeeRule.service_fee||0)}:null,
       effectiveFrom:activeFeeRule?.effective_from||prod.effective_from||null,
       effectiveTo:activeFeeRule?.effective_to||prod.effective_to||null,
