@@ -101,7 +101,7 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
     await tx.query("insert into notification_preference(user_id) values($1) on conflict do nothing",[userId]);
     const token=randomBytes(32).toString("base64url"),tokenHash=createHash("sha256").update(token).digest("hex");
     await tx.query("insert into member_invitation(user_id,token_hash,expires_at,created_by,import_id) values($1,$2,now()+interval '7 days',$3,$4)",[userId,tokenHash,identity.sub,importId]);
-    await tx.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,'mpa_member_invitation',$2)",[row.email,JSON.stringify({displayName:row.full_name,invitationToken:token,expiresInDays:7,importBatchId:importId})]);
+    await tx.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,'mpa_member_invitation',$2)",[row.email,JSON.stringify({displayName:row.full_name,invitationToken:token,claimPath:"/member-invitation/claim?token="+token,expiresInDays:7,importBatchId:importId})]);
    }
    const dup=(await tx.query("select id from membership_record where lower(membership_number)=lower($1) and status<>'merged' for update",[row.membership_number])).rows[0];
    if(dup){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',matched_user_id=$2,diagnostics=$3 where id=$1",[row.id,userId,JSON.stringify(["Membership number already exists; no membership record was changed."])]);continue;}
