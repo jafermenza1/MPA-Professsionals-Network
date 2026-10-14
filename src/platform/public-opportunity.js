@@ -93,12 +93,16 @@ async function visibleInquiries(db,userId,filters={}){
  }
  if(filters.type){ params.push(filters.type); clauses.push("i.inquiry_type=$"+params.length); }
  if(filters.status){ params.push(filters.status); clauses.push("i.status=$"+params.length); }
- const sql="select i.id,i.public_reference,i.inquiry_type,i.status,i.consider_non_member,i.contact_name,i.contact_email,i.contact_phone,i.intent,i.details,i.created_at,i.updated_at,j.title job_title,j.organization_id,p.display_name preferred_mentor_name from public_opportunity_inquiry i left join job j on j.id=i.job_id left join person p on p.user_id=i.preferred_mentor_user_id where "+clauses.join(" and ")+" order by i.created_at desc limit 200";
+ const sql="select i.id,i.public_reference,i.inquiry_type,i.status,i.consider_non_member,i.contact_name,i.contact_email,i.contact_phone,i.intent,i.details,i.employer_sharing_consent,i.employer_sharing_scope,i.employer_sharing_fields,i.employer_sharing_consented_at,i.employer_sharing_revoked_at,i.created_at,i.updated_at,j.title job_title,j.organization_id,p.display_name preferred_mentor_name from public_opportunity_inquiry i left join job j on j.id=i.job_id left join person p on p.user_id=i.preferred_mentor_user_id where "+clauses.join(" and ")+" order by i.created_at desc limit 200";
  return (await db.query(sql,params)).rows;
 }
 
 export async function listInquiries(userId,filters={}){
  const db=getPool(); return visibleInquiries(db,userId,filters);
+}
+export async function listShareableOrganizations(userId){
+ const db=getPool(); await requireSupportDesk(db,userId);
+ return (await db.query("select id,display_name,legal_name from organization where verification_status='verified' and public_visible=true order by coalesce(display_name,legal_name),id")).rows;
 }
 
 export async function decideInquiry(inquiryId,userId,input,requestId){
