@@ -1,5 +1,6 @@
 import { getPool, withTransaction } from "../platform/db.js";
 import { nextTrackingReference } from "../platform/tracking-reference.js";
+import { assertOrganizationCapability } from "../platform/identity-policy.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
 const ORG_WRITE_ROLES=["owner","administrator","recruiter"];
@@ -8,9 +9,12 @@ const CANDIDATE_ROLES=["owner","administrator","recruiter"];
 async function audit(db,actor,action,type,id,requestId,metadata={}){ await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]); }
 
 async function orgRole(db,orgId,userId,roles=ORG_WRITE_ROLES){
- const r=(await db.query("select role_code from organization_membership where organization_id=$1 and user_id=$2 and status='active'",[orgId,userId])).rows[0];
- if(!r||!roles.includes(r.role_code)) throw error(403,"You do not have the required organization permission.","FORBIDDEN");
- return r.role_code;
+ try {
+  const membership=await assertOrganizationCapability(db,orgId,userId,roles);
+  return membership.role_code;
+ } catch {
+  throw error(403,"You do not have permission to manage this organization's workspace or the requested resource.","FORBIDDEN");
+ }
 }
 async function verifiedOrg(db,orgId){
  const r=(await db.query("select * from organization where id=$1 and verification_status='verified'",[orgId])).rows[0];
