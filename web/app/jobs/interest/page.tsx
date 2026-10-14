@@ -40,7 +40,7 @@ export default function JobInterestPage() {
   async function refreshSharingHistory(item: Inquiry) {
     setSharingHistoryError("");
     try {
-      const rows = await api<ShareHistory[]>("/api/v1/public/opportunity-inquiries/" + encodeURIComponent(item.public_reference) + "/sharing-history?token=" + encodeURIComponent(item.continuationToken));
+      const rows = await api<ShareHistory[]>("/api/v1/public/opportunity-inquiries/" + encodeURIComponent(item.public_reference) + "/sharing-history", { method: "POST", body: JSON.stringify({ token: item.continuationToken }) });
       setSharingHistory(Array.isArray(rows) ? rows : []);
     } catch (e) {
       setSharingHistoryError(e instanceof ApiError ? e.message : "Sharing history could not be loaded. Retry without resubmitting your request.");
