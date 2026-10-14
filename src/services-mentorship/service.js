@@ -114,16 +114,16 @@ export async function listServices(viewerId=null,filters={}){
 
 export async function getServiceListing(listingId,viewerId=null){
   const db=getPool();
-  const row=(await db.query("select s.*,p.display_name provider_name from service_listing s join person p on p.user_id=s.provider_user_id where s.id=$1 and s.status='published' and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
+  const row=(await db.query("select s.*,p.display_name provider_name from service_listing s join person p on p.user_id=s.provider_user_id where s.id=$1 and s.status='published' and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
   if(!row) throw error(404,"Service listing not found or not visible.","NOT_FOUND");
   return row;
 }
 
 export async function requestService(listingId,requesterId,input,requestId){
   return withTransaction(async db=>{
-    if(!(await activeMember(db,requesterId))) throw error(403,"An active membership is required to request a service.","MEMBERSHIP_REQUIRED");
     const listing=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
-    if(!listing||listing.status!=="published") throw error(404,"Service listing is not available.","NOT_FOUND");
+    if(!listing||listing.status!=="published"||listing.visibility==="private"||!(await activeMember(db,listing.provider_user_id))) throw error(404,"Service listing is not available.","NOT_FOUND");
+    if(listing.visibility!=="public"&&!(await activeMember(db,requesterId))) throw error(403,"An active membership is required to request a member-only service.","MEMBERSHIP_REQUIRED");
     if(listing.provider_user_id===requesterId) throw error(409,"You cannot request your own service.","SELF_REQUEST");
     if(listing.max_active_requests){
       const count=(await db.query("select count(*)::int count from service_request where service_listing_id=$1 and status in ('requested','accepted','in_progress')",[listingId])).rows[0].count;
