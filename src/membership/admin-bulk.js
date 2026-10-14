@@ -93,6 +93,9 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
    if(row.match_status==="conflict"||row.match_status==="ignored"||row.match_status==="applied"){if(row.match_status==="conflict")conflictCount++;continue;}
    const product=productMap.get(row.product_code);
    if(!product){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',diagnostics=$2 where id=$1",[row.id,JSON.stringify(["Membership product is no longer active or does not exist."])]);continue;}
+   await tx.query("select pg_advisory_xact_lock(hashtext($1))",["membership:"+String(row.membership_number).toLowerCase()]);
+   const dup=(await tx.query("select id from membership_record where lower(membership_number)=lower($1) and status<>'merged' for update",[row.membership_number])).rows[0];
+   if(dup){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',diagnostics=$2 where id=$1",[row.id,JSON.stringify(["Membership number already exists; no membership record was changed."])]);continue;}
    let userId=row.matched_user_id,accountCreatedForRow=false;
    if(!userId){
      const existing=(await tx.query("select u.id from app_user u where lower(u.email)=lower($1) or ($2::text is not null and exists(select 1 from person p where p.user_id=u.id and p.phone=$2)) for update",[row.email,row.phone])).rows[0];
@@ -107,9 +110,6 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
     await tx.query("insert into member_invitation(user_id,token_hash,expires_at,created_by,import_id) values($1,$2,now()+interval '7 days',$3,$4)",[userId,tokenHash,identity.sub,importId]);
     await tx.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,'mpa_member_invitation',$2)",[row.email,JSON.stringify({displayName:row.full_name,invitationToken:token,claimPath:"/member-invitation/claim?token="+token,expiresInDays:7,importBatchId:importId})]);
    }
-   await tx.query("select pg_advisory_xact_lock(hashtext($1))",["membership:"+String(row.membership_number).toLowerCase()]);
-   const dup=(await tx.query("select id from membership_record where lower(membership_number)=lower($1) and status<>'merged' for update",[row.membership_number])).rows[0];
-   if(dup){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',matched_user_id=$2,diagnostics=$3 where id=$1",[row.id,userId,JSON.stringify(["Membership number already exists; no membership record was changed."])]);continue;}
    const member=(await tx.query("insert into membership_record(user_id,legacy_member_id,membership_product_id,membership_number,status,start_date,end_date,source,source_import_id,legacy_payload) values($1,$2,$3,$4,$5,$6,$7,'legacy_import',$8,$9) returning id",[userId,row.legacy_member_id,product.id,row.membership_number,row.status,row.start_date,row.end_date,importId,row.raw_payload])).rows[0];
    await tx.query("insert into membership_event(membership_id,event_type,effective_at,actor_user_id,source,details) values($1,'legacy_member_imported',now(),$2,'legacy_import',$3)",[member.id,identity.sub,JSON.stringify({importId,rowNumber:row.row_number,approvalConfirmed:row.raw_payload?.approved_membership==="yes",approvalReference:row.raw_payload?.approval_reference||null,reason:why,paymentImported:false})]);
    await tx.query("update membership_import_row set match_status='applied',matched_user_id=$2,matched_membership_id=$3,match_reason=coalesce(match_reason,'account created from approved-member import'),diagnostics='[]'::jsonb where id=$1",[row.id,userId,member.id]);
