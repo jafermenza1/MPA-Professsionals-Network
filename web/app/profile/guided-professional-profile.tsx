@@ -7,7 +7,7 @@ import { useUiStore } from "../../lib/store";
 type RefItem={id:string;dataset_key:string;name:string;domain:string;code:string;label:string;description?:string|null;sort_order:number};
 type ProfileRef={relation_type:string;reference_item_id:string;custom_value:string|null;code:string;label:string};
 type Profile={references?:ProfileRef[];languages?:string[]};
-type AccountProfile={nationality?:string|null};
+type AccountProfile={first_name?:string;middle_name?:string|null;last_name?:string;display_name?:string;phone?:string|null;date_of_birth?:string|null;sex?:string|null;nationality?:string|null;headline?:string|null;bio?:string|null;visibility?:string|null};
 type Education={id?:string;education_level_item_id:string;education_level_custom?:string|null;institution_item_id:string|null;institution_name_custom?:string|null;field_of_study_item_id:string|null;field_of_study_custom?:string|null;qualification_item_id:string|null;qualification_custom?:string|null;graduation_year:number|string|null;education_level_label?:string;institution_label?:string;field_of_study_label?:string;qualification_label?:string};
 type EducationDraft={educationLevelItemId:string;educationLevelCustom:string;institutionItemId:string;institutionCustom:string;fieldOfStudyItemId:string;fieldOfStudyCustom:string;qualificationItemId:string;qualificationCustom:string;graduationYear:string};
 type Portfolio={id:string;title:string;item_type:string;description:string|null;external_url:string|null;evidence_file_id:string|null;evidence_label:string|null;visibility:string;evidence_original_name?:string|null};
@@ -29,17 +29,17 @@ export default function GuidedProfessionalProfile(){
  const refresh=useCallback(async()=>{
   if(!token)return;setLoading(true);setError("");
   try{
-   const [r,p,e,items,account]=await Promise.all([
+   const [r,p,e,items,accountInfo]=await Promise.all([
     api<RefItem[]>("/api/v1/professional-reference-data",{},token),
     api<Profile>("/api/v1/me/talent-profile",{},token),
     api<Education[]>("/api/v1/me/education",{},token),
     api<Portfolio[]>("/api/v1/me/portfolio",{},token),
     api<AccountProfile>("/api/v1/me",{},token)
    ]);
-   setRefs(r);setEducationDrafts(e.map(asDraft));setPortfolio(items);
+   setRefs(r);setEducationDrafts(e.map(asDraft));setPortfolio(items);setAccount(accountInfo);
    const next:Record<string,string>={},custom:Record<string,string>={};
    for(const type of ["nationality","occupation","industry","experience_range"]){const item=selected(p.references,type);next[type]=item?.reference_item_id||"";custom[type]=item?.custom_value||"";}
-   if(!next.nationality&&account.nationality){const match=r.find(item=>item.dataset_key===groups.nationality&&item.label.toLowerCase()===String(account.nationality).toLowerCase());if(match)next.nationality=match.id;else{const other=r.find(item=>item.dataset_key===groups.nationality&&item.code==="OTHER");if(other){next.nationality=other.id;custom.nationality=account.nationality;}}}
+   if(!next.nationality&&accountInfo.nationality){const match=r.find(item=>item.dataset_key===groups.nationality&&item.label.toLowerCase()===String(accountInfo.nationality).toLowerCase());if(match)next.nationality=match.id;else{const other=r.find(item=>item.dataset_key===groups.nationality&&item.code==="OTHER");if(other){next.nationality=other.id;custom.nationality=accountInfo.nationality;}}}
    setSelectedRefs(next);setCustomRefs(custom);
    const langLabels=Array.isArray(p.languages)?p.languages:[];
    const selectedLanguageIds=r.filter(x=>x.dataset_key===groups.language&&langLabels.includes(x.label)&&x.code!=="OTHER").map(x=>x.id);
@@ -67,7 +67,7 @@ export default function GuidedProfessionalProfile(){
    const saved=await api<Profile>("/api/v1/me/talent-profile",{method:"PATCH",body:JSON.stringify({references,languages})},token);
    setProfile(saved);
    const nationalityId=selectedRefs.nationality;
-   if(nationalityId){const item=byId.get(nationalityId);const value=item?.code==="OTHER"?customRefs.nationality:item?.label;if(value)await api("/api/v1/me/profile",{method:"PATCH",body:JSON.stringify({nationality:value})},token);}
+   if(nationalityId){const item=byId.get(nationalityId);const value=item?.code==="OTHER"?customRefs.nationality:item?.label;if(value)await api("/api/v1/me/profile",{method:"PATCH",body:JSON.stringify({firstName:account.first_name,middleName:account.middle_name,lastName:account.last_name,displayName:account.display_name,phone:account.phone,dateOfBirth:account.date_of_birth,sex:account.sex,nationality:value})},token);}
    setNotice("Reference choices saved. Your selected classifications are linked to the current published reference data.");
   }catch(e){setError(e instanceof ApiError?e.message:e instanceof Error?e.message:"Reference choices could not be saved.");}
   finally{setSaving(false);}
