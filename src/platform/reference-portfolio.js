@@ -51,11 +51,11 @@ export async function listReferenceDatasets(identity){
 }
 export async function listReferenceItems(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {dataset,version,published,draft}=await datasetContext(db,key);
- return {dataset:{dataset_key:dataset.dataset_key,name:dataset.name,domain:dataset.domain},version:{id:version.id,version_label:version.version_label,status:version.status,hasDraft:Boolean(draft),publishedVersionLabel:published?.version_label||null},items:(await db.query("select id,code,label,description,sort_order,active,metadata from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows};
+ return {dataset:{dataset_key:dataset.dataset_key,name:dataset.name,domain:dataset.domain},version:{id:version.id,version_label:version.version_label,status:version.status,hasDraft:Boolean(draft),publishedVersionLabel:published?.version_label||null},items:(await db.query("select id,code,label,description,aliases,sort_order,active,metadata from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows};
 }
 export async function saveReferenceItem(identity,key,input,itemId=null){
  assertReferenceAdmin(identity);
- const code=clean(input?.code,80).toUpperCase(),label=clean(input?.label,180),description=clean(input?.description,2000);
+ const code=clean(input?.code,80).toUpperCase(),label=clean(input?.label,180),description=clean(input?.description,2000),aliases=Array.from(new Set((Array.isArray(input?.aliases)?input.aliases:String(input?.aliases||"").split(/[;,|]/)).map(value=>clean(value,180).toLocaleLowerCase()).filter(value=>value&&value!==label.toLocaleLowerCase())));
  if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||label.length<1) throw fail(400,"Enter a code using letters/numbers and a clear label.","REFERENCE_ITEM_INVALID");
  return withTransaction(async db=>{
   const {dataset,version,published}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
@@ -70,10 +70,10 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
    }
    const existingCode=(await db.query("select code from reference_item where id=$1 and dataset_version_id=$2",[targetId,version.id])).rows[0]?.code;
    if(existingCode&&existingCode!==code)throw fail(409,"Reference codes are permanent identifiers. Create a new code and retire the old value instead of renaming its code.","REFERENCE_CODE_IMMUTABLE");
-   row=(await db.query("update reference_item set label=$1,description=$2,sort_order=$3,active=$4,updated_by=$5,updated_at=now() where id=$6 and dataset_version_id=$7 returning id,code,label,description,sort_order,active",[label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub,targetId,version.id])).rows[0];
+   row=(await db.query("update reference_item set label=$1,description=$2,aliases=$3,sort_order=$4,active=$5,updated_by=$6,updated_at=now() where id=$7 and dataset_version_id=$8 returning id,code,label,description,aliases,sort_order,active",[label,description||null,JSON.stringify(aliases),Number(input.sortOrder)||0,input.active!==false,identity.sub,targetId,version.id])).rows[0];
    if(!row) throw fail(404,"Reference item was not found in this dataset version.","NOT_FOUND");
   }else{
-   row=(await db.query("insert into reference_item(dataset_version_id,code,label,description,sort_order,active,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$7) returning id,code,label,description,sort_order,active",[version.id,code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub])).rows[0];
+   row=(await db.query("insert into reference_item(dataset_version_id,code,label,description,aliases,sort_order,active,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$8,$8) returning id,code,label,description,aliases,sort_order,active",[version.id,code,label,description||null,JSON.stringify(aliases),Number(input.sortOrder)||0,input.active!==false,identity.sub])).rows[0];
   }
   await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,'reference_item',$3,$4,'success',$5)",[identity.sub,itemId?"reference.item_updated":"reference.item_created",row.id,input.requestId||null,JSON.stringify({datasetKey:key,code,label,active:row.active})]);
   return row;
