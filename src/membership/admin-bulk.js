@@ -34,7 +34,7 @@ function cleanRow(row){
  if(!startDate)errors.push("start_date must use YYYY-MM-DD.");
  if(x.end_date&&!endDate)errors.push("end_date must use YYYY-MM-DD or be blank.");
  if(startDate&&endDate&&endDate<startDate)errors.push("end_date cannot be before start_date.");
- if(approved!=="yes"&&approved!=="no")errors.push("approved_membership must be yes or no.");
+ if(approved!=="yes"&&approved!=="no")errors.push("approved_membership must be yes or no.");\n if(approved!=="yes")errors.push("This import is only for members already approved by MPA; confirm yes or resolve the record separately.");
  if(status==="active"&&approved!=="yes")errors.push("Active membership requires explicit confirmation that MPA already approved the member.");
  if(status==="active"&&endDate&&endDate<new Date().toISOString().slice(0,10))errors.push("An expired end date cannot be imported as active.");
  return {...row,email,phone:normalizePhone(x.phone),fullName,membershipNumber,productCode,status,startDate,endDate,approved:approved==="yes",legacyMemberId:String(x.legacy_member_id||"").trim()||null,approvalReference:String(x.approval_reference||"").trim()||null,notes:String(x.notes||"").trim()||null,errors};
@@ -49,13 +49,13 @@ export async function previewMemberImport(identity,{filename="mpa-members.csv",c
  if(Buffer.byteLength(csv)>5*1024*1024)throw problem(413,"Member import CSV must be 5 MiB or smaller.","IMPORT_TOO_LARGE");
  const rows=csvRows(csv).map(cleanRow),db=getPool();
  const productCodes=[...new Set(rows.map(r=>r.productCode).filter(Boolean))];
- const products=(await db.query("select product_code from membership_product where product_code=any($1::text[])",[productCodes])).rows.map(r=>r.product_code);
- const seenEmail=new Set(),seenMembership=new Set();
+ const products=(await db.query("select product_code from membership_product where active=true and product_code=any($1::text[])",[productCodes])).rows.map(r=>r.product_code);
+ const seenEmail=new Set(),seenMembership=new Set(),seenLegacyId=new Set();
  for(const row of rows){
   if(!products.includes(row.productCode))row.errors.push("Unknown or inactive membership product code.");
   const ek=row.email.toLowerCase(),mk=row.membershipNumber.toLowerCase();
   if(seenEmail.has(ek))row.errors.push("Email is repeated in this file.");seenEmail.add(ek);
-  if(seenMembership.has(mk))row.errors.push("Membership number is repeated in this file.");seenMembership.add(mk);
+  if(seenMembership.has(mk))row.errors.push("Membership number is repeated in this file.");seenMembership.add(mk);\n  if(row.legacyMemberId&&seenLegacyId.has(row.legacyMemberId.toLowerCase()))row.errors.push("Legacy member ID is repeated in this file.");if(row.legacyMemberId)seenLegacyId.add(row.legacyMemberId.toLowerCase());
   const matches=await db.query(`select u.id user_id,p.display_name,p.phone from app_user u left join person p on p.user_id=u.id where lower(u.email)=lower($1) or ($2::text is not null and p.phone=$2) order by u.created_at limit 3`,[row.email,row.phone]);
   if(matches.rows.length>1)row.errors.push("Email/phone matches multiple accounts; resolve this identity before importing.");
   else if(matches.rows.length===1)row.match={userId:matches.rows[0].user_id,displayName:matches.rows[0].display_name,matchReason:"existing email or phone"};
@@ -93,7 +93,7 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
     const existing=(await tx.query("select id from app_user where lower(email)=lower($1) for update",[row.email])).rows[0];
     if(existing){userId=existing.id;await tx.query("update membership_import_row set match_status='conflict',matched_user_id=$2,match_reason='Account appeared after preview; re-review required',diagnostics=$3 where id=$1",[row.id,userId,JSON.stringify(["An account with this email was created after preview. Re-run the preview to avoid duplicates."])]);conflictCount++;continue;}
     const names=String(row.full_name).trim().split(/\s+/),firstName=names.shift(),lastName=names.pop(),middleName=names.join(" ")||null;
-    const rawPassword=randomBytes(48).toString("base64url"),user=(await tx.query("insert into app_user(username,email,password_hash,status) values($1,$2,$3,'active') returning id,email",[row.email,row.email,hashPassword(rawPassword)])).rows[0];userId=user.id;createdAccounts++;
+    const rawPassword=randomBytes(48).toString("base64url"),user=(await tx.query("insert into app_user(username,email,password_hash,status) values($1,$2,$3,'active') returning id,email",[row.email,row.email,hashPassword(rawPassword)])).rows[0];userId=user.id;createdAccounts++;accountCreatedForRow=true;
     const person=(await tx.query("insert into person(user_id,first_name,middle_name,last_name,display_name,phone) values($1,$2,$3,$4,$5,$6) returning id",[userId,firstName,middleName,lastName,row.full_name,row.phone])).rows[0];
     await tx.query("insert into professional_profile(person_id,completion_percent) values($1,20)",[person.id]);
     await tx.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code='member' on conflict do nothing",[userId]);
@@ -107,7 +107,7 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
    const member=(await tx.query("insert into membership_record(user_id,legacy_member_id,membership_product_id,membership_number,status,start_date,end_date,source,source_import_id,legacy_payload) values($1,$2,$3,$4,$5,$6,$7,'legacy_import',$8,$9) returning id",[userId,row.legacy_member_id,product.id,row.membership_number,row.status,row.start_date,row.end_date,importId,row.raw_payload])).rows[0];
    await tx.query("insert into membership_event(membership_id,event_type,effective_at,actor_user_id,source,details) values($1,'legacy_member_imported',now(),$2,'legacy_import',$3)",[member.id,identity.sub,JSON.stringify({importId,rowNumber:row.row_number,approvalConfirmed:row.raw_payload?.approved_membership==="yes",approvalReference:row.raw_payload?.approval_reference||null,reason:why,paymentImported:false})]);
    await tx.query("update membership_import_row set match_status='applied',matched_user_id=$2,matched_membership_id=$3,match_reason=coalesce(match_reason,'account created from approved-member import'),diagnostics='[]'::jsonb where id=$1",[row.id,userId,member.id]);
-   await audit(tx,identity.sub,"membership.import.row_applied","membership_record",member.id,requestId,{importId,rowNumber:row.row_number,email:row.email,membershipNumber:row.membership_number,status:row.status,accountCreated:createdAccounts>0,reason:why});
+   await audit(tx,identity.sub,"membership.import.row_applied","membership_record",member.id,requestId,{importId,rowNumber:row.row_number,email:row.email,membershipNumber:row.membership_number,status:row.status,accountCreated:accountCreatedForRow,reason:why});
    appliedCount++;
   }
   const remaining=(await tx.query("select count(*)::int count from membership_import_row where import_id=$1 and match_status in ('new','matched')",[importId])).rows[0].count;
