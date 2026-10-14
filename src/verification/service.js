@@ -20,6 +20,10 @@ async function snapshotProgram(db,programId){
  const c=(await db.query(sql,[programId])).rows;
  return {program:{id:p.id,code:p.program_code,name:p.name,purpose:p.purpose,riskLevel:p.risk_level,confidentialityLevel:p.confidentiality_level,requiresConsent:p.requires_consent,requiresMemberResponseOnAdverse:p.requires_member_response_on_adverse,appealEnabled:p.appeal_enabled},checklists:c};
 }
+export async function listClaimTypes(){
+ const db=getPool();
+ return (await db.query("select claim_code,name,description from verification_claim_type order by name,claim_code")).rows;
+}
 export async function listPrograms(){
  const db=getPool();
  return (await db.query("select program_code,name,purpose,risk_level,confidentiality_level,requires_consent,appeal_enabled from verification_program where active=true order by name")).rows;
