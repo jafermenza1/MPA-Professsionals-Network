@@ -64,6 +64,7 @@ export async function previewMemberImport(identity,{filename="mpa-members.csv",c
   else if(matches.rows.length===1)row.match={userId:matches.rows[0].user_id,displayName:matches.rows[0].display_name,matchReason:"existing email or phone"};
   const existing=await db.query("select id,user_id from membership_record where lower(membership_number)=lower($1) and status<>'merged' limit 1",[row.membershipNumber]);
   if(existing.rowCount)row.errors.push("Membership number already exists in the system.");
+  if(row.legacyMemberId){const legacy=await db.query("select id from membership_record where source='legacy_import' and legacy_member_id=$1 limit 1",[row.legacyMemberId]);if(legacy.rowCount)row.errors.push("Legacy member ID already exists in an earlier import.");}
  }
  const importId=await withTransaction(async tx=>{
   const imp=(await tx.query("insert into membership_import(filename,source_system,status,row_count,matched_count,new_count,conflict_count,created_by) values($1,$2,'validated',$3,$4,$5,$6,$7) returning id",[String(filename).slice(0,255),String(sourceSystem).slice(0,160),rows.length,rows.filter(r=>r.match&&!r.errors.length).length,rows.filter(r=>!r.match&&!r.errors.length).length,rows.filter(r=>r.errors.length).length,identity.sub])).rows[0];
