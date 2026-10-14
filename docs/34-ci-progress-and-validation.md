@@ -1,11 +1,11 @@
-# CI Progress and Validation Record
+# Historical CI Progress and Validation Record
 
 **Updated:** 2026-10-13  
 **Pull request:** [#1 — comprehensive CI coverage](https://github.com/jafermenza1/MPA-Professsionals-Network/pull/1)  
 **Branch:** `fix/comprehensive-test-ci`  
 **Observed heads:** `2acf264e87453861967f28a4a9358e5e79be6c66`, `82dd35ae2d8e1cc66a386e6e68bc00225487b221`, `f09a80c02eec7092c9d62e5e8e7cfbb0d956f124`, and follow-up `b33fbd8cb2d7cc9b8256cd776764295e17fe78b7`
 
-## Latest observed result
+## Latest historical automated result (not current-head validation)
 
 The comprehensive GitHub Actions runs [38385825710](https://github.com/jafermenza1/MPA-Professsionals-Network/actions/runs/38385825710) and [38390783621](https://github.com/jafermenza1/MPA-Professsionals-Network/actions/runs/38390783621) failed on the E2E step. Serializing workers did not resolve the remaining failures, so this is not treated as fixed by serialization alone. The following stages passed on that exact head:
 
@@ -31,7 +31,7 @@ The browser suite currently reuses fixed CI identities and mutable shared databa
 
 This is a containment fix, not the final goal: tests should eventually create isolated identities and organization data per test/worker, after which parallel CI can be safely re-enabled.
 
-## Current release gate
+## Historical release-gate status at time of this record
 
 **Not validated / do not merge yet.** The corrected stable-ID selector assertion and all prior changes must run on the latest PR head, and the entire suite must pass. Review the next run's complete logs and resolve any remaining application or test-fixture defects without skipping tests, weakening assertions, or hiding failures.
 
@@ -43,3 +43,8 @@ Required acceptance evidence:
 - Production web build and API smoke checks pass.
 - The organization private-evidence flow and the previously failing profile/mentorship cases pass, including the real error/retry behavior.
 - The exact updated commit's GitHub Actions run concludes successfully before merge.
+
+
+## Superseding status — 2026-10-14
+
+The GitHub Actions CI workflow was removed from the currently listed branches. This document is a historical record of earlier runs and failures only; it is not a current automated gate. Retained tests must be executed manually on the exact candidate SHA per [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Previously reported E2E failures remain unresolved in the record until corrected tests are executed successfully; do not infer success from code changes alone.
