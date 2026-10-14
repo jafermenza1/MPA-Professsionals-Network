@@ -21,9 +21,11 @@ async function requirePersonalProfessionalCapability(db,userId){
 async function isServiceProviderActor(db,requestId,userId){
  const request=(await db.query("select sr.provider_user_id,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1",[requestId])).rows[0];
  if(!request)return false;
- if(request.provider_user_id===userId)return true;
- if(!request.organization_id)return false;
- return Boolean((await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[request.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
+ if(request.organization_id){
+  return Boolean((await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[request.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
+ }
+ if(request.provider_user_id!==userId)return false;
+ return Boolean(await activeMember(db,userId)) && await hasProfessionalIdentity(db,userId);
 }
 async function assertServiceListingAccess(db,row,userId){
  if(row.organization_id){
@@ -188,20 +190,20 @@ export async function requestService(listingId,requesterId,input,requestId){
 export async function listMyServiceListings(userId){
  const db=getPool();
  const roles=["owner","administrator","recruiter","project_manager"];
- return (await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name,o.verification_status organization_verification_status from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.provider_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])) order by s.updated_at desc",[userId,roles])).rows;
+ return (await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name,o.verification_status organization_verification_status from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where (s.organization_id is null and s.provider_user_id=$1 and exists(select 1 from app_user_role ur join app_role ar on ar.id=ur.role_id where ur.user_id=$1 and ar.role_code=any(array['member','professional']::text[]))) or (s.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by s.updated_at desc",[userId,roles])).rows;
 }
 
 export async function listMyServiceRequests(userId){
   const db=getPool();
   const orgRoles=["owner","administrator","recruiter","project_manager"];
-  return (await db.query("select r.*,s.title service_title,s.service_category,p.display_name requester_name,(r.provider_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) is_provider from service_request r join service_listing s on s.id=r.service_listing_id join person p on p.user_id=r.requester_user_id where r.provider_user_id=$1 or r.requester_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])) order by r.created_at desc",[userId,orgRoles])).rows;
+  return (await db.query("select r.*,s.title service_title,s.service_category,p.display_name requester_name,((s.organization_id is null and r.provider_user_id=$1) or (s.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])))) is_provider from service_request r join service_listing s on s.id=r.service_listing_id join person p on p.user_id=r.requester_user_id where r.requester_user_id=$1 or (s.organization_id is null and r.provider_user_id=$1) or (s.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by r.created_at desc",[userId,orgRoles])).rows;
 }
 
 export async function changeServiceRequestStatus(requestId,userId,status,note,requestIdHeader){
   return withTransaction(async db=>{
     const r=(await db.query("select sr.*,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1 for update of sr",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    const providerActor=r.provider_user_id===userId || Boolean(r.organization_id && (await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[r.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
+    const providerActor=await isServiceProviderActor(db,requestId,userId);
     if(!providerActor && r.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
     if(r.status==="requested" && !providerActor) throw error(403,"Only the provider can accept or decline a service request.","FORBIDDEN");
     if(r.status==="accepted" && status==="in_progress" && !providerActor) throw error(403,"Only the provider can start service delivery.","FORBIDDEN");
