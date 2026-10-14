@@ -167,7 +167,7 @@ export async function listMembershipProductsForAdmin(){
       'id',r.id,'version',r.version,'baseAmount',r.base_amount,'currency',r.currency,
       'taxAmount',r.tax_amount,'serviceFee',r.service_fee,'effectiveFrom',r.effective_from,
       'effectiveTo',r.effective_to,'billingModel',r.billing_model,'durationDays',r.duration_days,
-      'renewalRequired',r.renewal_required,'gracePeriodDays',r.grace_period_days,
+      'renewalRequired',r.renewal_required,'gracePeriodDays',r.grace_period_days,'plan_name',r.plan_name,'plan_description',r.plan_description,
       'benefits',r.benefits,'eligibility',r.eligibility,'createdAt',r.created_at
     ) order by r.version desc) filter(where r.id is not null),'[]'::jsonb) fee_rule_history
     from membership_product p left join membership_fee_rule r on r.membership_product_id=p.id
