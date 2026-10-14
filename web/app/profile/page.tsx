@@ -225,7 +225,7 @@ export default function Profile() {
     try {
       const updated = await api<Profile>(
         "/api/v1/me/profile",
-        { method: "PATCH", body: JSON.stringify({ ...form, nationality: undefined }) },
+        { method: "PATCH", body: JSON.stringify(form) },
         token,
       );
       setProfile(updated);
@@ -692,7 +692,7 @@ export default function Profile() {
               </button>
             </form>
           </Card>
-          <GuidedProfessionalProfile />
+          <GuidedProfessionalProfile onNationalitySaved={(value) => { setForm((f) => ({ ...f, nationality: value })); setProfile((p) => p ? ({ ...p, nationality: value }) : p); }} />
           <Card>
             <div className="row">
               <div>
