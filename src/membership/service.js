@@ -417,7 +417,7 @@ export async function activateApplication(applicationId,actorId,requestId){
         and not exists (select 1 from membership_payment_reversal mr where mr.payment_transaction_id=pt.id)
       order by pt.created_at desc limit 1 for update of pt`,[applicationId])).rows[0];
     if(!pay) throw httpError(409,"No unreversed successful payment is linked to this application.","PAYMENT_NOT_CONFIRMED");
-    if(!fee||Number(pay.amount)!==Number(fee.amount)||String(pay.currency||"").trim().toUpperCase()!==String(fee.currency||"").trim().toUpperCase()){
+    if(!fee||!Number.isFinite(Number(fee.amount))||!fee.currency||fee.durationDays===undefined||Number(pay.amount)!==Number(fee.amount)||String(pay.currency||"").trim().toUpperCase()!==String(fee.currency||"").trim().toUpperCase()){
       throw httpError(409,"The payment no longer matches the application’s saved fee terms. Membership has not been activated.","PAYMENT_AMOUNT_MISMATCH");
     }
     const previous=app.previous_membership_id ? (await db.query("select * from membership_record where id=$1 for update",[app.previous_membership_id])).rows[0] : null;
@@ -432,7 +432,7 @@ export async function activateApplication(applicationId,actorId,requestId){
     // requires stale records to be transitioned out of the active state.
     await db.query("update membership_record set status='expired',updated_at=now() where user_id=$1 and status='active' and end_date is not null and end_date<current_date",[app.user_id]);
     const currentActive=(await db.query("select * from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) order by end_date desc nulls last limit 1 for update",[app.user_id])).rows[0];
-    if(currentActive && currentActive.id!==app.previous_membership_id && app.application_type!=="renewal"){
+    if(currentActive && currentActive.id!==app.previous_membership_id){
       throw httpError(409,"An active membership already exists. Review the current membership before activating this application.","ACTIVE_MEMBERSHIP");
     }
     let end=null;
