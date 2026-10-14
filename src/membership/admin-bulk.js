@@ -42,7 +42,7 @@ function cleanRow(row){
  return {...row,email,phone:normalizePhone(x.phone),fullName,membershipNumber,productCode,status,startDate,endDate,approved:approved==="yes",legacyMemberId:String(x.legacy_member_id||"").trim()||null,approvalReference:String(x.approval_reference||"").trim()||null,notes:String(x.notes||"").trim()||null,errors};
 }
 function audit(db,actor,action,type,id,requestId,metadata={}){return db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,JSON.stringify(metadata)]);}
-export function memberImportTemplate(){
+export function memberImportTemplate(identity){\n assertImportAuthority(identity);
  return "legacy_member_id,email,phone,full_name,membership_number,product_code,status,start_date,end_date,approved_membership,approval_reference,notes\r\n";
 }
 export async function previewMemberImport(identity,{filename="mpa-members.csv",csv="",sourceSystem="MPA approved member register"}={},requestId){
@@ -131,7 +131,7 @@ export async function exportMembers(identity,{q="",status="",format="csv"}={},re
  const esc=v=>{let s=v==null?"":v instanceof Date?v.toISOString().slice(0,10):String(v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
  const csv=[headers.join(","),...rows.map(row=>headers.map(h=>esc(row[h])).join(","))].join("\r\n")+"\r\n";
  const filename="mpa-members-"+new Date().toISOString().slice(0,10)+(format==="xlsx"?".xlsx":".csv");
- const buffer=format==="xlsx"?makeXlsx({report:{title:"MPA member directory",scope:"Restricted platform PII",definition:"Member contact and membership details. Treat this export as confidential.",columns:headers},filters:{q,status},generatedAt:new Date().toISOString(),rows:rows.map(row=>Object.fromEntries(headers.map(h=>[h,row[h] instanceof Date?row[h].toISOString():row[h]??""))),totals:{rows:rows.length}}):Buffer.from(csv,"utf8");
+ const buffer=format==="xlsx"?makeXlsx({report:{title:"MPA member directory",scope:"Restricted platform PII",definition:"Member contact and membership details. Treat this export as confidential.",columns:headers},filters:{q,status},generatedAt:new Date().toISOString(),rows:rows.map(row=>Object.fromEntries(headers.map(h=>[h,row[h] instanceof Date?row[h].toISOString():row[h]??""]))) ,totals:{rows:rows.length}}):Buffer.from(csv,"utf8");
  await getPool().query("insert into audit_log(actor_user_id,action,resource_type,request_id,outcome,metadata) values($1,'membership.exported','membership_record',$2,'success',$3)",[identity.sub,requestId,JSON.stringify({format,rowCount:rows.length,filters:{q,status}})]);
  return {buffer,rowCount:rows.length,filename,contentType:format==="xlsx"?"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":"text/csv; charset=utf-8"};
 }
