@@ -115,11 +115,12 @@ export async function reviewDemand(demandId,actorId,input,requestId){
 }
 export async function listAdminListings(userId){
  const db=getPool();await staff(db,userId);
- const [services,mentors]=await Promise.all([
-  db.query("select s.id,'service' listing_type,s.title,s.description,s.service_category category,s.status,s.moderation_status,s.moderation_note,s.provider_user_id,coalesce(o.display_name,p.display_name) owner_name,s.created_at from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.moderation_status in ('pending','needs_correction') and s.status<>'closed' order by s.created_at asc limit 200"),
-  db.query("select m.id,'mentorship' listing_type,m.headline title,coalesce(m.bio,'') description,'mentorship' category,m.status,m.moderation_status,m.moderation_note,m.user_id provider_user_id,p.display_name owner_name,m.created_at from mentor_profile m join person p on p.user_id=m.user_id where m.moderation_status in ('pending','needs_correction') and m.status<>'closed' order by m.created_at asc limit 200")
- ]);
- return [...services.rows,...mentors.rows].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+ const [services,mentors,organizationOffers]=await Promise.all([
+   db.query("select s.id,'service' listing_type,s.title,s.description,s.service_category category,s.status,s.moderation_status,s.moderation_note,s.provider_user_id,coalesce(o.display_name,p.display_name) owner_name,s.created_at from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.moderation_status in ('pending','needs_correction') and s.status<>'closed' order by s.created_at asc limit 200"),
+   db.query("select m.id,'mentorship' listing_type,m.headline title,coalesce(m.bio,'') description,'mentorship' category,m.status,m.moderation_status,m.moderation_note,m.user_id provider_user_id,p.display_name owner_name,m.created_at from mentor_profile m join person p on p.user_id=m.user_id where m.moderation_status in ('pending','needs_correction') and m.status<>'closed' order by m.created_at asc limit 200"),
+   db.query("select x.id,'organization_mentorship' listing_type,x.title,x.description,'organization mentorship' category,x.status,x.moderation_status,x.moderation_note,x.created_by provider_user_id,o.display_name owner_name,x.created_at from organization_mentorship_offer x join organization o on o.id=x.organization_id where x.moderation_status in ('pending','needs_correction') and x.status<>'closed' order by x.created_at asc limit 200")
+  ]);
+  return [...services.rows,...mentors.rows,...organizationOffers.rows].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
 }
 export async function moderateListing(listingType,listingId,actorId,input,requestId){
  await staff(getPool(),actorId);
@@ -127,15 +128,15 @@ export async function moderateListing(listingType,listingId,actorId,input,reques
  if(!["approved","needs_correction","rejected"].includes(decision))throw fail(400,"Choose approve, needs correction or reject.","VALIDATION_ERROR");
  if(decision!=="approved"&&!note)throw fail(400,"A reviewer note is required for correction or rejection decisions.","REVIEW_NOTE_REQUIRED");
  return withTransaction(async db=>{
-  const table=listingType==="service"?"service_listing":listingType==="mentorship"?"mentor_profile":null;
+  const table=listingType==="service"?"service_listing":listingType==="mentorship"?"mentor_profile":listingType==="organization_mentorship"?"organization_mentorship_offer":null;
   if(!table)throw fail(400,"Unsupported listing type.","VALIDATION_ERROR");
   const idColumn=listingType==="service"?"id":"id";
   const row=(await db.query("select id,status,moderation_status from "+table+" where "+idColumn+"=$1 for update",[listingId])).rows[0];
   if(!row)throw fail(404,"Listing not found.","NOT_FOUND");
   if(row.status==="closed"||row.status==="closed")throw fail(409,"Closed listings cannot be moderated back into circulation.","INVALID_STATE");
-  const publicStatus=decision==="approved"?(listingType==="service"?"published":"active"):decision==="rejected"?"closed": "draft";
-  const updated=(await db.query("update "+table+" set moderation_status=$1,moderation_note=$2,moderated_by=$3,moderated_at=now(),status=case when $1='approved' then $4 when $1='rejected' then 'closed' else $5 end,updated_at=now() where id=$6 returning id,status,moderation_status,moderation_note,moderated_at",[decision,note,actorId,publicStatus,listingType==="service"?"draft":"paused",listingId])).rows[0];
-  await audit(db,actorId,"marketplace.listing_moderated",listingType==="service"?"service_listing":"mentor_profile",listingId,requestId,{decision,note});
+  const publicStatus=decision==="approved"?(listingType==="mentorship"?"active":"published"):decision==="rejected"?"closed":"draft";
+  const updated=(await db.query("update "+table+" set moderation_status=$1,moderation_note=$2,moderated_by=$3,moderated_at=now(),status=case when $1='approved' then $4 when $1='rejected' then 'closed' else $5 end,updated_at=now() where id=$6 returning id,status,moderation_status,moderation_note,moderated_at",[decision,note,actorId,publicStatus,"draft",listingId])).rows[0];
+  await audit(db,actorId,"marketplace.listing_moderated",listingType==="service"?"service_listing":listingType==="organization_mentorship"?"organization_mentorship_offer":"mentor_profile",listingId,requestId,{decision,note});
   return updated;
  });
 }
