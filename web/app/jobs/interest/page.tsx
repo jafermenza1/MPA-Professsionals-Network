@@ -21,6 +21,9 @@ const shareable = [
 
 export default function JobInterestPage() {
   const [form, setForm] = useState({ contactName: "", contactEmail: "", contactPhone: "", targetRole: "", skills: "", experience: "", location: "", workMode: "", availability: "", intent: "" });
+  const [lookupReference, setLookupReference] = useState("");
+  const [lookupToken, setLookupToken] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
   const [processingConsent, setProcessingConsent] = useState(false);
   const [shareFields, setShareFields] = useState<string[]>(["targetRole", "skills"]);
   const [consentToProcess, setConsentToProcess] = useState(false);
@@ -45,6 +48,23 @@ export default function JobInterestPage() {
     } catch (e) {
       setSharingHistoryError(e instanceof ApiError ? e.message : "Sharing history could not be loaded. Retry without resubmitting your request.");
     }
+  }
+
+  async function loadExistingRequest(event: FormEvent) {
+    event.preventDefault(); setLookupBusy(true); setError(""); setNotice("");
+    try {
+      const record = await api<any>("/api/v1/public/opportunity-inquiries/" + encodeURIComponent(lookupReference.trim()) + "/access", { method: "POST", body: JSON.stringify({ token: lookupToken.trim() }) });
+      if (record.inquiryType !== "job" || record.jobTitle) throw new Error("This reference is not a no-vacancy job-interest request.");
+      const recovered: Inquiry = { id: "", public_reference: record.reference, continuationToken: lookupToken.trim(), nextStep: record.nextStep };
+      setInquiry(recovered);
+      const fields = Array.isArray(record.employerSharingFields) ? record.employerSharingFields : [];
+      setShareFields(fields.length ? fields : ["targetRole", "skills"]);
+      setShareWithEmployers(record.employerSharingConsent === true);
+      setConsentSaved(record.employerSharingConsent === true && !record.employerSharingRevokedAt);
+      setNotice("Your request was recovered. Check the sharing status and history below.");
+      await refreshSharingHistory(recovered);
+    } catch (e) { setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "We couldn't recover this request. Check the reference and private token."); }
+    finally { setLookupBusy(false); }
   }
 
   async function submit(event: FormEvent) {
@@ -127,6 +147,15 @@ export default function JobInterestPage() {
       <h1 className="h1">Tell MPA what kind of work you’re seeking.</h1>
       <p className="muted">You can register interest even when no suitable vacancy is listed. Your request stays private to you and MPA Support Desk unless you separately opt in to named-employer sharing.</p>
     </div>
+    {!inquiry ? <Card>
+      <h2 className="h2">Already submitted a job-interest request?</h2>
+      <p className="muted">Use your reference and private continuation token to review sharing history, update consent or revoke future employer access. The token is a secret; do not share it.</p>
+      <form onSubmit={loadExistingRequest} className="grid grid-2" style={{ gap: 12 }}>
+        <label>Request reference<input required value={lookupReference} onChange={e => setLookupReference(e.target.value)} placeholder="MPA-JOB-…" /></label>
+        <label>Private continuation token<input required value={lookupToken} onChange={e => setLookupToken(e.target.value)} /></label>
+        <button className="btn btn-ghost" type="submit" disabled={lookupBusy || !lookupReference.trim() || !lookupToken.trim()}>{lookupBusy ? "Recovering…" : "Manage existing request"}</button>
+      </form>
+    </Card> : null}
     {inquiry ? <Card>
       <Badge>{consentSaved ? "Request submitted · consent recorded" : "Request submitted · private by default"}</Badge>
       <h2 className="h2" style={{ marginTop: 12 }}>Your reference: {inquiry.public_reference}</h2>
