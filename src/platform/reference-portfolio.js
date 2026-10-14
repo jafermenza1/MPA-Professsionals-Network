@@ -10,16 +10,21 @@ export function assertReferenceAdmin(identity){
 }
 const clean=(v,max=180)=>String(v??"").trim().slice(0,max);
 function csvEscape(value){const s=String(value??"");return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
-function parseCsv(source){
+function parseCsv(source,mapping={}){
  const rows=[];let row=[],cell="",quoted=false;
  const text=String(source||"").replace(/^\uFEFF/,"");
  for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(c==='"')quoted=false;else cell+=c;}else if(c==='"')quoted=true;else if(c===","){row.push(cell);cell="";}else if(c==="\n"){row.push(cell.replace(/\r$/,""));rows.push(row);row=[];cell="";}else cell+=c;}
  if(quoted) throw fail(400,"CSV contains an unclosed quoted field.","CSV_INVALID");
  if(cell.length||row.length){row.push(cell.replace(/\r$/,""));rows.push(row);}
  if(rows.length<2) throw fail(400,"CSV must include a header row and at least one data row.","CSV_EMPTY");
- const headers=rows.shift().map(h=>h.trim().toLowerCase());
- for(const required of ["code","label"]) if(!headers.includes(required)) throw fail(400,"CSV must include code and label columns.","CSV_COLUMNS_REQUIRED");
- return rows.filter(r=>r.some(v=>String(v).trim())).map((values,index)=>Object.fromEntries(headers.map((h,i)=>[h,values[i]??""]))).map((row,index)=>({...row,__row:index+2}));
+ const sourceHeaders=rows.shift().map(h=>h.trim());
+ const headers=sourceHeaders.map(h=>h.toLowerCase());
+ const mapped=Object.keys(mapping||{}).length>0;
+ const indexes={};
+ if(mapped){for(const [target,source] of Object.entries(mapping))if(source&&sourceHeaders.includes(String(source)))indexes[target]=sourceHeaders.indexOf(String(source));for(const required of ["code","label"])if(indexes[required]===undefined)throw fail(400,"Map both Code and Label to columns before importing.","CSV_COLUMNS_REQUIRED");}
+ else for(const required of ["code","label"])if(!headers.includes(required))throw fail(400,"CSV must include code and label columns.","CSV_COLUMNS_REQUIRED");
+ const canonical=["code","label","description","sort_order","active","parent_code","aliases"];
+ return rows.filter(r=>r.some(v=>String(v).trim())).map((values,index)=>{const row={};for(const key of canonical){const ix=mapped?indexes[key]:headers.indexOf(key);if(ix!==undefined&&ix>=0)row[key]=values[ix]??"";}return {...row,__row:index+2};});
 }
 async function datasetContext(db,key,{edit=false,actorId=null}={}){
  const dataset=(await db.query("select * from reference_dataset where dataset_key=$1 and status='active'",[key])).rows[0];
@@ -74,9 +79,16 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
   return row;
  });
 }
-export async function importReferenceCsv(identity,key,filename,csv){
+export async function previewReferenceCsv(identity,key,filename,csv){
  assertReferenceAdmin(identity);
- const rows=parseCsv(csv);const seen=new Set();const errors=[];
+ const rows=parseCsv(csv);
+ const headers=String(csv||"").replace(/^\\uFEFF/,"").split(/\\r?\\n/,1)[0].split(",").map(x=>x.trim().replace(/^"|"$/g,""));
+ const mapping={};for(const target of ["code","label","description","sort_order","active","parent_code","aliases"]){const found=headers.find(h=>h.toLowerCase()===target);if(found)mapping[target]=found;}
+ return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row)};
+}
+export async function importReferenceCsv(identity,key,filename,csv,mapping={}){
+ assertReferenceAdmin(identity);
+ const rows=parseCsv(csv,mapping);const seen=new Set();const errors=[];
  rows.forEach(row=>{const code=clean(row.code,80).toUpperCase();if(!code||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);});
  if(errors.length) return {status:"rejected",imported:0,errors};
  return withTransaction(async db=>{
