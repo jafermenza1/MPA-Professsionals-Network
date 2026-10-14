@@ -1,14 +1,22 @@
 import { getPool, withTransaction } from "../platform/db.js";
+import { hasCurrentActiveMembership, assertProfessionalIdentity, assertCurrentActiveMembership, assertOrganizationCapability } from "../platform/identity-policy.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
-const ACTIVE_MEMBER_SQL="exists (select 1 from membership_record m where m.user_id=$1 and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))";
 const PROFESSIONAL_CLAIMS=["professional_certification","education","employment","experience","service_capability"];
 
 async function audit(db,actor,action,type,id,requestId,metadata={}) {
   await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]);
 }
 async function activeMember(db,userId){
-  return (await db.query("select 1 where "+ACTIVE_MEMBER_SQL,[userId])).rowCount>0;
+  return hasCurrentActiveMembership(db,userId);
+}
+async function requirePersonalProfessionalCapability(db,userId){
+  try {
+    await assertProfessionalIdentity(db,userId);
+    await assertCurrentActiveMembership(db,userId,"An active membership is required for this professional action. View membership options to continue.");
+  } catch (cause) {
+    throw error(cause.statusCode||403,cause.message,cause.code||"BUSINESS_RULE");
+  }
 }
 async function isServiceProviderActor(db,requestId,userId){
  const request=(await db.query("select sr.provider_user_id,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1",[requestId])).rows[0];
@@ -19,8 +27,9 @@ async function isServiceProviderActor(db,requestId,userId){
 }
 async function assertServiceListingAccess(db,row,userId){
  if(row.organization_id){
-  const membership=(await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[row.organization_id,userId])).rows[0];
-  if(!membership||!["owner","administrator","recruiter","project_manager"].includes(membership.role_code)) throw error(403,"An active organization owner or authorized manager is required to manage this listing.","ORGANIZATION_FORBIDDEN");
+  let membership;
+  try { membership=await assertOrganizationCapability(db,row.organization_id,userId); }
+  catch (cause) { throw error(cause.statusCode||403,cause.message,cause.code||"ORGANIZATION_FORBIDDEN"); }
   return membership;
  }
  if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
@@ -90,9 +99,7 @@ export async function createServiceListing(userId,input,requestId){
       if(!membership||!["owner","administrator","recruiter","project_manager"].includes(membership.role_code)) throw error(403,"An active organization owner or authorized manager is required to create this listing.","ORGANIZATION_FORBIDDEN");
       if(membership.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
     } else {
-      const professionalRole=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code=any($2::text[]) limit 1",[userId,["member","professional"]])).rowCount>0;
-      if(!professionalRole) throw error(403,"An organization account must create service listings under its verified organization profile.","PROFESSIONAL_PROFILE_FORBIDDEN");
-      if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to offer a service.","MEMBERSHIP_REQUIRED");
+      await requirePersonalProfessionalCapability(db,userId);
     }
     if(!input.title||!input.description||!input.serviceCategory) throw error(400,"title, description and serviceCategory are required.","VALIDATION_ERROR");
     const pricing=input.pricingModel||"quote";
@@ -382,9 +389,7 @@ export async function submitServiceFeedback(requestId,userId,input,requestIdHead
 
 export async function createMentorProfile(userId,input,requestId){
   return withTransaction(async db=>{
-    const professionalRole=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code=any($2::text[]) limit 1",[userId,["member","professional"]])).rowCount>0;
-    if(!professionalRole) throw error(403,"An organization account cannot create a personal mentor profile.","PROFESSIONAL_PROFILE_FORBIDDEN");
-    if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to mentor.","MEMBERSHIP_REQUIRED");
+    await requirePersonalProfessionalCapability(db,userId);
     if(!(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to become a mentor.","PROFESSIONAL_VERIFICATION_REQUIRED");
     const headline=String(input.headline||"").trim();
     if(!headline) throw error(400,"headline is required.","VALIDATION_ERROR");
@@ -408,6 +413,7 @@ export async function updateMentorProfile(profileId,userId,input,requestId){
     const row=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!row) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(row.user_id!==userId) throw error(403,"Only the mentor can edit this profile.","FORBIDDEN");
+    await requirePersonalProfessionalCapability(db,userId);
     const updated=(await db.query("update mentor_profile set status=case when status='active' then 'draft' else status end,moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,headline=coalesce($1,headline),bio=coalesce($2,bio),expertise=coalesce($3,expertise),languages=coalesce($4,languages),mentoring_modes=coalesce($5,mentoring_modes),max_active_mentees=coalesce($6,max_active_mentees),visibility=coalesce($7,visibility),updated_at=now() where id=$8 returning *",[input.headline||null,input.bio||null,input.expertise?JSON.stringify(normalizeArray(input.expertise)):null,input.languages?JSON.stringify(normalizeArray(input.languages)):null,input.mentoringModes?JSON.stringify(normalizeArray(input.mentoringModes)):null,input.maxActiveMentees||null,input.visibility||null,profileId])).rows[0];
     await audit(db,userId,"mentorship.profile_updated","mentor_profile",profileId,requestId);
     return updated;
@@ -420,6 +426,7 @@ export async function changeMentorStatus(profileId,userId,status,requestId){
     const p=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!p) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(p.user_id!==userId) throw error(403,"Only the mentor can manage this profile.","FORBIDDEN");
+    await requirePersonalProfessionalCapability(db,userId);
     if(p.status==="closed"&&status!=="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
     if(status==="active" && p.moderation_status!=="approved"){
       if(p.moderation_status==="rejected") throw error(409,"This mentorship offer was rejected and cannot be resubmitted. Update the offer through a new profile if the opportunity has materially changed.","LISTING_REJECTED");
@@ -442,6 +449,7 @@ export async function setMentorAvailability(profileId,userId,input,requestId){
     const p=(await db.query("select user_id from mentor_profile where id=$1",[profileId])).rows[0];
     if(!p) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(p.user_id!==userId) throw error(403,"Only the mentor can manage availability.","FORBIDDEN");
+    await requirePersonalProfessionalCapability(db,userId);
     if(!Array.isArray(input.slots)) throw error(400,"slots must be an array.","VALIDATION_ERROR");
     for(const s of input.slots){
       if(!Number.isInteger(Number(s.dayOfWeek))||Number(s.dayOfWeek)<0||Number(s.dayOfWeek)>6) throw error(400,"dayOfWeek must be 0-6.","VALIDATION_ERROR");
