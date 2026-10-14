@@ -8,7 +8,7 @@ import * as serviceMentorship from "../../src/services-mentorship/service.js";
 import * as publicOpportunity from "../../src/platform/public-opportunity.js";
 
 function identity(suffix) {
-  const digits = suffix.replace(/\\D/g, "").slice(0, 8).padEnd(8, "7");
+  const digits = suffix.replace(/[^0-9]/g, "").slice(0, 8).padEnd(8, "7");
   return {
     email: `p0-${suffix}@example.test`,
     password: "P0BusinessInvariantPassword!2026",
