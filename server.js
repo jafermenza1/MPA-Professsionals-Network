@@ -65,9 +65,14 @@ async function auth(req){
     identity.roles=withCurrentRoles(identity,Array.isArray(r.rows[0].roles)?r.rows[0].roles:JSON.parse(r.rows[0].roles||"[]")).roles;
     identity.permissions=(await db.query("select permission_code from app_user_permission where user_id=$1",[identity.sub])).rows.map(row=>row.permission_code);
     identity.credential_setup_required=Boolean(r.rows[0].credential_setup_required);
+    if(identity.credential_setup_required){
+      const path=new URL(req.url,"http://localhost").pathname.replace(/^\\/+/, "");
+      const allowedRecoveryRoute=(req.method==="GET"&&path==="api/v1/me")||(req.method==="PATCH"&&path==="api/v1/me/account")||(req.method==="POST"&&path==="api/v1/auth/logout");
+      if(!allowedRecoveryRoute)throw Object.assign(new Error("Please set a new password before continuing to the rest of your account."),{statusCode:403,code:"PASSWORD_RESET_REQUIRED"});
+    }
     await db.query("update auth_session set last_seen_at=now() where id=$1",[identity.sid]);
     return identity;
-  } catch(e){ throw Object.assign(new Error(e.message),{statusCode:e.statusCode===403?403:401,code:"UNAUTHENTICATED"}); }
+  } catch(e){ throw Object.assign(new Error(e.message),{statusCode:e.statusCode===403?403:401,code:e.statusCode===403&&e.code?e.code:"UNAUTHENTICATED"}); }
 }
 function optionalIdentity(req){
   if(!req.headers.authorization?.startsWith("Bearer ")) return null;
