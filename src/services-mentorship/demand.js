@@ -140,6 +140,66 @@ export async function moderateListing(listingType,listingId,actorId,input,reques
   return updated;
  });
 }
+export async function listDemandMatchCandidates(userId,demandType){
+ const db=getPool();await staff(db,userId);
+ if(!["service","mentorship"].includes(demandType))throw fail(400,"Choose service or mentorship demand.","VALIDATION_ERROR");
+ const services=demandType==="service"?(await db.query("select s.id,'service' listing_type,s.title,coalesce(o.display_name,p.display_name) provider_name,s.organization_id from service_listing s left join organization o on o.id=s.organization_id left join person p on p.user_id=s.provider_user_id where s.status='published' and s.moderation_status='approved' and s.visibility='public' and ((s.organization_id is not null and o.verification_status='verified') or (s.organization_id is null and exists(select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)))) order by s.title limit 200")).rows:[];
+ const mentors=demandType==="mentorship"?(await db.query("select m.id,'mentorship' listing_type,m.headline title,p.display_name provider_name,null::uuid organization_id from mentor_profile m join person p on p.user_id=m.user_id where m.status='active' and m.moderation_status='approved' and m.visibility='public' and exists(select 1 from membership_record mr where mr.user_id=m.user_id and mr.status='active' and mr.start_date<=current_date and (mr.end_date is null or mr.end_date>=current_date)) order by m.headline limit 200")).rows:[];
+ const organizations=demandType==="mentorship"?(await db.query("select x.id,'organization_mentorship' listing_type,x.title,o.display_name provider_name,x.organization_id from organization_mentorship_offer x join organization o on o.id=x.organization_id where x.status='published' and x.moderation_status='approved' and x.visibility='public' and o.verification_status='verified' order by x.title limit 200")).rows:[];
+ return [...services,...mentors,...organizations];
+}
+export async function createDemandProviderMatch(demandId,actorId,input,requestId){
+ const listingType=input.listingType,listingId=String(input.listingId||"");
+ if(!["service","mentorship","organization_mentorship"].includes(listingType)||!listingId)throw fail(400,"Choose a published provider offer to match with this demand.","MATCH_LISTING_REQUIRED");
+ return withTransaction(async db=>{
+  await staff(db,actorId);
+  const demand=(await db.query("select * from marketplace_demand where id=$1 for update",[demandId])).rows[0];
+  if(!demand)throw fail(404,"Demand request was not found.","NOT_FOUND");
+  if(["converted","closed","declined"].includes(demand.status))throw fail(409,"Resolved demand cannot receive another provider match.","INVALID_STATE");
+  if((demand.demand_type==="service"&&listingType!=="service")||(demand.demand_type==="mentorship"&&listingType==="service"))throw fail(400,"The selected offer does not match this demand type.","MATCH_TYPE_MISMATCH");
+  let offer=null,providerUserId=null,organizationId=null;
+  if(listingType==="service"){
+   offer=(await db.query("select s.id,s.provider_user_id,s.organization_id,s.status,s.moderation_status,s.visibility,o.verification_status from service_listing s left join organization o on o.id=s.organization_id where s.id=$1",[listingId])).rows[0];
+   if(!offer||offer.status!=="published"||offer.moderation_status!=="approved"||offer.visibility!=="public"||(offer.organization_id?offer.verification_status!=="verified":false))throw fail(409,"Choose a currently published, approved and public service offer.","MATCH_LISTING_UNAVAILABLE");
+   if(offer.organization_id)organizationId=offer.organization_id;else providerUserId=offer.provider_user_id;
+   if(!organizationId&&!(await db.query("select 1 where exists(select 1 from membership_record m where m.user_id=$1 and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))",[providerUserId])).rowCount)throw fail(409,"The individual provider's membership is not current.","MATCH_LISTING_UNAVAILABLE");
+  }else if(listingType==="mentorship"){
+   offer=(await db.query("select id,user_id provider_user_id,status,moderation_status,visibility from mentor_profile where id=$1",[listingId])).rows[0];
+   if(!offer||offer.status!=="active"||offer.moderation_status!=="approved"||offer.visibility!=="public")throw fail(409,"Choose a currently published, approved and public mentor offer.","MATCH_LISTING_UNAVAILABLE");
+   providerUserId=offer.provider_user_id;
+  }else{
+   offer=(await db.query("select x.id,x.organization_id,x.status,x.moderation_status,x.visibility,o.verification_status from organization_mentorship_offer x join organization o on o.id=x.organization_id where x.id=$1",[listingId])).rows[0];
+   if(!offer||offer.status!=="published"||offer.moderation_status!=="approved"||offer.visibility!=="public"||offer.verification_status!=="verified")throw fail(409,"Choose a currently published offer from a verified organization.","MATCH_LISTING_UNAVAILABLE");
+   organizationId=offer.organization_id;
+  }
+  const match=(await db.query("insert into marketplace_demand_provider_match(demand_id,listing_type,listing_id,provider_user_id,organization_id,matched_by,match_note) values($1,$2,$3,$4,$5,$6,$7) on conflict(demand_id,listing_type,listing_id) do update set status='proposed',matched_by=excluded.matched_by,match_note=excluded.match_note,response_note=null,responded_at=null,updated_at=now() where marketplace_demand_provider_match.status in ('declined','withdrawn') returning *",[demandId,listingType,listingId,providerUserId,organizationId,actorId,clean(input.note,2000)||null])).rows[0];
+  if(!match)throw fail(409,"This provider offer has already been matched to the demand.","DUPLICATE_MATCH");
+  await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.provider_match_proposed',$3,$3,$4,$5)",[demandId,actorId,demand.status,clean(input.note,2000)||null,{listingType,listingId,matchId:match.id}]);
+  await audit(db,actorId,"marketplace.demand_provider_match_proposed","marketplace_demand_provider_match",match.id,requestId,{demandId,listingType,listingId});
+  return match;
+ });
+}
+export async function listMyDemandProviderMatches(userId){
+ return (await getPool().query("select mm.*,d.title demand_title,d.demand_type,d.requester_user_id,coalesce(sl.title,mp.headline,oo.title) listing_title,coalesce(org.display_name,person.display_name) provider_name,(d.requester_user_id=$1) is_requester,(mm.provider_user_id=$1) is_provider from marketplace_demand_provider_match mm join marketplace_demand d on d.id=mm.demand_id left join service_listing sl on mm.listing_type='service' and sl.id=mm.listing_id left join mentor_profile mp on mm.listing_type='mentorship' and mp.id=mm.listing_id left join organization_mentorship_offer oo on mm.listing_type='organization_mentorship' and oo.id=mm.listing_id left join organization org on org.id=mm.organization_id left join person on person.user_id=mm.provider_user_id where d.requester_user_id=$1 or mm.provider_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=mm.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])) order by mm.updated_at desc",[userId,["owner","administrator","recruiter","project_manager"]])).rows;
+}
+export async function respondToDemandProviderMatch(matchId,userId,status,note,requestId){
+ if(!["accepted","declined"].includes(status))throw fail(400,"Choose accept or decline for this provider match.","VALIDATION_ERROR");
+ const responseNote=clean(note,2000);
+ if(status==="declined"&&!responseNote)throw fail(400,"Add a short reason so the Support Desk can find another provider.","RESPONSE_NOTE_REQUIRED");
+ return withTransaction(async db=>{
+  const match=(await db.query("select mm.*,d.status demand_status from marketplace_demand_provider_match mm join marketplace_demand d on d.id=mm.demand_id where mm.id=$1 for update of mm,d",[matchId])).rows[0];
+  if(!match)throw fail(404,"Provider match was not found.","NOT_FOUND");
+  const provider=match.provider_user_id===userId||Boolean(match.organization_id&&(await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[match.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
+  if(!provider)throw fail(403,"Only the matched provider or organization team can respond.","FORBIDDEN");
+  if(match.status!=="proposed")throw fail(409,"This provider match has already been answered.","INVALID_STATE");
+  const updated=(await db.query("update marketplace_demand_provider_match set status=$1,response_note=$2,responded_at=now(),updated_at=now() where id=$3 returning *",[status,responseNote||null,matchId])).rows[0];
+  if(status==="accepted")await db.query("update marketplace_demand set status='matched',outcome_code='provider_search',outcome_note=coalesce($1,outcome_note),reviewed_at=now(),resolved_at=now(),updated_at=now() where id=$2",[responseNote||"A provider accepted the match.",match.demand_id]);
+  else await db.query("update marketplace_demand set status=case when status='matched' then 'under_review' else status end,outcome_note=coalesce($1,outcome_note),updated_at=now() where id=$2",[responseNote,match.demand_id]);
+  await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.provider_match_responded',$3,$4,$5,$6)",[match.demand_id,userId,match.demand_status,updated.status,responseNote||null,{matchId}]);
+  await audit(db,userId,"marketplace.demand_provider_match_responded","marketplace_demand_provider_match",matchId,requestId,{status,demandId:match.demand_id});
+  return updated;
+ });
+}
 export async function getDemandSummary(userId,topicId){
  const db=getPool();await staff(db,userId);
  const topic=(await db.query("select id,title,demand_type,category,status,interest_goal from marketplace_demand_topic where id=$1",[topicId])).rows[0];
