@@ -349,7 +349,7 @@ export async function createMentorProfile(userId,input,requestId){
     if(existing?.status==="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
     const values=[headline,String(input.bio||"").trim()||null,JSON.stringify(normalizeArray(input.expertise)),JSON.stringify(normalizeArray(input.languages)),JSON.stringify(normalizeArray(input.mentoringModes||["remote"])),maxActiveMentees,visibility];
     const row=existing
-      ? (await db.query("update mentor_profile set headline=$1,bio=$2,expertise=$3,languages=$4,mentoring_modes=$5,max_active_mentees=$6,visibility=$7,updated_at=now() where id=$8 returning *",[...values,existing.id])).rows[0]
+      ? (await db.query("update mentor_profile set status=case when status='active' then 'draft' else status end,moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,headline=$1,bio=$2,expertise=$3,languages=$4,mentoring_modes=$5,max_active_mentees=$6,visibility=$7,updated_at=now() where id=$8 returning *",[...values,existing.id])).rows[0]
       : (await db.query("insert into mentor_profile(user_id,headline,bio,expertise,languages,mentoring_modes,max_active_mentees,visibility) values($1,$2,$3,$4,$5,$6,$7,$8) returning *",[userId,...values])).rows[0];
     await audit(db,userId,"mentorship.profile_updated","mentor_profile",row.id,requestId,{status:row.status});
     return row;
@@ -421,7 +421,7 @@ export async function listMentors(viewerId,filters={}){
   // The public endpoint must not disclose member-only mentor profiles. $1 is
   // always bound so the query is valid with or without optional filters.
   const args=[viewerId||null];
-  const where=["mp.status='active'","m.status='active'","m.start_date<=current_date","(m.end_date is null or m.end_date>=current_date)","(mp.visibility='public' or ($1::uuid is not null and mp.visibility='members'))"];
+  const where=["mp.status='active'","mp.moderation_status='approved'","m.status='active'","m.start_date<=current_date","(m.end_date is null or m.end_date>=current_date)","(mp.visibility='public' or ($1::uuid is not null and mp.visibility='members'))"];
   if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(mp.headline ilike $"+args.length+" or mp.bio ilike $"+args.length+")"); }
   if(filters.topic){ args.push("%"+String(filters.topic).trim().toLowerCase()+"%"); where.push("mp.expertise::text ilike $"+args.length); }
   const rows=(await db.query("select mp.id,mp.user_id,p.display_name,mp.headline,mp.bio,mp.expertise,mp.languages,mp.mentoring_modes,mp.max_active_mentees from mentor_profile mp join app_user u on u.id=mp.user_id join person p on p.user_id=u.id join membership_record m on m.user_id=u.id where "+where.join(" and ")+" order by p.display_name",args)).rows;
