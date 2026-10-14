@@ -36,7 +36,7 @@ export default function GuidedProfessionalProfile(){
     api<Portfolio[]>("/api/v1/me/portfolio",{},token),
     api<AccountProfile>("/api/v1/me",{},token)
    ]);
-   setRefs(r);setProfile(p);setEducation(e);setEducationDrafts(e.map(asDraft));setPortfolio(items);
+   setRefs(r);setEducationDrafts(e.map(asDraft));setPortfolio(items);
    const next:Record<string,string>={},custom:Record<string,string>={};
    for(const type of ["nationality","occupation","industry","experience_range"]){const item=selected(p.references,type);next[type]=item?.reference_item_id||"";custom[type]=item?.custom_value||"";}
    if(!next.nationality&&account.nationality){const match=r.find(item=>item.dataset_key===groups.nationality&&item.label.toLowerCase()===String(account.nationality).toLowerCase());if(match)next.nationality=match.id;else{const other=r.find(item=>item.dataset_key===groups.nationality&&item.code==="OTHER");if(other){next.nationality=other.id;custom.nationality=account.nationality;}}}
@@ -58,7 +58,8 @@ export default function GuidedProfessionalProfile(){
    const otherLanguageValues=otherLanguage.split(",").map(v=>v.trim()).filter(Boolean);
    references.push(...languageIds.map(referenceItemId=>({relationType:"language",referenceItemId,customValue:""})));
    if(otherLanguageValues.length&&languageOther)references.push({relationType:"language",referenceItemId:languageOther.id,customValue:otherLanguageValues.join(", ")});
-   const languages=[...languageIds.map(id=>byId.get(id)?.label).filter(Boolean) as string[],...otherLanguageValues];
+   const selectedLanguageLabels=languageIds.map(id=>byId.get(id)?.label).filter((label):label is string=>Boolean(label));
+   const languages=[...selectedLanguageLabels,...otherLanguageValues];
    const saved=await api<Profile>("/api/v1/me/talent-profile",{method:"PATCH",body:JSON.stringify({references,languages})},token);
    setProfile(saved);
    const nationalityId=selectedRefs.nationality;
