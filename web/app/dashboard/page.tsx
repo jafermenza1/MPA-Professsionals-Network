@@ -62,7 +62,7 @@ export default function Dashboard(){
         const applications=memberResults[0].status==="fulfilled"&&Array.isArray(memberResults[0].value)?memberResults[0].value:[];
         const rawCases=memberResults[1].status==="fulfilled"?(Array.isArray(memberResults[1].value)?memberResults[1].value:memberResults[1].value.items||[]):[];
         const caseDetails=await Promise.allSettled(rawCases.slice(0,10).map(row=>api<VerificationSummary>("/api/v1/verification/cases/"+encodeURIComponent(row.id),{},token)));
-        const cases=rawCases.map((row,index)=>caseDetails[index]?.status==="fulfilled"?caseDetails[index].value:row);
+        const cases=rawCases.map((row,index)=>{const result=caseDetails[index];return result&&result.status==="fulfilled"?result.value:row;});
         const verifiedClaims=[...new Set(cases.flatMap(row=>(row.claims||[]).filter(claim=>claim.status==="verified").map(claim=>claim.claim_type_name||claim.claim_code||"Verified professional claim")))];
         const missingRequirements=[...new Set(cases.flatMap(row=>{const passed=new Set((row.checkResults||[]).filter(check=>["pass","not_applicable"].includes(String(check.outcome))).map(check=>check.item_code));return (row.checklist_version_snapshot||[]).flatMap(checklist=>(checklist.items||[]).filter(item=>item.required&&!passed.has(item.itemCode)).map(item=>item.label||item.itemCode||"Required verification item"));}))];
         memberClarity={applications,cases,profileVisibility:memberResults[2].status==="fulfilled"?String(memberResults[2].value.visibility||"private"):"private",profileLoaded:memberResults[2].status==="fulfilled",verifiedClaims,missingRequirements};
