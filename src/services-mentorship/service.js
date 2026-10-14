@@ -1,7 +1,7 @@
 import { getPool, withTransaction } from "../platform/db.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
-const ACTIVE_MEMBER_SQL="exists (select 1 from membership_record m where m.user_id=$1 and m.status='active')";
+const ACTIVE_MEMBER_SQL="exists (select 1 from membership_record m where m.user_id=$1 and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))";
 const PROFESSIONAL_CLAIMS=["professional_certification","education","employment","experience","service_capability"];
 
 async function audit(db,actor,action,type,id,requestId,metadata={}) {
@@ -373,6 +373,7 @@ export async function changeMentorStatus(profileId,userId,status,requestId){
     const p=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!p) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(p.user_id!==userId) throw error(403,"Only the mentor can manage this profile.","FORBIDDEN");
+    if(status==="active" && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a mentor profile.","MEMBERSHIP_REQUIRED");
     if(status==="active" && !(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to activate a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
     if(p.status==="closed"&&status!=="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
     const row=(await db.query("update mentor_profile set status=$1,updated_at=now() where id=$2 returning *",[status,profileId])).rows[0];
