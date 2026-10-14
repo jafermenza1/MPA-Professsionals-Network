@@ -54,6 +54,7 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
  if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||label.length<1) throw fail(400,"Enter a code using letters/numbers and a clear label.","REFERENCE_ITEM_INVALID");
  return withTransaction(async db=>{
   const {dataset,version,published}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
+  await db.query("update reference_dataset_version set status='draft',approved_by=null where id=$1 and status<>'draft'",[version.id]);
   let row;
   if(itemId){
    let targetId=itemId;
@@ -77,7 +78,9 @@ export async function importReferenceCsv(identity,key,filename,csv){
  rows.forEach(row=>{const code=clean(row.code,80).toUpperCase();if(!code||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);});
  if(errors.length) return {status:"rejected",imported:0,errors};
  return withTransaction(async db=>{
-  const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});let inserted=0,updated=0;
+  const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
+   await db.query("update reference_dataset_version set status='draft',approved_by=null where id=$1 and status<>'draft'",[version.id]);
+   let inserted=0,updated=0;
   for(const row of rows){
    const code=clean(row.code,80).toUpperCase(),label=clean(row.label,180),description=clean(row.description,2000)||null,active=!["false","0","inactive","no"].includes(String(row.active||"true").toLowerCase());
    const existing=(await db.query("select id,label,description,active from reference_item where dataset_version_id=$1 and code=$2 for update",[version.id,code])).rows[0];
