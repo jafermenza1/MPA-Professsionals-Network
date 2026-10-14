@@ -47,14 +47,25 @@ test("P1: portfolio supports multiple traceable items and keeps evidence optiona
  await talent.deleteProfessionalPortfolioItem(userId,first.id,"p1-portfolio-delete");
  assert.equal((await talent.getProfessionalPortfolio(userId)).length,1);
 });
-test("P1: reference CSV import validates duplicates and exports the selected dataset",async()=>{
- const userId=await activeMember(randomUUID()),identity={sub:userId,roles:["system_admin"],permissions:[]},key="professional_occupations";
+test("P1: reference CSV import is staged, exportable and only changes public forms after publication",async()=>{
+ const userId=await activeMember(randomUUID()),identity={sub:userId,roles:["system_admin"],permissions:[]},key="professional_occupations",suffix=randomUUID().replaceAll("-","").slice(0,8).toUpperCase(),analystCode="P1_ANALYST_"+suffix,otherCode="P1_OTHER_"+suffix;
  const invalid=await referencePortfolio.importReferenceCsv(identity,key,"duplicate.csv","code,label\nTEST,Test\nTEST,Duplicate");
  assert.equal(invalid.status,"rejected");assert.ok(invalid.errors.length);
- const imported=await referencePortfolio.importReferenceCsv(identity,key,"valid.csv",'code,label,description,sort_order,active\nP1_ANALYST,"Analyst, business","Business analysis",5,true\nP1_OTHER,Other,"Custom value",999,true');
- assert.equal(imported.status,"imported");assert.equal(imported.inserted,2);
+ const before=await referencePortfolio.listPublicReferenceSets();
+ assert.equal(before.some(row=>row.code===analystCode),false);
+ const csv='code,label,description,sort_order,active\n'+analystCode+',"Analyst, business","Business analysis",5,true\n'+otherCode+',Other,"Custom value",999,true';
+ const imported=await referencePortfolio.importReferenceCsv(identity,key,"valid.csv",csv);
+ assert.equal(imported.status,"imported");assert.equal(imported.inserted+imported.updated,2);
  const exported=await referencePortfolio.exportReferenceCsv(identity,key);
- assert.match(exported.csv,/P1_ANALYST/);assert.match(exported.csv,/"Analyst, business"/);
+ assert.match(exported.csv,new RegExp(analystCode));assert.match(exported.csv,/"Analyst, business"/);
+ const working=await referencePortfolio.listReferenceItems(identity,key);
+ assert.equal(working.version.status,"draft");assert.equal(working.version.hasDraft,true);
+ assert.equal((await referencePortfolio.listPublicReferenceSets()).some(row=>row.code===analystCode),false);
+ const published=await referencePortfolio.publishReferenceDataset(identity,key,"Gate 2 workflow test publication");
+ assert.equal(published.version.status,"published");assert.ok(published.activeItemCount>=2);
+ assert.equal((await referencePortfolio.listPublicReferenceSets()).some(row=>row.code===analystCode),true);
+ const publicVersion=(await referencePortfolio.listReferenceItems(identity,key)).version;
+ assert.equal(publicVersion.status,"published");assert.equal(publicVersion.hasDraft,false);
 });
 
 test.after(async()=>{await closePool();});
