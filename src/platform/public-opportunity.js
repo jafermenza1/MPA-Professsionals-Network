@@ -128,6 +128,12 @@ const EMPLOYER_SHARE_FIELDS=new Set(["targetRole","skills","experience","locatio
 async function requireSupportDesk(db,userId){
  if(!(await hasRole(db,userId,["system_admin","admin","supporting_staff"]))) throw error(403,"Only the MPA Support Desk may share job-seeker demand with an employer.","FORBIDDEN");
 }
+export async function getSharingHistory(reference,token){
+ const db=getPool();
+ const inquiry=await getByToken(db,reference,token);
+ if(inquiry.inquiry_type!=="job"||inquiry.job_id) throw error(400,"Sharing history applies only to job-seeker demand without a linked vacancy.","NOT_JOB_SEEKER_DEMAND");
+ return (await db.query("select s.id,o.display_name,o.legal_name,s.shared_fields,s.shared_at,s.revoked_at,s.revoke_reason from job_seeker_demand_share s join organization o on o.id=s.organization_id where s.inquiry_id=$1 order by s.shared_at desc",[inquiry.id])).rows.map(row=>({shareId:row.id,organizationName:row.display_name||row.legal_name,sharedFields:Array.isArray(row.shared_fields)?row.shared_fields:JSON.parse(row.shared_fields||"[]"),sharedAt:row.shared_at,revokedAt:row.revoked_at,revokeReason:row.revoke_reason,status:row.revoked_at?"revoked":"shared"}));
+}
 export async function updateSharingConsent(reference,token,input,requestId){
  return withTransaction(async db=>{
   const r=await getByToken(db,reference,token);
