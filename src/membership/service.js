@@ -163,7 +163,17 @@ export async function listMembershipProducts(){
 
 export async function listMembershipProductsForAdmin(){
   const db=getPool();
-  return (await db.query(`select p.*,coalesce(jsonb_agg(jsonb_build_object(
+  return (await db.query(`select p.*,
+    coalesce((select fr.base_amount+fr.tax_amount+fr.service_fee from membership_fee_rule fr
+      where fr.membership_product_id=p.id and fr.effective_from<=current_date and (fr.effective_to is null or fr.effective_to>=current_date)
+      order by fr.effective_from desc,fr.version desc limit 1),p.price) current_fee_amount,
+    coalesce((select fr.currency from membership_fee_rule fr
+      where fr.membership_product_id=p.id and fr.effective_from<=current_date and (fr.effective_to is null or fr.effective_to>=current_date)
+      order by fr.effective_from desc,fr.version desc limit 1),p.currency) current_fee_currency,
+    (select fr.version from membership_fee_rule fr
+      where fr.membership_product_id=p.id and fr.effective_from<=current_date and (fr.effective_to is null or fr.effective_to>=current_date)
+      order by fr.effective_from desc,fr.version desc limit 1) current_fee_version,
+    coalesce(jsonb_agg(jsonb_build_object(
       'id',r.id,'version',r.version,'baseAmount',r.base_amount,'currency',r.currency,
       'taxAmount',r.tax_amount,'serviceFee',r.service_fee,'effectiveFrom',r.effective_from,
       'effectiveTo',r.effective_to,'billingModel',r.billing_model,'durationDays',r.duration_days,
