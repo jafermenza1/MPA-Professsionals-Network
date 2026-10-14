@@ -159,4 +159,15 @@ test("Gate 2: Support Desk proposes a suitable provider and the provider respond
  assert.equal((await marketplace.listReviewQueue(staff,{status:"matched"})).some(x=>x.id===demand.id),true);
 });
 
+test("Gate 2: organization workspace exposes required evidence and current verification blockers",async()=>{
+ const owner=await account();
+ const org=await organizationJobs.registerOrganization(owner,{legalName:"Gate 2 Trust Checklist "+randomUUID(),displayName:"Gate 2 Trust Checklist Organization",organizationType:"company"},"gate2-org-checklist-create");
+ const workspace=(await organizationJobs.listMyOrganizations(owner)).find(row=>row.id===org.id);
+ assert.ok(workspace,"the registered organization should appear in its owner's workspace");
+ assert.ok(["draft","submitted","pending","correction_required","verified","rejected"].includes(workspace.verification_case_status));
+ assert.ok(Array.isArray(workspace.required_evidence),"configured required evidence must be returned for the owner");
+ assert.ok(Array.isArray(workspace.missing_evidence),"the owner needs an explicit missing-evidence list");
+ assert.ok(Array.isArray(workspace.verification_evidence),"the owner needs to see which evidence has been received");
+ assert.equal(workspace.verification_case_status,"draft");
+});
 test.after(async()=>{await closePool();});
