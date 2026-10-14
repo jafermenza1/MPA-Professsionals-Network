@@ -327,6 +327,40 @@ export async function activateApplication(applicationId,actorId,requestId){
   });
 }
 
+export async function reverseMembershipPayment(paymentId,actorId,input,requestId){
+  return withTransaction(async db=>{
+    const reason=String(input.reason||"").trim();
+    if(reason.length<8) throw httpError(400,"Provide a clear reason of at least 8 characters for the refund or reversal.","REVERSAL_REASON_REQUIRED");
+    const row=(await db.query(`select pt.*,ap.application_id,a.user_id,a.status as application_status
+      from payment_transaction pt
+      join membership_application_payment ap on ap.payment_transaction_id=pt.id
+      join membership_application a on a.id=ap.application_id
+      where pt.id=$1 for update of pt,a`,[paymentId])).rows[0];
+    if(!row) throw httpError(404,"Membership payment not found.","NOT_FOUND");
+    const prior=(await db.query("select * from membership_payment_reversal where payment_transaction_id=$1",[paymentId])).rows[0];
+    if(prior) return prior;
+    if(row.status!=="succeeded") throw httpError(409,"Only a successfully verified membership payment can be refunded or reversed.","PAYMENT_NOT_REVERSIBLE");
+    const reversalType=input.type==="reversal"?"reversal":"refund";
+    const record=(await db.query(`insert into membership_payment_reversal(payment_transaction_id,application_id,reversal_type,reason,evidence_reference,reversed_by,metadata)
+      values($1,$2,$3,$4,$5,$6,$7::jsonb) returning *`,[
+      paymentId,row.application_id,reversalType,reason,String(input.evidenceReference||"").trim()||null,actorId,
+      JSON.stringify({requestId:requestId||null,previousStatus:row.status,applicationStatus:row.application_status})
+    ])).rows[0];
+    await db.query("update payment_transaction set status='refunded',updated_at=now(),completed_at=coalesce(completed_at,now()),verification_note=$1 where id=$2",[reason,paymentId]);
+    const suspended=(await db.query("update membership_record set status='suspended',updated_at=now() where application_id=$1 and status='active' returning id,user_id",[row.application_id])).rows;
+    if(row.application_status==="paid"){
+      await db.query("update membership_application set status='payment_pending',updated_at=now() where id=$1",[row.application_id]);
+    }
+    await audit(db,actorId,"membership.payment_reversed","membership_payment_reversal",record.id,requestId,{
+      applicationId:row.application_id,paymentId,reversalType,suspendedMembershipIds:suspended.map(item=>item.id)
+    });
+    await notify(db,row.user_id,"membership_payment_reversed","membership_application",row.application_id,{
+      reversalType,reason,membershipAccessChanged:suspended.length>0
+    });
+    return record;
+  });
+}
+
 export async function renew(userId,productCode,requestId){
   return createApplication(userId,{productCode,applicationType:"renewal"},requestId);
 }
