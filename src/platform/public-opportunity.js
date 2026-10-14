@@ -153,11 +153,11 @@ export async function shareJobSeekerDemand(inquiryId,actorId,input,requestId){
   if(inquiry.employer_sharing_consent!==true||inquiry.employer_sharing_scope!=="named_employer"||inquiry.employer_sharing_revoked_at) throw error(403,"The applicant has not granted current named-employer sharing consent.","CONSENT_REQUIRED");
   const organizationId=String(input.organizationId||"").trim();
   if(!organizationId) throw error(400,"organizationId is required.","VALIDATION_ERROR");
-  const organization=(await db.query("select id,verification_status,public_visible from organization where id=$1",[organizationId])).rows[0];
-  if(!organization||organization.verification_status!=="verified"||organization.public_visible!==true) throw error(403,"Demand can only be shared with a verified, visible organization.","ORGANIZATION_NOT_ELIGIBLE");
   const consented=Array.isArray(inquiry.employer_sharing_fields)?inquiry.employer_sharing_fields:JSON.parse(inquiry.employer_sharing_fields||"[]");
   const requested=Array.isArray(input.fields)?[...new Set(input.fields.map(String))]:consented;
   if(!requested.length||requested.some(field=>!EMPLOYER_SHARE_FIELDS.has(field)||!consented.includes(field))) throw error(403,"The selected share fields exceed or do not match the applicant's consent.","CONSENT_FIELD_MISMATCH");
+  const organization=(await db.query("select id,verification_status,public_visible from organization where id=$1",[organizationId])).rows[0];
+  if(!organization||organization.verification_status!=="verified"||organization.public_visible!==true) throw error(403,"Demand can only be shared with a verified, visible organization.","ORGANIZATION_NOT_ELIGIBLE");
   const share=(await db.query("insert into job_seeker_demand_share(inquiry_id,organization_id,shared_by,shared_fields,shared_at,revoked_at,revoke_reason,updated_at) values($1,$2,$3,$4::jsonb,now(),null,null,now()) on conflict(inquiry_id,organization_id) do update set shared_by=excluded.shared_by,shared_fields=excluded.shared_fields,shared_at=now(),revoked_at=null,revoke_reason=null,updated_at=now() returning id,inquiry_id,organization_id,shared_fields,shared_at,revoked_at",[inquiry.id,organizationId,actorId,JSON.stringify(requested)])).rows[0];
   await audit(db,actorId,"job_seeker_demand.shared_with_employer","job_seeker_demand_share",share.id,requestId,{inquiryId:inquiry.id,organizationId,fields:requested});
   return {id:share.id,reference:inquiry.public_reference,organizationId,sharedFields:requested,sharedAt:share.shared_at,status:"shared"};
