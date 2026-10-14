@@ -136,7 +136,7 @@ export async function exportMembers(identity,{q="",status="",format="csv"}={},re
  where ($1='' or lower(coalesce(p.display_name,'')) like lower('%'||$1||'%') or lower(coalesce(u.email,'')) like lower('%'||$1||'%') or lower(mr.membership_number) like lower('%'||$1||'%'))
  and ($2='' or mr.status=$2) order by mr.created_at desc limit 10000`,[String(q).slice(0,120),String(status).slice(0,30)])).rows;
  const headers=["legacy_member_id","email","phone","full_name","membership_number","product_code","product_name","status","start_date","end_date","source","created_at"];
- const esc=v=>{let s=v==null?"":v instanceof Date?v.toISOString().slice(0,10):String(v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+ const esc=v=>{let s=v==null?"":v instanceof Date?v.toISOString().slice(0,10):String(v);if(typeof v==="string"&&/^[\s]*[=+\-@]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
  const csv=[headers.join(","),...rows.map(row=>headers.map(h=>esc(row[h])).join(","))].join("\r\n")+"\r\n";
  const filename="mpa-members-"+new Date().toISOString().slice(0,10)+(format==="xlsx"?".xlsx":".csv");
  const buffer=format==="xlsx"?makeXlsx({report:{title:"MPA member directory",scope:"Restricted platform PII",definition:"Member contact and membership details. Treat this export as confidential.",columns:headers},filters:{q,status},generatedAt:new Date().toISOString(),rows:rows.map(row=>Object.fromEntries(headers.map(h=>[h,row[h] instanceof Date?row[h].toISOString():row[h]??""]))) ,totals:{rows:rows.length}}):Buffer.from(csv,"utf8");
