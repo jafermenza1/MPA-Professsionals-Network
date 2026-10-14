@@ -81,3 +81,8 @@ Detect -> contain -> investigate -> remediate -> recover -> communicate where re
 ## 15. Release blockers
 
 Do not release if privileged endpoints lack authorization, sensitive documents are public, payment state can be forged, audit-critical actions are missing, secrets are committed or authentication abuse is unprotected.
+
+
+## Account recovery links
+
+Administrator-issued one-time session links must be random, short-lived (20 minutes), single-use, stored only as a hash, and delivered to the account's recorded email through the notification outbox. Redemption revokes existing sessions and creates a restricted recovery session that must set a new password before account changes are complete. Require administrator authorization and an audit reason; privileged-account recovery is system-admin-only. Verify the account holder through a known channel before asking them to use a link. Queue acceptance must never be presented as confirmed email delivery.
