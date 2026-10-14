@@ -11,7 +11,6 @@ export async function updateOwnCredentials(identity,input,requestId){
  const userId=identity?.sub,sessionId=identity?.sid,usernameInput=input?.username===undefined?undefined:String(input.username).trim().toLowerCase(),newPassword=input?.newPassword===undefined?"":String(input.newPassword),currentPassword=String(input?.currentPassword||"");
  if(!userId||!sessionId)throw err(401,"Please sign in again before changing your account details.","UNAUTHENTICATED");
  if(usernameInput===undefined&&!newPassword)throw err(400,"Choose a username or enter a new password to make a change.","NO_ACCOUNT_CHANGES");
- if(usernameInput!==undefined&&!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(usernameInput))throw err(400,"Choose a username with 3–40 letters, numbers, dots, underscores or hyphens. It must start with a letter or number.","USERNAME_INVALID");
  if(newPassword)validatePassword(newPassword);
  const recovery=identity.credential_setup_required===true;
  if(!recovery&&!currentPassword)throw err(400,"Enter your current password to confirm these account changes.","CURRENT_PASSWORD_REQUIRED");
@@ -19,6 +18,7 @@ export async function updateOwnCredentials(identity,input,requestId){
  return withTransaction(async tx=>{
   const user=(await tx.query("select id,username,password_hash,status from app_user where id=$1 for update",[userId])).rows[0];
   if(!user||user.status!=="active")throw err(401,"This account cannot be changed right now. Please contact support if you need help.","ACCOUNT_UNAVAILABLE");
+  if(usernameInput!==undefined&&usernameInput!==user.username&&!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(usernameInput))throw err(400,"Choose a username with 3–40 letters, numbers, dots, underscores or hyphens. It must start with a letter or number.","USERNAME_INVALID");
   if(!recovery&&!verifyPassword(currentPassword,user.password_hash))throw err(400,"That current password does not match. Please try again.","CURRENT_PASSWORD_INCORRECT");
   if(usernameInput!==undefined&&usernameInput!==user.username){const duplicate=await tx.query("select id from app_user where lower(username)=lower($1) and id<>$2 limit 1",[usernameInput,userId]);if(duplicate.rowCount)throw err(409,"That username is already in use. Try another one.","USERNAME_TAKEN")}
   const nextUsername=usernameInput===undefined?user.username:usernameInput;
