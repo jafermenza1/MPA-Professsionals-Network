@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import {closePool,getPool,withTransaction} from "../src/platform/db.js";
 
 const apiKey=process.env.RESEND_API_KEY;
@@ -24,8 +25,9 @@ if(!apiKey||!from){
   });
   let sent=0,failed=0;
   for(const row of rows){
+   let payload={};
    try{
-    const payload=typeof row.payload==="string"?JSON.parse(row.payload):row.payload;
+    payload=typeof row.payload==="string"?JSON.parse(row.payload):row.payload;
     const url=new URL(String(payload?.url||""));
     if(process.env.NODE_ENV==="production"&&url.protocol!=="https:")throw new Error("Recovery links must use HTTPS in production.");
     if(!payload?.url||url.pathname!=="/account/one-time-access")throw new Error("Recovery email payload did not contain a valid account recovery URL.");
@@ -43,12 +45,13 @@ if(!apiKey||!from){
     const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"Authorization":"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from,to:[row.recipient],subject:"Your one-time MPA sign-in link",text:textBody,html:htmlBody})});
     const body=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error("Email provider returned HTTP "+response.status);
-    await pool.query("update notification_outbox set status='sent',sent_at=now(),provider_message_id=$2,last_error=null,next_attempt_at=null where id=$1",[row.id,body.id||null]);
+    await pool.query("update notification_outbox set status='sent',sent_at=now(),provider_message_id=$2,last_error=null,next_attempt_at=null,payload=payload-'url' where id=$1",[row.id,body.id||null]);
     sent++;
    }catch(error){
     const delay=Math.min(60,2**Math.min(Number(row.attempts)||1,6));
     const status=Number(row.attempts)>=5?"failed":"pending";
-    await pool.query("update notification_outbox set status=$2,last_error=$3,next_attempt_at=case when $2='pending' then now()+make_interval(mins=>$4) else null end where id=$1",[row.id,status,String(error?.message||"Email delivery failed").slice(0,500),delay]);
+    await pool.query("update notification_outbox set status=$2,last_error=$3,next_attempt_at=case when $2='pending' then now()+make_interval(mins=>$4) else null end,payload=case when $2='failed' then payload-'url' else payload end where id=$1",[row.id,status,String(error?.message||"Email delivery failed").slice(0,500),delay]);
+    if(status==="failed"&&payload?.url){try{const token=new URL(String(payload.url)).searchParams.get("token");if(token){const tokenHash=crypto.createHash("sha256").update(token).digest("hex");await pool.query("update one_time_session_link set revoked_at=now() where token_hash=$1 and used_at is null and revoked_at is null",[tokenHash])}}catch{ /* Keep dispatcher logs free of secret link material. */ }}
     console.error("Could not deliver account recovery email",row.id,"attempt",row.attempts,"status",status);
     failed++;
    }
