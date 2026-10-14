@@ -118,6 +118,7 @@ export default function Jobs(){
    <div className="eyebrow">Employment & opportunity hub</div>
    <h1 className="h1">Opportunities, without the maze.</h1>
    <p className="muted">Browse current opportunities published by verified organizations. Eligibility and formal application steps are checked by the platform; sample or invented vacancies are not shown.</p>
+   <p><a className="btn btn-ghost" href="/jobs/interest">No matching vacancy? Register your job interest</a></p>
    <div className="split" style={{marginTop:20}}>
      <Card id="job-filters" className="filter">
        <form onSubmit={submitFilters}>
