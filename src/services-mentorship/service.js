@@ -95,8 +95,9 @@ export async function createServiceListing(userId,input,requestId){
   return withTransaction(async db=>{
     const organizationId=input.organizationId||null;
     if(organizationId){
-      const membership=(await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[organizationId,userId])).rows[0];
-      if(!membership||!["owner","administrator","recruiter","project_manager"].includes(membership.role_code)) throw error(403,"An active organization owner or authorized manager is required to create this listing.","ORGANIZATION_FORBIDDEN");
+      let membership;
+      try { membership=await assertOrganizationCapability(db,organizationId,userId); }
+      catch(cause) { throw error(cause.statusCode||403,cause.message||"An active organization owner or authorized manager is required to create this listing.",cause.code||"ORGANIZATION_FORBIDDEN"); }
       if(membership.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
     } else {
       await requirePersonalProfessionalCapability(db,userId);
