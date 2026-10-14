@@ -148,7 +148,7 @@ export async function listMembershipProducts(){
     coalesce(r.billing_model,p.billing_model) billing_model,
     (coalesce(r.base_amount,p.price)+coalesce(r.tax_amount,0)+coalesce(r.service_fee,0)) price,
     coalesce(r.base_amount,p.price) base_amount,coalesce(r.tax_amount,0) tax_amount,coalesce(r.service_fee,0) service_fee,
-    coalesce(r.currency,p.currency) currency,case when r.id is not null then r.duration_days else p.duration_days end duration_days,
+    coalesce(r.currency,p.currency) currency,case when r.terms_snapshot_complete then r.duration_days else p.duration_days end duration_days,
     coalesce(r.renewal_required,p.renewal_required) renewal_required,
     coalesce(r.benefits,p.benefits) benefits,coalesce(r.grace_period_days,p.grace_period_days) grace_period_days,
     coalesce(r.eligibility,p.eligibility) eligibility,coalesce(r.effective_from,p.effective_from) effective_from,
@@ -179,7 +179,7 @@ export async function listMembershipProductsForAdmin(){
       'taxAmount',r.tax_amount,'serviceFee',r.service_fee,'effectiveFrom',r.effective_from,
       'effectiveTo',r.effective_to,'billingModel',r.billing_model,'durationDays',r.duration_days,
       'renewalRequired',r.renewal_required,'gracePeriodDays',r.grace_period_days,'plan_name',r.plan_name,'plan_description',r.plan_description,
-      'benefits',r.benefits,'eligibility',r.eligibility,'createdAt',r.created_at
+      'benefits',r.benefits,'eligibility',r.eligibility,'termsSnapshotComplete',r.terms_snapshot_complete,'createdAt',r.created_at
     ) order by r.version desc) filter(where r.id is not null),'[]'::jsonb) fee_rule_history
     from membership_product p left join membership_fee_rule r on r.membership_product_id=p.id
     group by p.id order by p.created_at desc`)).rows;
@@ -219,24 +219,34 @@ export async function saveMembershipProduct(actorId,productCode,input,requestId)
     }
     let product;
     if(existing){
-      product=(await db.query(`update membership_product set name=$1,description=$2,billing_model=$3,price=$4,currency=$5,
-        duration_days=$6,renewal_required=$7,grace_period_days=$8,benefits=$9::jsonb,eligibility=$10::jsonb,
+      product=(await db.query(`update membership_product set
+        name=case when $15::date<=current_date then $1 else name end,
+        description=case when $15::date<=current_date then $2 else description end,
+        billing_model=case when $15::date<=current_date then $3 else billing_model end,
+        price=case when $15::date<=current_date then $4 else price end,
+        currency=case when $15::date<=current_date then $5 else currency end,
+        duration_days=case when $15::date<=current_date then $6 else duration_days end,
+        renewal_required=case when $15::date<=current_date then $7 else renewal_required end,
+        grace_period_days=case when $15::date<=current_date then $8 else grace_period_days end,
+        benefits=case when $15::date<=current_date then $9::jsonb else benefits end,
+        eligibility=case when $15::date<=current_date then $10::jsonb else eligibility end,
         active=$11,effective_from=$12,effective_to=$13,updated_at=now() where id=$14 returning *`,[
         name,String(input.description||"").trim()||null,billingModel,amount,currency,durationDays,renewalRequired,
-        gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility),input.active!==false,planEffectiveFrom,planEffectiveTo,existing.id
+        gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility),input.active!==false,planEffectiveFrom,planEffectiveTo,existing.id,effectiveFrom
       ])).rows[0];
     }else{
+      const productEffectiveFrom=planEffectiveFrom&&planEffectiveFrom>effectiveFrom?planEffectiveFrom:effectiveFrom;
       product=(await db.query(`insert into membership_product(product_code,name,description,billing_model,price,currency,duration_days,renewal_required,grace_period_days,benefits,eligibility,active,effective_from,effective_to)
         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13,$14) returning *`,[
         code,name,String(input.description||"").trim()||null,billingModel,amount,currency,durationDays,renewalRequired,
-        gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility),input.active!==false,planEffectiveFrom||effectiveFrom,planEffectiveTo
+        gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility),input.active!==false,productEffectiveFrom,planEffectiveTo
       ])).rows[0];
     }
     const nextVersion=Number((await db.query("select coalesce(max(version),0)+1 version from membership_fee_rule where membership_product_id=$1",[product.id])).rows[0].version);
     // Close the previously open rule at the day before the new rule takes effect.
     await db.query("update membership_fee_rule set effective_to=case when effective_from=$1::date then $1::date else ($1::date-1) end where membership_product_id=$2 and effective_from<=$1::date and (effective_to is null or effective_to >= $1::date)",[effectiveFrom,product.id]);
-    const rule=(await db.query(`insert into membership_fee_rule(membership_product_id,version,base_amount,currency,billing_period,tax_amount,service_fee,eligibility_rules,effective_from,created_by,plan_name,plan_description,billing_model,duration_days,renewal_required,grace_period_days,benefits,eligibility)
-      values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb) returning *`,[
+    const rule=(await db.query(`insert into membership_fee_rule(membership_product_id,version,base_amount,currency,billing_period,tax_amount,service_fee,eligibility_rules,effective_from,created_by,plan_name,plan_description,billing_model,duration_days,renewal_required,grace_period_days,benefits,eligibility,terms_snapshot_complete)
+      values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,true) returning *`,[
       product.id,nextVersion,amount,currency,billingModel,taxAmount,serviceFee,
       JSON.stringify(eligibility),effectiveFrom,actorId,name,String(input.description||"").trim()||null,billingModel,
       durationDays,renewalRequired,gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility)
@@ -264,8 +274,10 @@ export async function createApplication(userId,input,requestId){
     const activeFeeRule=(await db.query(`select * from membership_fee_rule
       where membership_product_id=$1 and effective_from<=current_date and (effective_to is null or effective_to>=current_date)
       order by effective_from desc,version desc limit 1`,[prod.id])).rows[0]||null;
-    const planBillingModel=activeFeeRule?.billing_model||prod.billing_model;
-    const planRenewalRequired=activeFeeRule?.renewal_required??prod.renewal_required;
+    const feeTermsComplete=Boolean(activeFeeRule?.terms_snapshot_complete);
+    const planBillingModel=feeTermsComplete?activeFeeRule.billing_model:prod.billing_model;
+    const planRenewalRequired=feeTermsComplete?activeFeeRule.renewal_required:prod.renewal_required;
+    const planDurationDays=feeTermsComplete?activeFeeRule.duration_days:prod.duration_days;
     const active=await db.query("select mr.*,mp.billing_model current_billing_model,mp.renewal_required current_renewal_required from membership_record mr left join membership_product mp on mp.id=mr.membership_product_id where mr.user_id=$1 and mr.status='active' and mr.start_date<=current_date and (mr.end_date is null or mr.end_date>=current_date) order by mr.end_date desc nulls last limit 1",[userId]);
     const type=input.applicationType||"new";
     if(type==="new" && active.rows[0]) throw httpError(409,"An active membership already exists. Use renewal.","ACTIVE_MEMBERSHIP");
@@ -283,15 +295,15 @@ export async function createApplication(userId,input,requestId){
       : amountFromProduct(prod);
     const fee={
       productCode:prod.product_code,productName:activeFeeRule?.plan_name||prod.name,productDescription:activeFeeRule?.plan_description||prod.description||null,amount:feeAmount,
-      currency:activeFeeRule?.currency||prod.currency,billingModel:activeFeeRule?.billing_model||prod.billing_model,
-      durationDays:activeFeeRule?activeFeeRule.duration_days:prod.duration_days,renewalRequired:activeFeeRule?.renewal_required??prod.renewal_required,
-      gracePeriodDays:activeFeeRule?.grace_period_days??prod.grace_period_days,
-      benefits:activeFeeRule?.benefits||prod.benefits,eligibility:activeFeeRule?.eligibility||prod.eligibility,
+      currency:activeFeeRule?.currency||prod.currency,billingModel:planBillingModel,
+      durationDays:planDurationDays,renewalRequired:planRenewalRequired,
+      gracePeriodDays:feeTermsComplete?activeFeeRule.grace_period_days:prod.grace_period_days,
+      benefits:feeTermsComplete?activeFeeRule.benefits:prod.benefits,eligibility:feeTermsComplete?activeFeeRule.eligibility:prod.eligibility,
       feeRuleId:activeFeeRule?.id||null,feeRuleVersion:activeFeeRule?.version??null,
       feeBreakdown:activeFeeRule?{baseAmount:Number(activeFeeRule.base_amount),taxAmount:Number(activeFeeRule.tax_amount||0),serviceFee:Number(activeFeeRule.service_fee||0)}:null,
       effectiveFrom:activeFeeRule?.effective_from||prod.effective_from||null,
       effectiveTo:activeFeeRule?.effective_to||prod.effective_to||null,
-      durationPolicy:((activeFeeRule?.billing_model||prod.billing_model)==="recurring" && Number(activeFeeRule?activeFeeRule.duration_days:prod.duration_days)===365)?"calendar_year_inclusive":"fixed_days_inclusive"
+      durationPolicy:(planBillingModel==="recurring" && Number(planDurationDays)===365)?"calendar_year_inclusive":"fixed_days_inclusive"
     };
     const trackingReference=await nextTrackingReference(db,"membership");
     const row=(await db.query(`insert into membership_application(user_id,tracking_reference,application_type,previous_membership_id,membership_product_id,status,submitted_at,data_snapshot,fee_snapshot)
