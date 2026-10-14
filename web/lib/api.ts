@@ -40,7 +40,18 @@ const FRIENDLY_ERRORS: Record<string,string> = {
   NOT_FOUND: "We could not find that item. It may have been removed or is no longer available.",
   INVALID_JSON: "Some submitted information could not be read. Review the form and try again.",
   PAYLOAD_TOO_LARGE: "The submitted information is too large. Reduce the size and try again.",
-  AUTH_NOT_CONFIGURED: "Sign-in is temporarily unavailable. Please contact support."
+  AUTH_NOT_CONFIGURED: "Sign-in is temporarily unavailable. Please contact support.",
+  MISSING_COLUMNS: "The CSV is missing one or more required columns. Download the latest MPA member template and use its exact headings.",
+  DUPLICATE_COLUMNS: "The CSV contains duplicate column headings. Keep one column for each field.",
+  INVALID_CSV: "The CSV has invalid quoting or formatting. Open it in a spreadsheet app and save it as CSV UTF-8.",
+  EMPTY_IMPORT: "Choose a non-empty CSV file before previewing the import.",
+  IMPORT_TOO_LARGE: "The member import is too large. Split the register into smaller CSV batches.",
+  AUDIT_REASON_REQUIRED: "Enter a clear audit reason before applying this import.",
+  SENSITIVE_REPORT_FORBIDDEN: "This report contains restricted member or financial data. Request the appropriate report permission.",
+  INVALID_EXPORT_FORMAT: "Choose one of the available export formats.",
+  INVALID_INVITATION: "This member invitation link is incomplete. Open the full link from the invitation email.",
+  INVITATION_EXPIRED: "This invitation has expired or was already used. Contact MPA membership support for a new invitation.",
+  PUBLIC_CONTACT_DETAILS: "Remove phone numbers and email addresses from the public report summary before publishing it."
 };
 
 function safeServerMessage(value: unknown): string | undefined {
