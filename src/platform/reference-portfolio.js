@@ -90,7 +90,7 @@ export async function previewReferenceCsv(identity,key,filename,csv){
 export async function importReferenceCsv(identity,key,filename,csv,mapping={}){
  assertReferenceAdmin(identity);
  const rows=parseCsv(csv,mapping);const seen=new Set();const errors=[];
- rows.forEach(row=>{const code=clean(row.code,80).toUpperCase();if(!code||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);});
+ rows.forEach(row=>{const code=clean(row.code,80).toUpperCase();if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required and Code must use letters, numbers, dot, underscore or hyphen."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);});
  if(errors.length) return {status:"rejected",imported:0,errors};
  return withTransaction(async db=>{
   const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
@@ -102,6 +102,7 @@ export async function importReferenceCsv(identity,key,filename,csv,mapping={}){
    if(existing){await db.query("update reference_item set label=$1,description=$2,active=$3,sort_order=$4,updated_by=$5,updated_at=now() where id=$6",[label,description,active,Number(row.sort_order)||0,identity.sub,existing.id]);updated++;}
    else{await db.query("insert into reference_item(dataset_version_id,code,label,description,active,sort_order,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$7)",[version.id,code,label,description,active,Number(row.sort_order)||0,identity.sub]);inserted++;}
   }
+  for(const row of rows){const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();if(parent){const parentRow=(await db.query("select id from reference_item where dataset_version_id=$1 and code=$2",[version.id,parent])).rows[0];if(!parentRow)throw fail(400,"Parent code "+parent+" was not found in the working copy.","REFERENCE_PARENT_INVALID");await db.query("update reference_item set parent_item_id=$1 where dataset_version_id=$2 and code=$3",[parentRow.id,version.id,code]);}else if(row.parent_code!==undefined)await db.query("update reference_item set parent_item_id=null where dataset_version_id=$1 and code=$2",[version.id,code]);}
   await db.query("insert into reference_import(dataset_id,target_version_id,filename,format,status,uploaded_by,completed_at) values($1,$2,$3,'csv','drafted',$4,now())",[dataset.id,version.id,clean(filename,180)||"reference-import.csv",identity.sub]);
   await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,outcome,metadata) values($1,'reference.csv_imported','reference_dataset',$2,'success',$3)",[identity.sub,dataset.id,JSON.stringify({datasetKey:key,rowCount:rows.length,inserted,updated})]);
   return {status:"imported",datasetKey:key,rowCount:rows.length,inserted,updated,errors:[]};
