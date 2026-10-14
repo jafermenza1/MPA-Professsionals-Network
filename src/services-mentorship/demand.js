@@ -4,8 +4,8 @@ function fail(status,message,code="BUSINESS_RULE"){return Object.assign(new Erro
 const STAFF_ROLES=["admin","system_admin","platform_admin","supporting_staff","reviewer"];
 const ORG_ROLES=["owner","administrator"];
 async function staff(db,userId){
- const r=await db.query("select role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);
- if(!r.rows.some(x=>STAFF_ROLES.includes(x.role_code))) throw fail(403,"Marketplace Support Desk permission is required.","FORBIDDEN");
+ const [r,p]=await Promise.all([db.query("select role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]),db.query("select permission_code from app_user_permission where user_id=$1",[userId])]);
+ if(!r.rows.some(x=>STAFF_ROLES.includes(x.role_code))&&!p.rows.some(x=>["marketplace.moderate","services.moderate","mentorship.moderate"].includes(x.permission_code))) throw fail(403,"Marketplace Support Desk permission is required.","FORBIDDEN");
 }
 async function orgAccess(db,orgId,userId){
  const r=await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[orgId,userId]);
@@ -76,6 +76,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
  const status=input.status;
  const allowed=["under_review","clarification_needed","matched","topic_published","converted","closed","declined"];
  if(!allowed.includes(status))throw fail(400,"Unsupported demand review status.","VALIDATION_ERROR");
+ if(status==="topic_published"&&!input.publishTopic)throw fail(400,"A public topic must be created from a separate privacy-safe summary.","PUBLIC_SUMMARY_REQUIRED");
  return withTransaction(async db=>{
   await staff(db,actorId);
   const demand=(await db.query("select * from marketplace_demand where id=$1 for update",[demandId])).rows[0];
