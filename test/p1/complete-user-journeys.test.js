@@ -5,6 +5,7 @@ import { getPool, closePool } from "../../src/platform/db.js";
 import * as membership from "../../src/membership/service.js";
 import * as organizationJobs from "../../src/organization-jobs/service.js";
 import * as marketplace from "../../src/services-mentorship/demand.js";
+import * as organizationOffers from "../../src/services-mentorship/organization-offers.js";
 import * as journeys from "../../src/services-mentorship/service.js";
 
 function identity(suffix){
@@ -114,6 +115,27 @@ test("Gate 2: mentorship offer is reviewed, matched, accepted, scheduled, comple
  await journeys.changeMentorshipStatus(engagement.id,mentor,"completed","The agreed mentorship goals were reviewed.","gate2-mentorship-complete");
  const programFeedback=await journeys.submitMentorshipFeedback(engagement.id,mentee,{targetRole:"program",rating:5,comments:"The mentorship reached its agreed outcome."},"gate2-program-feedback");
  assert.equal(Number(programFeedback.rating),5);
+});
+
+test("Gate 2: verified organization mentorship offer is moderated, requested, accepted and completed",async()=>{
+ const owner=await account(),requester=await account(),staff=await supportStaff(),org=await approvedOrg(owner);
+ const offer=await organizationOffers.createOrganizationMentorshipOffer(owner,{organizationId:org.id,title:"Gate 2 leadership mentorship program",description:"A structured program for early-career professionals with guided goals, mentor check-ins and a clear completion outcome.",expertise:["leadership","career development"],languages:["English","Amharic"],deliveryMode:"hybrid",visibility:"public"},"gate2-org-mentorship-create");
+ assert.equal(offer.organization_id,org.id);assert.equal(offer.moderation_status,"pending");
+ const submitted=await organizationOffers.changeOrganizationMentorshipOfferStatus(offer.id,owner,"published","gate2-org-mentorship-submit");
+ assert.equal(submitted.status,"draft");
+ assert.ok((await marketplace.listAdminListings(staff)).some(x=>x.id===offer.id&&x.listing_type==="organization_mentorship"));
+ const moderated=await marketplace.moderateListing("organization_mentorship",offer.id,staff,{decision:"approved",note:"Verified organization program and public copy reviewed."},"gate2-org-mentorship-approve");
+ assert.equal(moderated.status,"published");
+ const publicOffer=(await organizationOffers.listOrganizationMentorshipOffers(null)).find(x=>x.id===offer.id);
+ assert.ok(publicOffer);assert.equal(publicOffer.organization_name,org.display_name);
+ const request=await organizationOffers.requestOrganizationMentorship(offer.id,requester,{message:"I want support building a leadership plan and improving team communication."},"gate2-org-mentorship-request");
+ assert.equal(request.status,"requested");
+ assert.ok((await organizationOffers.listMyOrganizationMentorshipRequests(owner)).some(x=>x.id===request.id&&!x.is_requester));
+ const accepted=await organizationOffers.respondOrganizationMentorshipRequest(request.id,owner,"accepted","We can support this goal. The organization will contact you to agree next steps.","gate2-org-mentorship-accept");
+ assert.equal(accepted.status,"accepted");
+ const completed=await organizationOffers.respondOrganizationMentorshipRequest(request.id,owner,"completed","Program completed and the agreed outcome was recorded.","gate2-org-mentorship-complete");
+ assert.equal(completed.status,"completed");
+ assert.equal((await organizationOffers.listMyOrganizationMentorshipRequests(requester)).find(x=>x.id===request.id).status,"completed");
 });
 
 test.after(async()=>{await closePool();});
