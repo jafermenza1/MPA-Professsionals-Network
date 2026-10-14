@@ -5,7 +5,7 @@ import { Card, Badge } from "../../components/ui";
 import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
 
-type RefItem={id:string;dataset_key:string;name:string;domain:string;code:string;label:string;description?:string|null;sort_order:number};
+type RefItem={id:string;dataset_key:string;name:string;domain:string;code:string;label:string;aliases?:string[]|null;description?:string|null;sort_order:number};
 type ProfileRef={relation_type:string;reference_item_id:string;custom_value:string|null;code:string;label:string};
 type Profile={references?:ProfileRef[];languages?:string[]};
 type AccountProfile={first_name?:string;middle_name?:string|null;last_name?:string;display_name?:string;phone?:string|null;date_of_birth?:string|null;sex?:string|null;nationality?:string|null;headline?:string|null;bio?:string|null;visibility?:string|null};
@@ -22,10 +22,10 @@ function asDraft(e:Education):EducationDraft{return {educationLevelItemId:e.educ
 export default function GuidedProfessionalProfile({onNationalitySaved}:{onNationalitySaved:(value:string)=>void}){
  const token=useUiStore(s=>s.token);
  const [refs,setRefs]=useState<RefItem[]>([]),[profile,setProfile]=useState<Profile>({}),[education,setEducation]=useState<EducationDraft[]>([]),[portfolio,setPortfolio]=useState<Portfolio[]>([]);
- const [selectedRefs,setSelectedRefs]=useState<Record<string,string>>({}),[customRefs,setCustomRefs]=useState<Record<string,string>>({}),[languageIds,setLanguageIds]=useState<string[]>([]),[otherLanguage,setOtherLanguage]=useState("");
+ const [selectedRefs,setSelectedRefs]=useState<Record<string,string>>({}),[customRefs,setCustomRefs]=useState<Record<string,string>>({}),[languageIds,setLanguageIds]=useState<string[]>([]),[otherLanguage,setOtherLanguage]=useState(""),[referenceSearch,setReferenceSearch]=useState<Record<string,string>>({}),[languageSearch,setLanguageSearch]=useState(""),[educationSearch,setEducationSearch]=useState<Record<string,string>>({});
  const [educationDrafts,setEducationDrafts]=useState<EducationDraft[]>([]),[portfolioDraft,setPortfolioDraft]=useState<PortfolioDraft>(blankPortfolio());
  const [loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
- const options=(group:string)=>refs.filter(r=>r.dataset_key===group);
+ const options=(group:string)=>refs.filter(r=>r.dataset_key===group);\n const searchOptions=(group:string,query:string)=>{const needle=query.trim().toLocaleLowerCase();return options(group).filter(item=>!needle||[item.label,item.code,...(Array.isArray(item.aliases)?item.aliases:[])].some(value=>String(value||"").toLocaleLowerCase().includes(needle)));};
  const byId=useMemo(()=>new Map(refs.map(r=>[r.id,r])),[refs]);
  const refresh=useCallback(async()=>{
   if(!token)return;setLoading(true);setError("");
@@ -128,18 +128,20 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
  function renderReferenceField(type:string,label:string,group:string){
   const value=selectedRefs[type]||"",other=byId.get(value)?.code==="OTHER";
   return <div className="grid" style={{gap:6}} key={type}>
-   <label htmlFor={"p1-ref-"+type}>{label}</label>
+   <label htmlFor={"p1-search-"+type}>{label}</label>
+   <input id={"p1-search-"+type} value={referenceSearch[type]||""} onChange={e=>setReferenceSearch(v=>({...v,[type]:e.target.value}))} placeholder={"Search "+label.toLowerCase()+" or alias"}/>
    <select id={"p1-ref-"+type} value={value} onChange={e=>setRef(type,e.target.value)}>
-    <option value="">Choose {label.toLowerCase()}</option>{options(group).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
+    <option value="">Choose {label.toLowerCase()}</option>{(value&&!searchOptions(group,referenceSearch[type]||"").some(item=>item.id===value)?[byId.get(value)!,...searchOptions(group,referenceSearch[type]||"")]:searchOptions(group,referenceSearch[type]||"")).filter(Boolean).map(item=><option key={item.id} value={item.id}>{item.label}{item.aliases?.length?" · "+item.aliases.slice(0,2).join(", "):""}</option>)}
    </select>
    {other?<label>Enter your {label.toLowerCase()}<input required value={customRefs[type]||""} onChange={e=>setCustomRefs(v=>({...v,[type]:e.target.value}))} maxLength={180} placeholder={"Type your "+label.toLowerCase()}/></label>:null}
   </div>;
  }
  function renderEducationSelect(draft:EducationDraft,index:number,key:keyof EducationDraft,label:string,group:string,customKey:keyof EducationDraft,customLabel:string){
-  const value=String(draft[key]||""),other=byId.get(value)?.code==="OTHER";
+  const value=String(draft[key]||""),other=byId.get(value)?.code==="OTHER",searchKey=String(index)+":"+String(key),query=educationSearch[searchKey]||"";
+  const matches=searchOptions(group,query);const visible=value&&!matches.some(item=>item.id===value)?[byId.get(value)!,...matches]:matches;
   return <div className="grid" style={{gap:6}}>
-   <label>{label}<select required={key!=="qualificationItemId"} value={value} onChange={e=>setEducationDrafts(rows=>rows.map((row,i)=>i===index?{...row,[key]:e.target.value,...(byId.get(e.target.value)?.code==="OTHER"?{}:{[customKey]:""})}:row))}>
-    <option value="">Choose {label.toLowerCase()}</option>{options(group).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
+   <label>{label}<input value={query} onChange={e=>setEducationSearch(v=>({...v,[searchKey]:e.target.value}))} placeholder={"Search "+label.toLowerCase()+" or alias"}/><select required={key!=="qualificationItemId"} value={value} onChange={e=>setEducationDrafts(rows=>rows.map((row,i)=>i===index?{...row,[key]:e.target.value,...(byId.get(e.target.value)?.code==="OTHER"?{}:{[customKey]:""})}:row))}>
+    <option value="">Choose {label.toLowerCase()}</option>{visible.filter(Boolean).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
    </select></label>
    {other?<label>{customLabel}<input required value={String(draft[customKey]||"")} onChange={e=>setEducationDrafts(rows=>rows.map((row,i)=>i===index?{...row,[customKey]:e.target.value}:row))} maxLength={240}/></label>:null}
   </div>;
@@ -156,10 +158,11 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
      {renderReferenceField("industry","Industry",groups.industry)}
      {renderReferenceField("experience_range","Years of experience",groups.experience_range)}
     </div>
-    <div className="grid" style={{gap:6}}><label htmlFor="p1-languages">Languages</label>
-     <select id="p1-languages" multiple value={languageIds} onChange={e=>setLanguageIds(Array.from(e.target.selectedOptions).map(o=>o.value))} size={Math.min(6,Math.max(3,options(groups.language).length))} aria-describedby="p1-language-help">{options(groups.language).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select>
-     <p id="p1-language-help" className="muted">Use Ctrl (Windows) or Command (Mac) to choose more than one language. Select Other to enter a language not listed.</p>
-     {languageIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Enter other languages (separate multiple values with commas)<input required value={otherLanguage} onChange={e=>setOtherLanguage(e.target.value)} maxLength={500} placeholder="For example, Somali, Tigrinya"/></label>:null}
+    <div className="grid" style={{gap:8}}><label htmlFor="p1-language-search">Languages</label>
+     <input id="p1-language-search" value={languageSearch} onChange={e=>setLanguageSearch(e.target.value)} placeholder="Search languages or known aliases"/>
+     <div className="grid grid-2" style={{gap:6}}>{searchOptions(groups.language,languageSearch).slice(0,80).map(item=><label key={item.id} className="row" style={{alignItems:"center",gap:8,padding:"6px 8px",border:"1px solid var(--border)",borderRadius:8}}><input type="checkbox" checked={languageIds.includes(item.id)} onChange={e=>setLanguageIds(ids=>e.target.checked?[...new Set([...ids,item.id])]:ids.filter(id=>id!==item.id))}/><span>{item.label}</span></label>)}</div>
+     <p className="muted">Selected languages</p><div className="row" style={{gap:6,flexWrap:"wrap"}}>{languageIds.map(id=>{const item=byId.get(id);return item?<span key={id} className="row" style={{gap:6,alignItems:"center",border:"1px solid var(--border)",borderRadius:999,padding:"4px 10px"}}>{item.label}<button type="button" className="btn btn-ghost" onClick={()=>setLanguageIds(ids=>ids.filter(value=>value!==id))} aria-label={"Remove "+item.label}>×</button></span>:null;})}</div>
+     {languageIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Other language(s), separated by commas<input required value={otherLanguage} onChange={e=>setOtherLanguage(e.target.value)} maxLength={500} placeholder="For example, Somali, Tigrinya"/></label>:null}
     </div>
     <button className="btn btn-primary" disabled={saving||loading}>{saving?"Saving…":"Save classifications and languages"}</button>
    </form>
