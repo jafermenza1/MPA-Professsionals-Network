@@ -87,6 +87,8 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   if(!demand)throw fail(404,"Demand request not found.","NOT_FOUND");
   if(["converted","closed","declined"].includes(demand.status))throw fail(409,"Resolved demand cannot be changed; record a new request if needs have changed.","INVALID_STATE");
   const note=clean(input.internalNote,3000)||null;
+  const outcomeNote=clean(input.outcomeNote,3000)||null;
+  if(["converted","closed","declined"].includes(status)&&!outcomeNote)throw fail(400,"Record an outcome explanation before resolving or declining demand.","OUTCOME_NOTE_REQUIRED");
   const outcome=input.publishTopic?"topic_published":(input.outcomeCode||null);
   if(outcome&&!["provider_search","topic_published","listing_created","program_project","no_action","duplicate_merged","declined"].includes(outcome))throw fail(400,"Unsupported outcome code.","VALIDATION_ERROR");
   let topic=null;
@@ -105,7 +107,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
    }
   }
   const next=topic?"topic_published":status;
-  const updated=(await db.query("update marketplace_demand set status=$1,internal_note=coalesce($2,internal_note),outcome_code=coalesce($3,outcome_code),outcome_note=coalesce($4,outcome_note),reviewed_by=$5,reviewed_at=now(),resolved_at=case when $1 in ('converted','closed','declined','topic_published') then now() else resolved_at end,updated_at=now() where id=$6 returning id,status,outcome_code,outcome_note,reviewed_by,reviewed_at,resolved_at",[next,note,outcome,clean(input.outcomeNote,3000)||null,actorId,demandId])).rows[0];
+  const updated=(await db.query("update marketplace_demand set status=$1,internal_note=coalesce($2,internal_note),outcome_code=coalesce($3,outcome_code),outcome_note=coalesce($4,outcome_note),reviewed_by=$5,reviewed_at=now(),resolved_at=case when $1 in ('converted','closed','declined','topic_published') then now() else resolved_at end,updated_at=now() where id=$6 returning id,status,outcome_code,outcome_note,reviewed_by,reviewed_at,resolved_at",[next,note,outcome,outcomeNote,actorId,demandId])).rows[0];
   await db.query("insert into marketplace_demand_event(demand_id,topic_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,$3,'demand.reviewed',$4,$5,$6,$7)",[demandId,topic?.id||null,actorId,demand.status,next,note,{outcomeCode:outcome,publishedTopic:Boolean(topic)}]);
   await audit(db,actorId,"marketplace.demand_reviewed","marketplace_demand",demandId,requestId,{from:demand.status,to:next,outcomeCode:outcome,publishedTopic:Boolean(topic)});
   return {...updated,topic};
