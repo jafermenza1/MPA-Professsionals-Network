@@ -98,7 +98,7 @@ export async function login(email,password,requestId,requestMeta={}){
 
 export async function getMe(userId){
   const db=getPool();
-  const r=await db.query(`select u.id user_id,u.email,u.status,p.id person_id,p.first_name,p.middle_name,p.last_name,p.display_name,p.phone,p.date_of_birth,p.sex,p.nationality,
+  const r=await db.query(`select u.id user_id,u.username,u.email,u.status,p.id person_id,p.first_name,p.middle_name,p.last_name,p.display_name,p.phone,p.date_of_birth,p.sex,p.nationality,
     pr.id profile_id,pr.headline,pr.bio,pr.visibility,pr.completion_percent,
     coalesce((select jsonb_agg(r.role_code order by r.role_code) from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id),'[]'::jsonb) roles,
     exists(select 1 from membership_record mr where mr.user_id=u.id and mr.status='active' and mr.start_date<=current_date and (mr.end_date is null or mr.end_date>=current_date)) has_active_membership
