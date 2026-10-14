@@ -42,7 +42,8 @@ function cleanRow(row){
  return {...row,email,phone:normalizePhone(x.phone),fullName,membershipNumber,productCode,status,startDate,endDate,approved:approved==="yes",legacyMemberId:String(x.legacy_member_id||"").trim()||null,approvalReference:String(x.approval_reference||"").trim()||null,notes:String(x.notes||"").trim()||null,errors};
 }
 function audit(db,actor,action,type,id,requestId,metadata={}){return db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,JSON.stringify(metadata)]);}
-export function memberImportTemplate(identity){\n assertImportAuthority(identity);
+export function memberImportTemplate(identity){
+ assertImportAuthority(identity);
  return "legacy_member_id,email,phone,full_name,membership_number,product_code,status,start_date,end_date,approved_membership,approval_reference,notes\r\n";
 }
 export async function previewMemberImport(identity,{filename="mpa-members.csv",csv="",sourceSystem="MPA approved member register"}={},requestId){
