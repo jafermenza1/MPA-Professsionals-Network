@@ -200,6 +200,7 @@ export async function saveMembershipProduct(actorId,productCode,input,requestId)
     const eligibility=input.eligibility&&typeof input.eligibility==="object"&&!Array.isArray(input.eligibility)?input.eligibility:{};
     const existing=(await db.query("select * from membership_product where product_code=$1 for update",[code])).rows[0];
     if(!existing&&productCode) throw httpError(404,"Membership plan not found.","NOT_FOUND");
+    if(existing&&!productCode) throw httpError(409,"A plan with this code already exists. Choose a different code or edit the existing plan.","PLAN_CODE_EXISTS");
     if(existing&&String(input.expectedVersion||"")&&String(input.expectedVersion)!==String((await db.query("select coalesce(max(version),0) version from membership_fee_rule where membership_product_id=$1",[existing.id])).rows[0].version)) {
       throw httpError(409,"This plan changed while you were editing it. Refresh the plan history before saving again.","PLAN_VERSION_CONFLICT");
     }
@@ -389,8 +390,8 @@ export async function activateApplication(applicationId,actorId,requestId){
     if(!app) throw httpError(404,"Membership application not found.","NOT_FOUND");
     if(app.status==="activated"){
       const already=(await db.query("select * from membership_record where application_id=$1 order by created_at desc limit 1",[applicationId])).rows[0];
-      if(already) return already;
-      throw httpError(409,"This application is marked activated but its membership record is missing. Contact membership support before retrying.","ACTIVATION_RECORD_MISSING");
+      if(already&&already.status==="active"&&already.start_date<=new Date().toISOString().slice(0,10)&&(!already.end_date||already.end_date>=new Date().toISOString().slice(0,10))) return already;
+      throw httpError(409,already?"This application was activated previously, but its membership is no longer current. Review its status before taking further action.":"This application is marked activated but its membership record is missing. Contact membership support before retrying.",already?"MEMBERSHIP_NOT_CURRENT":"ACTIVATION_RECORD_MISSING");
     }
     if(app.status!=="paid" || !app.approved_at) throw httpError(409,"Application must be approved and have a verified payment before activation.","ACTIVATION_NOT_READY");
     const fee=typeof app.fee_snapshot==="string"?JSON.parse(app.fee_snapshot):app.fee_snapshot;
