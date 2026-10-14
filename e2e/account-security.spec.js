@@ -53,3 +53,14 @@ test("one-time access waits for an explicit click and then requires password set
  await expect(page).toHaveURL(/\/account\/security\?welcome=1/);
  await expect(page.getByText(/Set a new password now to finish securing your account/)).toBeVisible();
 });
+
+test("login accepts a username as well as an email address",async({page})=>{
+ let payload;
+ await page.route("**/api/v1/auth/login",async route=>{payload=route.request().postDataJSON();return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({data:{token:"mock-session-token"}})})});
+ await page.goto("/login");
+ await page.getByLabel("Email or username").fill("new.handle");
+ await page.getByLabel("Password").fill("a-strong-password");
+ await page.getByRole("button",{name:/Login/}).click();
+ await expect(page).toHaveURL(/\/dashboard/);
+ expect(payload).toEqual({email:"new.handle",password:"a-strong-password"});
+});
