@@ -115,7 +115,7 @@ export default function Services(){
        <button className="btn btn-ghost" type="button" disabled={loading} onClick={()=>{setQuery("");void load("")}}>Clear</button>
      </form>
    </Card>
-   {error&&<FormFeedback kind="error" message={error} onRetry={()=>{void load(query);void loadRequests();}}/>}
+   {error&&<FormFeedback kind="error" message={error} onRetry={()=>{void load(query);void loadRequests();}} membershipReturnTo="/services"/>}
    {notice&&<FormFeedback kind="success" message={notice} actionHref={!token?"/login?next=/services":undefined} actionLabel={!token?"Sign in":undefined}/>}
    {loading?<Card><div className="row"><RefreshCw size={18}/><p className="muted">Loading published services…</p></div></Card>:items.length===0&&!error?<Card><h2 className="h2">No published services found</h2><p className="muted">Try another keyword or check again later. Only live published listings are shown.</p></Card>:<div className="grid grid-2">{items.map(service=><Card key={service.id}>
      <div className="row"><Badge>{service.service_category}</Badge><span className="tagline">{(service.delivery_mode||"remote").replaceAll("_"," ")}</span></div>
