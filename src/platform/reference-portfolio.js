@@ -10,7 +10,7 @@ export function assertReferenceAdmin(identity){
 }
 const clean=(v,max=180)=>String(v??"").trim().slice(0,max);
 function csvEscape(value){const s=String(value??"");return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
-function parseCsv(source,mapping={}){
+function parseCsv(source,mapping={},allowUnmapped=false){
  const rows=[];let row=[],cell="",quoted=false;
  const text=String(source||"").replace(/^\uFEFF/,"");
  for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(c==='"')quoted=false;else cell+=c;}else if(c==='"')quoted=true;else if(c===","){row.push(cell);cell="";}else if(c==="\n"){row.push(cell.replace(/\r$/,""));rows.push(row);row=[];cell="";}else cell+=c;}
@@ -21,10 +21,10 @@ function parseCsv(source,mapping={}){
  const headers=sourceHeaders.map(h=>h.toLowerCase());
  const mapped=Object.keys(mapping||{}).length>0;
  const indexes={};
- if(mapped){for(const [target,source] of Object.entries(mapping))if(source&&sourceHeaders.includes(String(source)))indexes[target]=sourceHeaders.indexOf(String(source));for(const required of ["code","label"])if(indexes[required]===undefined)throw fail(400,"Map both Code and Label to columns before importing.","CSV_COLUMNS_REQUIRED");}
- else for(const required of ["code","label"])if(!headers.includes(required))throw fail(400,"CSV must include code and label columns.","CSV_COLUMNS_REQUIRED");
+ if(mapped){for(const [target,source] of Object.entries(mapping))if(source&&sourceHeaders.includes(String(source)))indexes[target]=sourceHeaders.indexOf(String(source));if((indexes.code===undefined||indexes.label===undefined)&&!allowUnmapped)throw fail(400,"Map both Code and Label to columns before importing.","CSV_COLUMNS_REQUIRED");}
+ else if(!allowUnmapped)for(const required of ["code","label"])if(!headers.includes(required))throw fail(400,"CSV must include code and label columns.","CSV_COLUMNS_REQUIRED");
  const canonical=["code","label","description","sort_order","active","parent_code","aliases"];
- return rows.filter(r=>r.some(v=>String(v).trim())).map((values,index)=>{const row={};for(const key of canonical){const ix=mapped?indexes[key]:headers.indexOf(key);if(ix!==undefined&&ix>=0)row[key]=values[ix]??"";}return {...row,__row:index+2};});
+ return rows.filter(r=>r.some(v=>String(v).trim())).map((values,index)=>{const row={};if(allowUnmapped&&(!mapped||indexes.code===undefined||indexes.label===undefined)){for(let i=0;i<headers.length;i++)row[sourceHeaders[i]]=values[i]??"";}else for(const key of canonical){const ix=mapped?indexes[key]:headers.indexOf(key);if(ix!==undefined&&ix>=0)row[key]=values[ix]??"";}return {...row,__row:index+2};});
 }
 async function datasetContext(db,key,{edit=false,actorId=null}={}){
  const dataset=(await db.query("select * from reference_dataset where dataset_key=$1 and status='active'",[key])).rows[0];
@@ -81,10 +81,12 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
 }
 export async function previewReferenceCsv(identity,key,filename,csv){
  assertReferenceAdmin(identity);
- const headerLine=String(csv||"").replace(/^\\uFEFF/,"").split(/\\r?\\n/,1)[0]||"";
+ const headerLine=String(csv||"").replace(/^\uFEFF/,"").split(/\r?\n/,1)[0]||"";
  const headers=[];let cell="",quoted=false;for(let i=0;i<headerLine.length;i++){const ch=headerLine[i];if(ch==="\""&&quoted&&headerLine[i+1]==="\""){cell+="\"";i++;}else if(ch==="\"")quoted=!quoted;else if(ch===","&&!quoted){headers.push(cell.trim());cell="";}else cell+=ch;}headers.push(cell.trim());
  const mapping={};for(const target of ["code","label","description","sort_order","active","parent_code","aliases"]){const found=headers.find(h=>h.toLowerCase()===target);if(found)mapping[target]=found;}
- const rows=parseCsv(csv,mapping);
+ const complete=Boolean(mapping.code&&mapping.label);
+ const rows=parseCsv(csv,mapping,!complete);
+ if(!complete)return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row),errors:[],canImport:false};
  const db=getPool();const dataset=(await db.query("select id from reference_dataset where dataset_key=$1 and status='active'",[key])).rows[0];if(!dataset)throw fail(404,"Reference dataset was not found.","NOT_FOUND");
  const version=(await db.query("select id from reference_dataset_version where dataset_id=$1 and status in ('draft','validated','submitted','approved','published') order by case when status in ('draft','validated','submitted','approved') then 0 else 1 end,created_at desc limit 1",[dataset.id])).rows[0];
  const existing=new Set(version?(await db.query("select code from reference_item where dataset_version_id=$1",[version.id])).rows.map(x=>x.code):[]);
