@@ -138,4 +138,24 @@ test("Gate 2: verified organization mentorship offer is moderated, requested, ac
  assert.equal((await organizationOffers.listMyOrganizationMentorshipRequests(requester)).find(x=>x.id===request.id).status,"completed");
 });
 
+test("Gate 2: Support Desk proposes a suitable provider and the provider responds before demand is matched",async()=>{
+ const provider=await account(),requester=await account(),staff=await supportStaff();
+ await activeMember(provider);
+ const listing=await journeys.createServiceListing(provider,{title:"Gate 2 demand-matching service",description:"Practical business operations support with a defined scope and measurable outcomes.",serviceCategory:"Operations",deliveryMode:"remote",pricingModel:"quote",visibility:"public"},"gate2-match-listing-create");
+ await journeys.changeServiceListingStatus(listing.id,provider,"published","gate2-match-listing-submit");
+ await marketplace.moderateListing("service",listing.id,staff,{decision:"approved",note:"Public provider offer reviewed."},"gate2-match-listing-approve");
+ const demand=await marketplace.createDemand(requester,{demandType:"service",title:"Need operations support",description:"Our small team needs help improving weekly workflows and documenting reliable operating procedures.",category:"Operations",deliveryMode:"remote"},"gate2-match-demand-create");
+ const candidates=await marketplace.listDemandMatchCandidates(staff,"service");
+ assert.ok(candidates.some(x=>x.id===listing.id&&x.listing_type==="service"));
+ const match=await marketplace.createDemandProviderMatch(demand.id,staff,{listingType:"service",listingId:listing.id,note:"The offer's scope aligns with the requested workflow support."},"gate2-match-propose");
+ assert.equal(match.status,"proposed");
+ assert.ok((await marketplace.listMyDemandProviderMatches(provider)).some(x=>x.id===match.id&&!x.is_requester));
+ await assert.rejects(marketplace.respondToDemandProviderMatch(match.id,requester,"accepted","Not the provider","gate2-match-outsider"),e=>e.code==="FORBIDDEN");
+ const accepted=await marketplace.respondToDemandProviderMatch(match.id,provider,"accepted","We can help and will contact the requester to confirm the scope.","gate2-match-accept");
+ assert.equal(accepted.status,"accepted");
+ const requesterView=(await marketplace.listMyDemandProviderMatches(requester)).find(x=>x.id===match.id);
+ assert.equal(requesterView.status,"accepted");
+ assert.equal((await marketplace.listReviewQueue(staff,{status:"matched"})).some(x=>x.id===demand.id),true);
+});
+
 test.after(async()=>{await closePool();});
