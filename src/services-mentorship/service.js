@@ -24,6 +24,8 @@ async function assertServiceListingAccess(db,row,userId){
   return membership;
  }
  if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
+ const professionalRole=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code=any($2::text[]) limit 1",[userId,["member","professional"]])).rowCount>0;
+ if(!professionalRole) throw error(403,"An organization account cannot manage a professional-owned service listing.","PROFESSIONAL_PROFILE_FORBIDDEN");
  if(!(await activeMember(db,userId))) throw error(403,"A current active membership is required to manage a professional service listing.","MEMBERSHIP_REQUIRED");
  return null;
 }
@@ -87,7 +89,11 @@ export async function createServiceListing(userId,input,requestId){
       const membership=(await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[organizationId,userId])).rows[0];
       if(!membership||!["owner","administrator","recruiter","project_manager"].includes(membership.role_code)) throw error(403,"An active organization owner or authorized manager is required to create this listing.","ORGANIZATION_FORBIDDEN");
       if(membership.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
-    } else if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to offer a service.","MEMBERSHIP_REQUIRED");
+    } else {
+      const professionalRole=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code=any($2::text[]) limit 1",[userId,["member","professional"]])).rowCount>0;
+      if(!professionalRole) throw error(403,"An organization account must create service listings under its verified organization profile.","PROFESSIONAL_PROFILE_FORBIDDEN");
+      if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to offer a service.","MEMBERSHIP_REQUIRED");
+    }
     if(!input.title||!input.description||!input.serviceCategory) throw error(400,"title, description and serviceCategory are required.","VALIDATION_ERROR");
     const pricing=input.pricingModel||"quote";
     if(!["free","fixed","hourly","quote"].includes(pricing)) throw error(400,"Unsupported pricing model.","VALIDATION_ERROR");
@@ -369,6 +375,8 @@ export async function submitServiceFeedback(requestId,userId,input,requestIdHead
 
 export async function createMentorProfile(userId,input,requestId){
   return withTransaction(async db=>{
+    const professionalRole=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code=any($2::text[]) limit 1",[userId,["member","professional"]])).rowCount>0;
+    if(!professionalRole) throw error(403,"An organization account cannot create a personal mentor profile.","PROFESSIONAL_PROFILE_FORBIDDEN");
     if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to mentor.","MEMBERSHIP_REQUIRED");
     if(!(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to become a mentor.","PROFESSIONAL_VERIFICATION_REQUIRED");
     const headline=String(input.headline||"").trim();
