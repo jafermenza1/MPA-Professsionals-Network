@@ -7,14 +7,17 @@ import {api,ApiError} from "../../lib/api";
 import {useUiStore} from "../../lib/store";
 import styles from "./dashboard.module.css";
 
-type Profile={user_id:string;email:string;display_name?:string;first_name?:string;last_name?:string;completion_percent?:number;status?:string;roles?:string[]};
+type Profile={user_id:string;email:string;display_name?:string;first_name?:string;last_name?:string;completion_percent?:number;status?:string;roles?:string[];has_active_membership?:boolean;visibility?:string};
+type MembershipApplication={id:string;tracking_reference?:string;application_type?:string;status:string;updated_at?:string;fee_snapshot?:{amount?:number|string;currency?:string;productName?:string;productCode?:string};payment?:{status?:string;amount?:number|string;currency?:string;verified_at?:string}|null;latest_correction?:{status?:string;reviewer_note?:string;requested_fields?:unknown}|null};
+type VerificationSummary={id:string;status:string;program_name?:string;program_code?:string;claims?:{claim_code?:string;claim_type_name?:string;status:string}[]};
+type MemberClarity={applications:MembershipApplication[];cases:VerificationSummary[];profileVisibility:string;profileLoaded:boolean;verifiedClaims:string[]};
 type TrackingItem={id:string;type:string;title:string;subtitle?:string;status:string;statusLabel?:string;updatedAt?:string;nextAction?:string};
 type Tracking={summary?:{total?:number;active?:number;nextSteps?:number;memberships?:number;organizations?:number;jobApplications?:number};items?:TrackingItem[];attentionItems?:TrackingItem[];hasMore?:boolean;limit?:number;offset?:number};
 type Outcomes={jobs?:unknown[];services?:{id:string;status:string;service_title?:string;participant_role?:string}[];mentorships?:{id:string;status:string;participant_role?:string}[];inquiries?:{id:string;status:string;subject?:string;participant_role?:string}[]};
 type Organization={id:string;legal_name:string;display_name:string;verification_status?:string;role_code:string};
 type OrganizationPulse={organization:Organization;applications:number;activePipeline:number;openJobs:number;hires:number};
 type ReviewQueue={label:string;href:string;count:number;icon:"membership"|"verification"|"organization"|"appeal"};
-type DashboardData={profile:Profile;tracking:Tracking|null;outcomes:Outcomes|null;organizations:Organization[];reviewQueues:ReviewQueue[];errors:string[]};
+type DashboardData={profile:Profile;tracking:Tracking|null;outcomes:Outcomes|null;organizations:Organization[];reviewQueues:ReviewQueue[];memberClarity:MemberClarity|null;errors:string[]};
 
 const roleLabels:Record<string,string>={member:"Professional member",mentor:"Mentor",mentee:"Mentee",reviewer:"Workflow reviewer",verification_reviewer:"Verification reviewer",ethics_reviewer:"Ethics reviewer",appeal_reviewer:"Appeal reviewer",finance_officer:"Finance officer",system_admin:"Platform administrator",super_admin:"Super administrator",admin:"Administrator",field_officer:"Field officer",project_manager:"Project manager",content_manager:"Content manager",event_manager:"Event manager",learning_admin:"Learning administrator"};
 const terminalStatuses=new Set(["completed","cancelled","closed","rejected","withdrawn","hired","activated"]);
@@ -45,6 +48,22 @@ export default function Dashboard(){
         api<Organization[]>("/api/v1/organizations",{},token)
       ]);
       const errors:string[]=[];
+      const isProfessional=roles.some(role=>["member","professional"].includes(role));
+      let memberClarity:MemberClarity|null=null;
+      if(isProfessional){
+        const memberResults=await Promise.allSettled([
+          api<MembershipApplication[]>("/api/v1/membership/applications/me",{},token),
+          api<{items?:VerificationSummary[]}|VerificationSummary[]>("/api/v1/me/verification/cases",{},token),
+          api<{visibility?:string}>("/api/v1/me/talent-profile",{},token)
+        ]);
+        const applications=memberResults[0].status==="fulfilled"&&Array.isArray(memberResults[0].value)?memberResults[0].value:[];
+        const rawCases=memberResults[1].status==="fulfilled"?(Array.isArray(memberResults[1].value)?memberResults[1].value:memberResults[1].value.items||[]):[];
+        const caseDetails=await Promise.allSettled(rawCases.slice(0,10).map(row=>api<VerificationSummary>("/api/v1/verification/cases/"+encodeURIComponent(row.id),{},token)));
+        const cases=rawCases.map((row,index)=>caseDetails[index]?.status==="fulfilled"?caseDetails[index].value:row);
+        const verifiedClaims=[...new Set(cases.flatMap(row=>(row.claims||[]).filter(claim=>claim.status==="verified").map(claim=>claim.claim_type_name||claim.claim_code||"Verified professional claim")))];
+        memberClarity={applications,cases,profileVisibility:memberResults[2].status==="fulfilled"?String(memberResults[2].value.visibility||"private"):"private",profileLoaded:memberResults[2].status==="fulfilled",verifiedClaims};
+        if(memberResults.some(result=>result.status==="rejected"))errors.push("Membership or verification details");
+      }
       const tracking=core[0].status==="fulfilled"?core[0].value:null;
       const outcomes=core[1].status==="fulfilled"?core[1].value:null;
       const organizations=core[2].status==="fulfilled"?core[2].value:[];
@@ -65,7 +84,7 @@ export default function Dashboard(){
         else errors.push(queueRequests[index].label);
       });
 
-      setData({profile,tracking,outcomes,organizations,reviewQueues,errors});
+      setData({profile,tracking,outcomes,organizations,reviewQueues,memberClarity,errors});
     }catch(e){setError(e instanceof ApiError?e.message:e instanceof Error?e.message:"We could not load your dashboard. Please retry.");}
     finally{setLoading(false);}
   }
@@ -161,6 +180,21 @@ export default function Dashboard(){
           {(data?.tracking?.summary?.nextSteps||0)>attentionItems.length&&<a className={styles.secondaryLink} href="/track">View all {data?.tracking?.summary?.nextSteps} personal next steps <ArrowRight size={14}/></a>}
         </section>
 
+
+        {roles.some(role=>["member","professional"].includes(role))&&<section className={styles.section} aria-labelledby="membership-clarity">
+          <div className={styles.sectionHeading}><div><div className={styles.kicker}>Membership and trust</div><h2 id="membership-clarity">Your status, in plain language</h2></div><a className="btn btn-ghost" href="/membership">Manage membership <ArrowRight size={14}/></a></div>
+          <div className={styles.rows}>
+            <div className={styles.activity}><span className={styles.activityIcon}><WalletCards size={17}/></span><span className={styles.activityBody}><b>Is my membership active?</b><small>{profile?.has_active_membership?"Yes. Your membership is currently active.":"No active membership was found. Check your application or apply to join."}</small></span><Badge tone={profile?.has_active_membership?"green":"gold"}>{profile?.has_active_membership?"Active":"Not active"}</Badge></div>
+            <div className={styles.activity}><span className={styles.activityIcon}><FileCheck2 size={17}/></span><span className={styles.activityBody}><b>Has my payment been received and verified?</b><small>{(data?.memberClarity?.applications||[]).some(a=>a.payment?.status==="approved"||a.payment?.status==="verified")?"A payment is marked verified.":(data?.memberClarity?.applications||[]).some(a=>a.payment?.status==="pending")?"Payment evidence is recorded and waiting for an authorized finance decision.":(data?.memberClarity?.applications||[]).some(a=>a.status==="payment_pending")?"Payment is still required for an approved application.":"No payment verification is recorded for your current applications."}</small></span><a href="/membership" className={styles.secondaryLink}>View payments <ArrowRight size={14}/></a></div>
+            <div className={styles.activity}><span className={styles.activityIcon}><ShieldCheck size={17}/></span><span className={styles.activityBody}><b>What documents or corrections are still needed?</b><small>{(data?.memberClarity?.applications||[]).some(a=>a.status==="correction_required"||a.latest_correction?.status==="open")?"A correction is requested. Open Membership to read the latest reviewer note and respond.":(data?.memberClarity?.cases||[]).some(row=>["evidence_required","member_response_required","consent_pending"].includes(row.status))?"A verification case needs your consent, evidence or response. Open Verification to see its checklist.":"No outstanding membership correction was reported. Check Verification for the latest evidence checklist."}</small></span><a href="/verification" className={styles.secondaryLink}>Review documents <ArrowRight size={14}/></a></div>
+            <div className={styles.activity}><span className={styles.activityIcon}><CheckCircle2 size={17}/></span><span className={styles.activityBody}><b>Which professional claims have been verified?</b><small>{data?.memberClarity?.verifiedClaims.length?data.memberClarity.verifiedClaims.join(", "):"No verified claims were returned yet. Submitted claims remain unverified until an authorized reviewer decides them."}</small></span><a href="/verification" className={styles.secondaryLink}>View claims <ArrowRight size={14}/></a></div>
+            <div className={styles.activity}><span className={styles.activityIcon}><UsersRound size={17}/></span><span className={styles.activityBody}><b>Can organizations discover me?</b><small>{!data?.memberClarity?.profileLoaded?"Your directory settings could not be confirmed. Open your profile to check visibility.":!profile?.has_active_membership?"Your membership is not active; complete membership first.":data.memberClarity.profileVisibility==="private"?"Your professional directory profile is private. Change visibility in your profile if you want to be discoverable.":"Your profile visibility is set to "+data.memberClarity.profileVisibility+". Organization access still depends on each organization's permissions and your sharing choices."}</small></span><a href="/profile" className={styles.secondaryLink}>Review visibility <ArrowRight size={14}/></a></div>
+            <div className={styles.activity}><span className={styles.activityIcon}><BriefcaseBusiness size={17}/></span><span className={styles.activityBody}><b>Which opportunities am I eligible for?</b><small>Eligibility can differ by job and its published requirements. Check the eligibility result on each opportunity before applying; your membership alone does not guarantee eligibility.</small></span><a href="/jobs" className={styles.secondaryLink}>Find opportunities <ArrowRight size={14}/></a></div>
+          </div>
+          {data?.memberClarity?.applications.some(a=>a.status==="correction_required")&&<div className={styles.partial} role="status"><b>Next action:</b> open Membership, read the requested correction, attach any missing evidence and submit your response.</div>}
+          {data?.memberClarity?.cases.some(row=>row.status==="consent_pending")&&<div className={styles.partial} role="status"><b>Next action:</b> open Verification and give consent for the case you want reviewed.</div>}
+          <p className={styles.muted}>The information above is based on records returned for your account. If a section failed to load, use its link and retry; a missing result is not proof that a claim or payment was rejected.</p>
+        </section>}
         <section className={styles.section}>
           <div className={styles.sectionHeading}><div><div className={styles.kicker}>Your activity</div><h2>Recent applications</h2></div><a className="btn btn-ghost" href="/track">View all <ArrowRight size={15}/></a></div>
           {trackingItems.length? <div className={styles.rows}>{trackingItems.slice(0,5).map(item=><a className={styles.activity} href={item.type==="organization"?"/organizations":item.type==="membership"?"/membership":item.type==="job"?"/apply/job":"/track"} key={item.type+item.id}><span className={styles.activityIcon}>{item.type==="organization"?<Building2 size={17}/>:item.type==="job"?<BriefcaseBusiness size={17}/>:<ClipboardList size={17}/>}</span><span className={styles.activityBody}><b>{item.title}</b><small>{item.subtitle||roleName(item.type)}{item.updatedAt?" · Updated "+new Date(item.updatedAt).toLocaleDateString():""}</small></span><Badge tone="slate">{item.statusLabel||item.status}</Badge><ArrowUpRight size={16}/></a>)}</div>:data?.tracking?<div className={styles.emptyInline}><ClipboardList size={19}/><div><b>No applications yet</b><p>Start with a membership application or explore open opportunities.</p><div className={styles.inlineLinks}><a href="/apply">Membership <ArrowRight size={14}/></a><a href="/jobs">Browse jobs <ArrowRight size={14}/></a></div></div></div>:<p className={styles.muted}>Application activity is not available until tracking loads.</p>}
