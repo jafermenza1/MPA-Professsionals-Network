@@ -38,7 +38,7 @@ async function datasetContext(db,key,{edit=false,actorId=null}={}){
 
 export async function listPublicReferenceSets(){
  const db=getPool();
- return (await db.query("select d.dataset_key,d.name,d.domain,ri.id,ri.code,ri.label,ri.description,ri.sort_order from reference_dataset d join reference_dataset_version v on v.dataset_id=d.id and v.status='published' join reference_item ri on ri.dataset_version_id=v.id and ri.active=true where d.status='active' and d.dataset_key like 'professional_%' order by d.name,ri.sort_order,ri.label")).rows;
+ return (await db.query("select d.dataset_key,d.name,d.domain,ri.id,ri.code,ri.label,ri.description,ri.aliases,ri.sort_order from reference_dataset d join reference_dataset_version v on v.dataset_id=d.id and v.status='published' join reference_item ri on ri.dataset_version_id=v.id and ri.active=true where d.status='active' and d.dataset_key like 'professional_%' order by d.name,ri.sort_order,ri.label")).rows;
 }
 export async function listReferenceDatasets(identity){
  assertReferenceAdmin(identity);const db=getPool();
@@ -63,7 +63,9 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
     const original=(await db.query("select code from reference_item where id=$1 and dataset_version_id=$2",[itemId,published.id])).rows[0];
     if(original) targetId=(await db.query("select id from reference_item where dataset_version_id=$1 and code=$2",[version.id,original.code])).rows[0]?.id||itemId;
    }
-   row=(await db.query("update reference_item set code=$1,label=$2,description=$3,sort_order=$4,active=$5,updated_by=$6,updated_at=now() where id=$7 and dataset_version_id=$8 returning id,code,label,description,sort_order,active",[code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub,targetId,version.id])).rows[0];
+   const existingCode=(await db.query("select code from reference_item where id=$1 and dataset_version_id=$2",[targetId,version.id])).rows[0]?.code;
+   if(existingCode&&existingCode!==code)throw fail(409,"Reference codes are permanent identifiers. Create a new code and retire the old value instead of renaming its code.","REFERENCE_CODE_IMMUTABLE");
+   row=(await db.query("update reference_item set label=$1,description=$2,sort_order=$3,active=$4,updated_by=$5,updated_at=now() where id=$6 and dataset_version_id=$7 returning id,code,label,description,sort_order,active",[label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub,targetId,version.id])).rows[0];
    if(!row) throw fail(404,"Reference item was not found in this dataset version.","NOT_FOUND");
   }else{
    row=(await db.query("insert into reference_item(dataset_version_id,code,label,description,sort_order,active,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$7) returning id,code,label,description,sort_order,active",[version.id,code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub])).rows[0];
