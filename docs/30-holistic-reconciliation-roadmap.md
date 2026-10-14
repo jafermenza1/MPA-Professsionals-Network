@@ -209,3 +209,9 @@ Required sequencing:
 6. **P2 — reporting and homepage:** role-scoped configurable reports with branded PDF/XLSX output; live published homepage feeds for services, jobs, professional discovery, mentorship and demand topics.
 
 For each increment, update the screen → API → service → persistence row in [31 — Workflow Reconciliation Matrix](31-workflow-reconciliation-matrix.md), add role-positive and role-negative tests, and record actual manual validation against the exact commit. Do not mark an increment accepted merely because the documentation or a UI shell exists.
+
+## P0 implementation update — 2026-10-14
+
+The first P0 code increment is committed on `reconciliation/holistic-gates`, with the full progress and remaining validation record in [39 — P0 Implementation Progress and Roadmap](39-p0-implementation-progress-and-roadmap.md). Current implementation includes organization-only professional-profile redaction/denial, current-membership date guards for profile editing and provider publication/discovery, approved-application + verified-payment enforcement, and a no-vacancy job-interest workflow with versioned, field-scoped, revocable named-employer consent plus Support Desk and employer-scoped routes.
+
+**Acceptance remains OPEN.** Unit tests, TypeScript/build, disposable migration/rerun, API privacy matrix and browser journeys have not been executed for this branch head. No CI workflow is to be created or enabled until all current gaps are implemented. Do not merge or deploy.
