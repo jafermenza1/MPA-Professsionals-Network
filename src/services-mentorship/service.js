@@ -114,7 +114,7 @@ export async function listServices(viewerId=null,filters={}){
 
 export async function getServiceListing(listingId,viewerId=null){
   const db=getPool();
-  const row=(await db.query("select s.*,p.display_name provider_name from service_listing s join person p on p.user_id=s.provider_user_id where s.id=$1 and s.status='published' and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
+  const row=(await db.query("select s.*,p.display_name provider_name from service_listing s join person p on p.user_id=s.provider_user_id where s.id=$1 and s.status='published' and s.moderation_status='approved' and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
   if(!row) throw error(404,"Service listing not found or not visible.","NOT_FOUND");
   return row;
 }
