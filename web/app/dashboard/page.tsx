@@ -126,6 +126,7 @@ export default function Dashboard(){
     ...(data?.organizations?.some(org=>["owner","administrator","recruiter","read_only"].includes(org.role_code))?[{href:"/recruitment",label:"Recruitment",detail:"Review jobs and organization hiring activity.",icon:BriefcaseBusiness}]:[]),
     ...(roles.some(role=>["reviewer","finance_officer","system_admin"].includes(role))?[{href:"/membership",label:"Membership review",detail:"Review applications and payment evidence.",icon:WalletCards}]:[]),
     ...(roles.some(role=>["verification_reviewer","ethics_reviewer","appeal_reviewer","system_admin"].includes(role))?[{href:"/verification",label:"Verification",detail:"Open assigned cases and independent appeals.",icon:FileCheck2}]:[]),
+    ...(roles.some(role=>["supporting_staff","reviewer","system_admin","admin"].includes(role))?[{href:"/admin/marketplace",label:"Marketplace review",detail:"Moderate service and mentorship offers and review private demand.",icon:ShieldCheck}]:[]),
     ...(roles.some(role=>["system_admin","super_admin","admin"].includes(role))?[{href:"/admin",label:"Administration",detail:"Manage platform accounts and controls.",icon:ShieldCheck}]:[])
   ];
 
@@ -187,7 +188,7 @@ export default function Dashboard(){
         </section>
         <section className={styles.section}>
           <div className={styles.sectionHeading}><div><div className={styles.kicker}>Community</div><h2>Explore</h2></div><UsersRound size={20}/></div>
-          <div className={styles.exploreLinks}><a href="/jobs"><BriefcaseBusiness size={16}/> Jobs</a><a href="/network"><UsersRound size={16}/> Professional network</a><a href="/services"><WalletCards size={16}/> Services</a><a href="/mentorship"><UserRound size={16}/> Mentorship</a></div>
+          <div className={styles.exploreLinks}><a href="/jobs"><BriefcaseBusiness size={16}/> Jobs</a><a href="/network"><UsersRound size={16}/> Professional network</a><a href="/services"><WalletCards size={16}/> Services</a><a href="/mentorship"><UserRound size={16}/> Mentorship</a><a href="/service-demand"><ClipboardList size={16}/> Demand topics</a></div>
         </section>
       </aside>
     </div>
