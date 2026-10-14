@@ -28,7 +28,7 @@ test("XLSX output includes ZIP container and workbook parts",()=>{
  assert.ok(xlsx.includes(Buffer.from("[Content_Types].xml")));
 });
 test("approved-member CSV template includes required columns and no password field",()=>{
- const csv=memberImportTemplate(),header=csv.split("\r\n")[0].split(",");
+ const csv=memberImportTemplate({sub:"admin",roles:["system_admin"],permissions:[]}),header=csv.split("\r\n")[0].split(",");
  for(const key of ["email","full_name","membership_number","product_code","status","start_date","end_date","approved_membership","approval_reference"])assert.ok(header.includes(key));
  assert.equal(header.some(key=>/password/i.test(key)),false);
  assert.equal(csv.split("\r\n").filter(Boolean).length,1,"template must not include a placeholder member row");
