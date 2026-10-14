@@ -10,6 +10,7 @@ import * as verification from "./src/verification/service.js";
 import * as talent from "./src/talent/service.js";
 import * as organizationJobs from "./src/organization-jobs/service.js";
 import * as servicesMentorship from "./src/services-mentorship/service.js";
+import * as marketplaceDemand from "./src/services-mentorship/demand.js";
 import * as stakeholderOutcomes from "./src/platform/stakeholder-outcomes.js";
 import * as experience from "./src/platform/experience.js";
 import * as applicationTracking from "./src/platform/application-tracking.js";
@@ -154,6 +155,7 @@ const server=http.createServer(async (req,res)=>{
       return ok(res,await talent.getTalent(parts[3],viewer?.sub||null),requestId);
     }
 
+    if(req.method==="GET" && p==="api/v1/marketplace-demand/topics") { const q=query(req.url); return ok(res,await marketplaceDemand.listPublishedTopics({type:q.get("type"),q:q.get("q"),limit:q.get("limit")}),requestId); }
     const identity=await auth(req);
     if(req.method==="POST" && p==="api/v1/admin/experience/demo-cases") { return ok(res,await experience.createDemoCase(identity.sub,await body(req),requestId),requestId,201); }
     if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/experience/demo-cases/")) { return ok(res,await experience.updateDemoCase(parts[5],identity.sub,await body(req),requestId),requestId); }
@@ -202,6 +204,15 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/jobs/") && parts[4]==="outcome") return ok(res,await organizationJobs.recordJobOutcome(parts[3],identity.sub,await body(req),requestId),requestId,201);
 
 
+    if(req.method==="POST" && p==="api/v1/marketplace-demand") return ok(res,await marketplaceDemand.createDemand(identity.sub,await body(req),requestId),requestId,201);
+    if(req.method==="GET" && p==="api/v1/me/marketplace-demand") return ok(res,await marketplaceDemand.listMyDemand(identity.sub),requestId);
+    if(req.method==="GET" && p==="api/v1/me/marketplace-demand-interests") return ok(res,await marketplaceDemand.listMyInterests(identity.sub),requestId);
+    if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/marketplace-demand/topics/") && parts[5]==="interest") return ok(res,await marketplaceDemand.joinDemandTopic(parts[4],identity.sub,await body(req),requestId),requestId,201);
+    if(req.method==="GET" && p==="api/v1/admin/marketplace-demand") { const q=query(req.url); return ok(res,await marketplaceDemand.listReviewQueue(identity.sub,{status:q.get("status")||"submitted"}),requestId); }
+    if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/admin/marketplace-demand/") && parts[4]==="review") return ok(res,await marketplaceDemand.reviewDemand(parts[3],identity.sub,await body(req),requestId),requestId);
+    if(req.method==="GET" && p==="api/v1/admin/marketplace-listings") return ok(res,await marketplaceDemand.listAdminListings(identity.sub),requestId);
+    if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/marketplace-listings/") && parts[5]==="moderate") return ok(res,await marketplaceDemand.moderateListing(parts[3],parts[4],identity.sub,await body(req),requestId),requestId);
+    if(req.method==="GET" && parts.length===5 && p.startsWith("api/v1/admin/marketplace-demand-topics/") && parts[4]==="summary") return ok(res,await marketplaceDemand.getDemandSummary(identity.sub,parts[3]),requestId);
     if(req.method==="POST" && p==="api/v1/services") return ok(res,await servicesMentorship.createServiceListing(identity.sub,await body(req),requestId),requestId,201);
     if(req.method==="PATCH" && parts.length===4 && p.startsWith("api/v1/services/")) return ok(res,await servicesMentorship.updateServiceListing(parts[3],identity.sub,await body(req),requestId),requestId);
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/services/") && parts[4]==="status") { const b=await body(req); return ok(res,await servicesMentorship.changeServiceListingStatus(parts[3],identity.sub,b.status,requestId),requestId); }
