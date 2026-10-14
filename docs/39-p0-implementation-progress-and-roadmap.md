@@ -132,3 +132,53 @@ Implementation now committed on `reconciliation/holistic-gates`:
 | Deployment / merge | NOT AUTHORIZED | Keep the draft PR open until all current gaps are implemented and accepted. |
 
 The next work is **not** broad UX polishing. First manually validate and correct P0-A through P0-D on one exact branch SHA. Then continue P1 structured profile/reference data, service/mentorship demand and outcomes, accessible guided forms and truthful feedback; then P2 reports/PDF/XLSX and live homepage feeds; then P3 release/restore/manual E2E acceptance. Do not enable CI until all current gaps are implemented, as requested.
+
+
+## P1 — Service/mentorship marketplace, private demand, moderation and outcomes (2026-10-14)
+
+**State: IMPLEMENTATION COMMITTED; MANUAL ACCEPTANCE NOT RUN.** No CI workflow was created or enabled. The draft PR remains open; do not merge or deploy.
+
+### Code now present on the working branch
+
+- Added migration `20261014160000_p1_marketplace_moderation_and_demand.sql` for service/mentor listing moderation metadata, private service/mentorship demand intake, generalized public demand topics, unique per-user interest joins, and demand event history.
+- Added migration `20261014161000_p1_organization_service_listings.sql` to associate service listings with an organization while preserving the existing provider actor.
+- Added `src/services-mentorship/demand.js` with:
+  - private demand submission and requester/organization-scoped reads;
+  - organization intake authorization for active owner/administrator roles;
+  - public listing of only published, non-expired generalized topics;
+  - unique per-user interest joins with editable levels: exploring, interested, ready to engage, and can provide;
+  - Support Desk queue, review state/outcome recording, privacy-safe topic publication and aggregate interest summary;
+  - service/mentorship listing moderation decisions and audit events.
+- Wired API routes for public topics, authenticated private intake and interest joins, the user's demand and interests, staff review, listing moderation and aggregate topic summaries.
+- Service and mentor discovery now requires moderation approval; editing a provider listing returns it to draft/pending review. Existing published/active listings are marked approved by migration to preserve pre-moderation behavior.
+- Added verified organization-owned service listings. Authorized organization owners/managers can view/manage service requests and provider delivery/milestone workflows for their organization.
+- Added `/service-demand` with search/filter, demand topic cards, unique-interest levels, private request form, optional organization selection, and separate personal activity panels.
+- Added `/admin/marketplace` for the Support Desk to review private requests, publish a separately written privacy-safe topic, record outcomes, and approve/request corrections/reject service and mentorship listings.
+- Added entry points from the public home journey and platform admin workspace.
+
+### Commercial UI/UX decisions
+
+- Separate private intake from public topic copy; never auto-publish a requester's original description.
+- Make the state and next step visible; show loading, empty, retry, success and authorization/error messages instead of implying a request or match succeeded.
+- Demand-topic interest is a unique per-user record; updating a level does not inflate the unique interest count.
+- Moderation and publication are separate from provider self-management. Public discovery must not expose pending/correction/rejected listings.
+- Organization submissions use the authenticated organization membership selector; provider requests and outcomes are scoped to authorized organization roles.
+
+### Known gaps and validation requirements
+
+1. **NOT RUN:** focused tests, full unit suite, migration apply/rerun, server/API checks, TypeScript and production web build.
+2. **NOT RUN:** browser journeys for personal and organization demand, join/update/retry/duplicate interest, Support Desk publication, moderation decisions, cross-account denial and organization isolation.
+3. Verify the existing organization role contract: organization service listing actions currently use owner/administrator/recruiter/project-manager; organization mentorship offers still need an organization-owned offer model rather than treating a personal mentor profile as the organization.
+4. Add/review tests for SQL constraints and all route path shapes, permission-denied vs empty states, demand outcome transitions, expiry/closure, listing edit returning to review, and existing approved listing compatibility.
+5. Service/mentorship notifications and a durable notification delivery/retry path are not implemented by this increment. Do not imply users are notified outside the visible response.
+6. Ensure delivery review is participant-only, private internal notes remain staff-only, and public topic summaries contain no personal/organization confidential data.
+7. Run a privacy/accessibility/mobile review before considering acceptance.
+
+| Check | Result | Notes |
+|---|---|---|
+| Marketplace code committed | DONE | Commit set is on `reconciliation/holistic-gates`; review exact current head before testing. |
+| New marketplace migrations | NOT RUN | Apply only to disposable PostgreSQL first, then rerun; no production migration. |
+| Unit/API tests | NOT RUN | No workflow runs; retain existing assertions. |
+| TypeScript / production build | NOT RUN | New pages and route contracts need compilation. |
+| Browser / role isolation | NOT RUN | Personal, organization owner/manager, non-member requester, reviewer and unrelated-account cases remain. |
+| Merge / deployment / CI | NOT AUTHORIZED | Keep draft PR #3 open; no CI workflow until all current gaps are implemented and accepted. |
