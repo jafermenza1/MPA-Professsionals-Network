@@ -7,12 +7,12 @@ import {useEffect,useState} from "react";
 import {GuideLauncher} from "./guide";
 import {api} from "../lib/api";
 import {hasProfessionalIdentity} from "../lib/identity-capabilities";
-const nav=[["/","Home",Home],["/network","Network",Network],["/jobs","Jobs",BriefcaseBusiness],["/mentorship","Mentorship",UserRound],["/membership","Membership",ShieldCheck],["/profile","Profile",UserRound]] as const;
+const nav=[["/","Home",Home],["/network","Network",Network],["/jobs","Jobs",BriefcaseBusiness],["/mentorship","Mentorship",UserRound],["/membership","Membership",ShieldCheck],["/organizations","Organizations",Building2],["/profile","Profile",UserRound]] as const;
 export function Shell({children}:{children:React.ReactNode}){const pathname=usePathname();const router=useRouter();const mode=useUiStore(s=>s.mode),setMode=useUiStore(s=>s.setMode),language=useUiStore(s=>s.language),setLanguage=useUiStore(s=>s.setLanguage),queue=useUiStore(s=>s.queue),token=useUiStore(s=>s.token),setToken=useUiStore(s=>s.setToken),clearSession=useUiStore(s=>s.clearSession);const [search,setSearch]=useState("");const [demo,setDemo]=useState<{title:string;persona:string}|null>(null);const [accountRoles,setAccountRoles]=useState<string[]|null>(null);const [hasOrganizations,setHasOrganizations]=useState(false);
 useEffect(()=>{try{const saved=sessionStorage.getItem("mpa-session-token");if(saved&&!useUiStore.getState().token)setToken(saved);const x=JSON.parse(localStorage.getItem("mpa-demo-case")||"null");if(x)setDemo(x)}catch{}},[setToken]);
 useEffect(()=>{let cancelled=false;if(!token){setAccountRoles(null);setHasOrganizations(false);return()=>{cancelled=true}}Promise.all([api<{roles?:string[]}>("/api/v1/me",{},token),api<unknown[]>("/api/v1/organizations",{},token)]).then(([me,orgs])=>{if(cancelled)return;setAccountRoles(Array.isArray(me.roles)?me.roles:[]);setHasOrganizations(Array.isArray(orgs)&&orgs.length>0)}).catch(()=>{if(cancelled)return;setAccountRoles([]);setHasOrganizations(false)});return()=>{cancelled=true}},[token]);
 async function logout(){try{if(token)await api("/api/v1/auth/logout",{method:"POST"},token)}catch{}finally{clearSession();router.replace("/login");router.refresh()}}
-const visibleNav=nav.filter(([href])=>href!=="/profile"||!token||(accountRoles!==null&&hasProfessionalIdentity(accountRoles)));
+const visibleNav=nav.filter(([href])=>(href!=="/profile"||!token||(accountRoles!==null&&hasProfessionalIdentity(accountRoles)))&&(href!=="/organizations"||Boolean(token&&hasOrganizations)));
 const desktopNav=[...visibleNav.slice(0,5)];
 const mobileNav=[...visibleNav];
 if(token&&hasOrganizations){const orgLink=["/organizations","Organizations",Building2] as const;if(!desktopNav.some(([href])=>href==="/organizations"))desktopNav.push(orgLink);if(!mobileNav.some(([href])=>href==="/organizations"))mobileNav.push(orgLink)}
