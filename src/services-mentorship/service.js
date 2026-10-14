@@ -115,7 +115,7 @@ export async function changeServiceListingStatus(listingId,userId,status,request
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
     if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
     if(status==="published" && !organization && !(await activeMember(db,userId))) throw error(403,"An active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
-    if(status==="published" && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
+    if(status==="published" && organization && organization.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
     if(row.status==="closed" && status!=="closed") throw error(409,"Closed service listings cannot be reopened.","INVALID_STATE");
     const updated=(await db.query("update service_listing set status=$1,updated_at=now() where id=$2 returning *",[status,listingId])).rows[0];
     await audit(db,userId,"service.listing_status_changed","service_listing",listingId,requestId,{from:row.status,to:status});
