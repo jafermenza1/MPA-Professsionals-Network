@@ -207,3 +207,11 @@ These additions are not a relaxation of authorization. Mentor profile eligibilit
 - `GET /api/v1/review/membership/applications` includes submitted/in-review/correction-required applications plus payment-pending/paid items and their latest payment projection for the reviewer/finance workspace. Payment confirmation and membership activation remain separate commands.
 
 These endpoints support the added `/membership`, `/verification`, and `/recruitment` screens. They do not replace the existing workflow command contracts or permit client-side role checks to substitute for server authorization.
+
+
+## Account and recovery endpoints
+
+- `PATCH /api/v1/me/account` updates the signed-in user's username and/or password after current-password confirmation. A one-time recovery session must set a new password.
+- `POST /api/v1/admin/users/:id/one-time-session-link` queues a single-use sign-in link email for an active account, requiring user-management permission and an audit reason.
+- `POST /api/v1/auth/one-time-session/redeem` exchanges a valid, unused 20-minute link for a restricted session. Redemption revokes previous sessions; the user must set a new password.
+- Email delivery remains dependent on an operational notification-outbox sender; an accepted queue insert is not proof the email was delivered.
