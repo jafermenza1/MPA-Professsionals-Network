@@ -703,6 +703,8 @@ export async function listMyMentorships(userId){
 
 export async function getMyMentorProfile(userId){
  const db=getPool();
+ try { await assertProfessionalIdentity(db,userId); }
+ catch(cause) { throw error(cause.statusCode||403,cause.message||"A personal professional account is required to access mentor profile settings.",cause.code||"PROFESSIONAL_PROFILE_FORBIDDEN"); }
  const profile=(await db.query("select mp.*,p.display_name from mentor_profile mp join person p on p.user_id=mp.user_id where mp.user_id=$1",[userId])).rows[0];
  if(!profile)return null;
  profile.availability=(await db.query("select id,day_of_week,start_time,end_time,timezone,active from mentor_availability where mentor_profile_id=$1 order by day_of_week,start_time",[profile.id])).rows;
