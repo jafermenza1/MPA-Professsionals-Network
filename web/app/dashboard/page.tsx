@@ -90,7 +90,10 @@ export default function Dashboard(){
         const payload:any=result.value;
         const rows:any[]=Array.isArray(payload)?payload:Array.isArray(payload?.items)?payload.items:[];
         const items:ReviewQueueItem[]=[];
-        for(const row of rows.slice(0,30)){
+        const reviewRows=rows.slice(0,30);
+        const verificationDetails=source.kind==="verification"?await Promise.all(reviewRows.slice(0,15).map(row=>api<any>("/api/v1/verification/cases/"+encodeURIComponent(row.id),{},token).catch(()=>null))):[];
+        for(let rowIndex=0;rowIndex<reviewRows.length;rowIndex++){
+          const row=reviewRows[rowIndex];
           let title=String(row.display_name||row.name||row.subject_name||row.program_name||row.title||row.job_title||row.id||"Review item");
           let status=String(row.status||row.case_status||row.moderation_status||"pending");
           let reason="Review the current record and confirm the next safe action.";
@@ -112,7 +115,7 @@ export default function Dashboard(){
             reason=status==="evidence_required"?"Required evidence is missing or needs review.":status==="member_response_required"?"The member is waiting to respond to an adverse decision.":status==="decision_pending"?"Checklist and claim results need a final authorized decision.":"Verification review is pending.";
             action="Open case, checklist and decision history";
             priority=status==="member_response_required"?"Urgent":["evidence_required","decision_pending"].includes(status)?"High":"Standard";
-            if(row.id){try{const detail=await api<any>("/api/v1/verification/cases/"+encodeURIComponent(row.id),{},token);const decision=detail.decisions?.[0];if(Array.isArray(detail.decisions)&&detail.decisions.length){history=detail.decisions.map((entry:any)=>String(entry.decision||"Decision")+(entry.reason?": "+entry.reason:"")+(entry.decided_at?" ("+new Date(entry.decided_at).toLocaleDateString()+")":"")).join(" · ");const latest=detail.decisions[0];deadline=latest.member_response_due_at||null;if(deadline&&new Date(deadline).getTime()<Date.now())priority="Urgent";}}catch{/* The case remains actionable through its scoped review page. */}}
+            const detail=verificationDetails[rowIndex];if(detail&&Array.isArray(detail.decisions)&&detail.decisions.length){history=detail.decisions.map((entry:any)=>String(entry.decision||"Decision")+(entry.reason?": "+entry.reason:"")+(entry.decided_at?" ("+new Date(entry.decided_at).toLocaleDateString()+")":"")).join(" · ");const latest=detail.decisions[0];deadline=latest.member_response_due_at||null;if(deadline&&new Date(deadline).getTime()<Date.now())priority="Urgent";}
           }else if(source.kind==="organization"){
             title=String(row.display_name||row.legal_name||"Organization verification");
             status=String(row.case_status||row.verification_status||"submitted");
