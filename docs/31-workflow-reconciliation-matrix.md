@@ -163,3 +163,14 @@ The following required journeys are now explicit implementation gaps/acceptance 
 | Consistent form UX and feedback | Some reusable cards/grid and private upload contracts exist; several forms expose free text, comma-separated skills/languages, claim JSON, organization type free text and raw recruitment identifiers/configuration | Searchable selectors, multi-select chips, structured repeatable cards, “Other” behavior, progressive disclosure, field-level errors, retained input, truthful notifications and next actions | **Gap; cross-cutting** |
 
 Update this table as implementation changes land. Replace “required/partial/gap” only when the relevant code and test evidence has been inspected and executed; link the exact commit and test record.
+
+## P0 implementation update — 2026-10-14
+
+| Workflow | Code committed on `reconciliation/holistic-gates` | Current acceptance status |
+|---|---|---|
+| Organization-only vs professional profile | `membership.getMe` redacts professional fields for accounts without `member`/`professional`; profile services deny professional endpoints for organization-only roles; `/profile` provides a separate organization-workspace route. | **IMPLEMENTED IN CODE — NOT TESTED**; confirm API 403/redaction and that authorized organization routes still work. |
+| Non-member profile editing and provider publishing | Account and professional profile writes require a current active membership with valid dates; service/mentor publication/discovery checks current membership dates. | **IMPLEMENTED IN CODE — NOT TESTED**; pending, absent and expired memberships must be denied without affecting public browsing or permitted demand intake. |
+| Membership approval/payment/activation | Finance verification rejects applications not in approved `payment_pending`; fee amount/currency must match; activation requires `approved_at`, paid state and a successful linked payment. | **IMPLEMENTED IN CODE — NOT TESTED**; run ordering, wrong-fee, rejected-payment, duplicate/retry and role-negative tests. |
+| Job-seeker demand without vacancy | `/jobs/interest` public intake; separate intake vs employer-sharing consent; versioned named-employer field consent; Support Desk share UI/API; verified-organization scoped read API; consent revocation revokes active shares. | **IMPLEMENTED IN CODE — NOT TESTED**; run consent/no-consent, allowed/disallowed fields, revoke, private data, and cross-organization isolation checks. |
+
+All rows remain open for acceptance until exact-commit test evidence is recorded. See [39 — P0 Implementation Progress and Roadmap](39-p0-implementation-progress-and-roadmap.md). Do not restore CI yet; retain test code and use the documented manual process until the full gap inventory is complete.
