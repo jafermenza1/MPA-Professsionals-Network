@@ -23,6 +23,7 @@ test("Phase 1 completes registration, profile and application identity flow",asy
 
   const me=await membership.getMe(userId);
   assert.equal(me.email,email);
+  assert.equal(me.has_active_membership,false);
   await assert.rejects(
     membership.updateProfile(userId,{firstName:"Phase",lastName:`Member${suffix}`,headline:"Updated Professional"},"phase1-test-profile-before-membership"),
     error=>error.code==="MEMBERSHIP_REQUIRED"
@@ -90,6 +91,7 @@ test("Phase 1 manual payment verification controls activation",async()=>{
   membershipId=activated.id;
   assert.equal(activated.status,"active");
   assert.ok(activated.membership_number);
+  assert.equal((await membership.getMe(userId)).has_active_membership,true);
   const updated=await membership.updateProfile(userId,{firstName:"Phase",lastName:`Member${suffix}`,headline:"Updated Professional"},"phase1-test-profile-after-membership");
   assert.equal(updated.headline,"Updated Professional");
 
