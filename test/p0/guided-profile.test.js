@@ -43,6 +43,7 @@ test("P1: portfolio supports multiple traceable items and keeps evidence optiona
  assert.ok(first.id);assert.ok(second.id);assert.equal(second.evidence_file_id,null);
  const rows=await talent.getProfessionalPortfolio(userId);assert.equal(rows.length,2);
  await assert.rejects(talent.saveProfessionalPortfolioItem(userId,{title:"Invalid link",externalUrl:"http://example.test"},"p1-insecure-portfolio-link"),e=>e.code==="VALIDATION_ERROR");
+ await assert.rejects(talent.saveProfessionalPortfolioItem(userId,{title:"Foreign evidence",evidenceFileId:randomUUID()},"p1-foreign-evidence"),e=>e.code==="EVIDENCE_FILE_NOT_OWNED");
  await talent.deleteProfessionalPortfolioItem(userId,first.id,"p1-portfolio-delete");
  assert.equal((await talent.getProfessionalPortfolio(userId)).length,1);
 });
