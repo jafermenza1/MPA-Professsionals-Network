@@ -191,3 +191,8 @@ The API uses bearer access tokens rather than browser cookies, so CSRF is not th
 ## Validation process update — 2026-10-14
 
 GitHub Actions CI has been removed from the currently listed branches. Test suites and build scripts remain available; execute them manually in local/staging environments per [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Do not run migration-upgrade fixtures against the live database. Record the deployed commit/build ID, backup path, API/portal smoke checks and manual user-journey results. Historical Actions links do not validate the current deployed commit.
+
+
+## Validation process update — 2026-10-14
+
+GitHub Actions CI has been removed from the currently listed branches. Test suites and build scripts remain available; execute them manually in local/staging environments per [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Do not run migration-upgrade fixtures against the live database. Record deployed commit/build ID, backup path, API/portal smoke checks and manual user-journey results. Historical Actions links do not validate the current deployed commit.
