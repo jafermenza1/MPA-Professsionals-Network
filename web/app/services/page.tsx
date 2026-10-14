@@ -7,11 +7,17 @@ import {useUiStore} from "../../lib/store";
 
 type Service={id:string;title:string;description:string;service_category:string;delivery_mode?:string;location_label?:string;pricing_model:string;price_amount?:number|string|null;currency?:string|null;display_name?:string;provider_name?:string};
 type ServiceRequest={id:string;status:string;service_title?:string;created_at?:string;message?:string;provider_user_id?:string;requester_user_id?:string;is_provider?:boolean;provider_completed_at?:string|null;requester_accepted_at?:string|null};
+type ProviderListing={id:string;title:string;description:string;service_category:string;delivery_mode:string;location_label?:string|null;pricing_model:string;price_amount?:number|string|null;currency?:string|null;visibility:string;status:string;moderation_status:string;moderation_note?:string|null;organization_id?:string|null;provider_name?:string|null};
+type Org={id:string;display_name:string;verification_status?:string;role_code?:string};
 export default function Services(){
  const token=useUiStore(s=>s.token);
  const [items,setItems]=useState<Service[]>([]);
  const [requests,setRequests]=useState<ServiceRequest[]>([]);
  const [currentUserId,setCurrentUserId]=useState("");
+ const [myListings,setMyListings]=useState<ProviderListing[]>([]),[organizations,setOrganizations]=useState<Org[]>([]);
+ const [editingListingId,setEditingListingId]=useState("");
+ const [providerSaving,setProviderSaving]=useState(false);
+ const [providerForm,setProviderForm]=useState({title:"",description:"",serviceCategory:"",deliveryMode:"remote",locationLabel:"",pricingModel:"quote",priceAmount:"",currency:"ETB",visibility:"public",organizationId:""});
  const [transitioningId,setTransitioningId]=useState("");
  const [query,setQuery]=useState("");
  const [loading,setLoading]=useState(true);
@@ -30,6 +36,11 @@ export default function Services(){
    }catch(e){setItems([]);setError(e instanceof ApiError?e.message:"We couldn't load services right now.");}
    finally{setLoading(false);}
  },[]);
+ const loadProviderWorkspace=useCallback(async()=>{
+   if(!token){setMyListings([]);setOrganizations([]);return;}
+   try{const [listings,orgs]=await Promise.all([api<ProviderListing[]>("/api/v1/me/service-listings",{},token),api<Org[]>("/api/v1/organizations",{},token)]);setMyListings(Array.isArray(listings)?listings:[]);setOrganizations(Array.isArray(orgs)?orgs:[]);}
+   catch(e){setError(e instanceof ApiError?e.message:"Your provider workspace could not be loaded.");}
+ },[token]);
  const loadRequests=useCallback(async()=>{
    if(!token){setRequests([]);return;}
    try{const [result,me]=await Promise.all([api<ServiceRequest[]>("/api/v1/me/service-requests",{},token),api<{user_id:string}>("/api/v1/me",{},token)]);setRequests(Array.isArray(result)?result:[]);setCurrentUserId(me.user_id);}
@@ -37,7 +48,28 @@ export default function Services(){
  },[token]);
  useEffect(()=>{void load();},[load]);
  useEffect(()=>{void loadRequests();},[loadRequests]);
+ useEffect(()=>{void loadProviderWorkspace();},[loadProviderWorkspace]);
 
+ async function submitProviderListing(e:FormEvent){
+   e.preventDefault();if(!token)return;setProviderSaving(true);setError("");setNotice("");
+   try{
+     const body={title:providerForm.title.trim(),description:providerForm.description.trim(),serviceCategory:providerForm.serviceCategory.trim(),deliveryMode:providerForm.deliveryMode,locationLabel:providerForm.locationLabel.trim()||null,pricingModel:providerForm.pricingModel,priceAmount:providerForm.pricingModel==="free"?0:providerForm.priceAmount?Number(providerForm.priceAmount):null,currency:providerForm.currency||"ETB",visibility:providerForm.visibility,organizationId:providerForm.organizationId||undefined};
+     await api(editingListingId?"/api/v1/services/"+encodeURIComponent(editingListingId):"/api/v1/services",{method:editingListingId?"PATCH":"POST",body:JSON.stringify(body)},token);
+     setNotice(editingListingId?"Listing saved as a draft and returned to moderation review.":"Listing created as a draft. Review the details, then submit it for moderation.");
+     setEditingListingId("");setProviderForm({title:"",description:"",serviceCategory:"",deliveryMode:"remote",locationLabel:"",pricingModel:"quote",priceAmount:"",currency:"ETB",visibility:"public",organizationId:""});
+     await loadProviderWorkspace();
+   }catch(e){setError(e instanceof ApiError?e.message:"Your listing could not be saved. Your entered details remain in the form.");}
+   finally{setProviderSaving(false);}
+ }
+ async function changeListingStatus(item:ProviderListing,status:"published"|"paused"|"closed"){
+   if(!token)return;setTransitioningId(item.id);setError("");setNotice("");
+   try{await api("/api/v1/services/"+encodeURIComponent(item.id)+"/status",{method:"POST",body:JSON.stringify({status})},token);setNotice(status==="published"?"Listing submitted for moderation. It is not public until approved.":"Listing status updated.");await loadProviderWorkspace();}
+   catch(e){setError(e instanceof ApiError?e.message:"Listing status could not be updated.");}
+   finally{setTransitioningId("");}
+ }
+ function editListing(item:ProviderListing){
+  setEditingListingId(item.id);setProviderForm({title:item.title,description:item.description,serviceCategory:item.service_category,deliveryMode:item.delivery_mode||"remote",locationLabel:item.location_label||"",pricingModel:item.pricing_model,priceAmount:item.price_amount==null?"":String(item.price_amount),currency:item.currency||"ETB",visibility:item.visibility||"public",organizationId:item.organization_id||""});setNotice("");setError("");
+ }
  async function updateRequest(r:ServiceRequest,action:"accepted"|"declined"|"in_progress"|"completed"|"accept_completion"|"cancelled"){
    if(!token)return;setTransitioningId(r.id);setError("");setNotice("");
    try{
@@ -63,6 +95,17 @@ export default function Services(){
 
  return <div className="grid">
    <div><div className="eyebrow">Professional services</div><h1 className="h1">Find help, then deliver it well.</h1><p className="muted">Browse published service offers. Requests require an active membership and are governed by provider acceptance and explicit status transitions.</p></div>
+   <Card id="provider-workspace"><div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}><div><div className="eyebrow">Provider workspace</div><h2 className="h2">Offer a professional service</h2><p className="muted">Create a draft, submit it for review, and track moderation status here. Public discovery begins only after approval.</p></div><Badge>Moderated publication</Badge></div>
+    {!token?<p className="muted">Sign in to create or manage a service listing. Individual provider listings require an active membership; verified organizations can publish through an authorized organization role.</p>:<form className="grid" style={{gap:12,marginTop:14}} onSubmit={submitProviderListing}>
+      <div className="grid grid-2"><label>Service title<input required minLength={3} maxLength={180} value={providerForm.title} onChange={e=>setProviderForm(v=>({...v,title:e.target.value}))} placeholder="e.g. Financial reporting and bookkeeping"/></label><label>Category<input required maxLength={120} value={providerForm.serviceCategory} onChange={e=>setProviderForm(v=>({...v,serviceCategory:e.target.value}))} placeholder="e.g. Finance, design, training"/></label></div>
+      <label>What you provide<textarea required minLength={10} maxLength={5000} rows={4} value={providerForm.description} onChange={e=>setProviderForm(v=>({...v,description:e.target.value}))} placeholder="Describe deliverables, intended clients, boundaries and expected outcomes."/></label>
+      <div className="grid grid-2"><label>Delivery mode<select value={providerForm.deliveryMode} onChange={e=>setProviderForm(v=>({...v,deliveryMode:e.target.value}))}><option value="remote">Remote</option><option value="onsite">On-site</option><option value="hybrid">Hybrid</option></select></label><label>Visibility<select value={providerForm.visibility} onChange={e=>setProviderForm(v=>({...v,visibility:e.target.value}))}><option value="public">Public listing</option><option value="members">Signed-in members</option></select></label></div>
+      <div className="grid grid-2"><label>Pricing model<select value={providerForm.pricingModel} onChange={e=>setProviderForm(v=>({...v,pricingModel:e.target.value}))}><option value="quote">Request a quote</option><option value="free">Free</option><option value="fixed">Fixed price</option><option value="hourly">Hourly rate</option></select></label>{providerForm.pricingModel!=="quote"&&providerForm.pricingModel!=="free"&&<label>Price / rate<input required type="number" min="0" step="0.01" value={providerForm.priceAmount} onChange={e=>setProviderForm(v=>({...v,priceAmount:e.target.value}))}/></label>}{providerForm.pricingModel!=="quote"&&providerForm.pricingModel!=="free"&&<label>Currency<input required minLength={3} maxLength={3} value={providerForm.currency} onChange={e=>setProviderForm(v=>({...v,currency:e.target.value.toUpperCase()}))}/></label>}</div>
+      <div className="grid grid-2"><label>Location (optional)<input maxLength={180} value={providerForm.locationLabel} onChange={e=>setProviderForm(v=>({...v,locationLabel:e.target.value}))} placeholder="City or remote"/></label><label>Represent an organization (optional)<select value={providerForm.organizationId} onChange={e=>setProviderForm(v=>({...v,organizationId:e.target.value}))}><option value="">My professional profile</option>{organizations.map(o=><option key={o.id} value={o.id}>{o.display_name}{o.verification_status!=="verified"?" · verification required":""}</option>)}</select></label></div>
+      <div className="row" style={{gap:8,flexWrap:"wrap"}}><button className="btn btn-primary" type="submit" disabled={providerSaving}>{providerSaving?"Saving…":editingListingId?"Save changes for review":"Save service draft"}</button>{editingListingId&&<button className="btn btn-ghost" type="button" onClick={()=>{setEditingListingId("");setProviderForm({title:"",description:"",serviceCategory:"",deliveryMode:"remote",locationLabel:"",pricingModel:"quote",priceAmount:"",currency:"ETB",visibility:"public",organizationId:""});}}>Cancel edit</button>}</div>
+    </form>}
+    {token&&<div className="grid" style={{gap:10,marginTop:18}}><h3 className="h2">Your listings</h3>{myListings.length===0?<p className="muted">No listings yet. Saved drafts will appear here for review and follow-up.</p>:myListings.map(item=><div className="case-row" key={item.id}><div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}><b>{item.title}</b><div className="row" style={{gap:6,flexWrap:"wrap"}}><Badge>{item.status.replaceAll("_"," ")}</Badge><Badge>{item.moderation_status.replaceAll("_"," ")}</Badge></div></div><p className="muted">{item.provider_name||"Professional provider"} · {item.service_category}</p>{item.moderation_note&&<p className="muted">Reviewer note: {item.moderation_note}</p>}<div className="row" style={{gap:8,flexWrap:"wrap",marginTop:8}}><button type="button" className="btn btn-ghost" onClick={()=>editListing(item)} disabled={item.status==="closed"}>Edit</button>{item.moderation_status!=="approved"&&item.status!=="closed"&&<button type="button" className="btn btn-primary" disabled={transitioningId===item.id} onClick={()=>void changeListingStatus(item,"published")}>Submit for review</button>}{item.moderation_status==="approved"&&item.status==="published"&&<button type="button" className="btn btn-ghost" disabled={transitioningId===item.id} onClick={()=>void changeListingStatus(item,"paused")}>Pause listing</button>}</div></div>)}</div>}
+   </Card>
    <Card id="service-discovery">
      <form onSubmit={e=>{e.preventDefault();void load(query)}} className="row" style={{gap:10,flexWrap:"wrap"}}>
        <label style={{flex:"1 1 240px"}}>Search services<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Category, capability or keyword" style={{width:"100%"}}/></label>
