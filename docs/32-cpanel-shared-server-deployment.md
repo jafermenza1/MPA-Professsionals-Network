@@ -187,3 +187,7 @@ System administrators can manage account status, assign roles, revoke all sessio
 10. Do not expose database credentials, JWT secrets, bootstrap passwords, private evidence, or reviewer notes in frontend builds or logs.
 
 The API uses bearer access tokens rather than browser cookies, so CSRF is not the primary session threat. HTTPS remains mandatory; exact CORS configuration is needed only for approved browser clients that call the API cross-origin instead of using the same-origin web rewrite.
+
+## Validation process update — 2026-10-14
+
+GitHub Actions CI has been removed from the currently listed branches. Test suites and build scripts remain available; execute them manually in local/staging environments per [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Do not run migration-upgrade fixtures against the live database. Record the deployed commit/build ID, backup path, API/portal smoke checks and manual user-journey results. Historical Actions links do not validate the current deployed commit.
