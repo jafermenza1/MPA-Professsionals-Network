@@ -769,6 +769,7 @@ export default function Organizations() {
                     <option value="supporting_document">
                       Other supporting document
                     </option>
+                    {[...new Set(organizations.flatMap(org=>org.required_evidence||[]))].filter(type=>!["registration_document","representative_authorization","tax_document","trade_license","supporting_document"].includes(type)).map(type=><option value={type} key={type}>{type.replaceAll("_"," ")}</option>)}
                   </select>
                 </label>
                 <label>
