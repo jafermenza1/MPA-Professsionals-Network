@@ -15,6 +15,16 @@ export function allowedTalentInquiryTransition(from,to){ return ({"requested":["
 async function audit(db,actor,action,type,id,requestId,metadata={}){ await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]); }
 
 
+async function resolveLegacyReferenceValues(db,relationType,values){
+ const domain=relationType==="skill"?"skill":"language";
+ const rows=(await db.query("select ri.id,ri.code,ri.label,ri.aliases from reference_item ri join reference_dataset_version rv on rv.id=ri.dataset_version_id join reference_dataset rd on rd.id=rv.dataset_id where rd.domain=$1 and rd.status='active' and rv.status='published' and ri.active=true",[domain])).rows;
+ const normalize=value=>String(value||"").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim();
+ const byAlias=new Map();for(const row of rows){byAlias.set(normalize(row.label),row);byAlias.set(normalize(row.code),row);for(const alias of Array.isArray(row.aliases)?row.aliases:[])byAlias.set(normalize(alias),row);}
+ const resolved=[],custom=[];
+ for(const value of Array.from(new Set((Array.isArray(values)?values:[]).map(x=>String(x||"").trim()).filter(Boolean)))){const match=byAlias.get(normalize(value));if(match&&match.code!=="OTHER")resolved.push({relationType,referenceItemId:match.id,customValue:""});else if(match?.code==="OTHER"||!match)custom.push(value);}
+ if(custom.length){const other=rows.find(row=>row.code==="OTHER");if(!other)throw error(400,"This reference list needs an administrator-managed Other option before custom values can be saved.","REFERENCE_OTHER_UNAVAILABLE");resolved.push({relationType,referenceItemId:other.id,customValue:Array.from(new Set(custom.map(x=>x.trim()))).join(", ")});}
+ return resolved;
+}
 export async function updateProfessionalProfile(userId,input,requestId){
  return withTransaction(async db=>{
   await assertProfessionalProfileAccess(db,userId,{requireActiveMembership:true});
@@ -27,14 +37,19 @@ export async function updateProfessionalProfile(userId,input,requestId){
   const skills=Array.isArray(input.skills)?Array.from(new Map(input.skills.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,40):null;
   const languages=Array.isArray(input.languages)?Array.from(new Map(input.languages.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,20):null;
   const certifications=Array.isArray(input.certifications)?input.certifications.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
+  const structuredReferences=Array.isArray(input.references)?[...input.references]:[];
+  const fullReferenceUpdate=Array.isArray(input.references);
+  if(!fullReferenceUpdate&&Array.isArray(input.skills))structuredReferences.push(...await resolveLegacyReferenceValues(db,"skill",input.skills));
+  if(!fullReferenceUpdate&&Array.isArray(input.languages))structuredReferences.push(...await resolveLegacyReferenceValues(db,"language",input.languages));
+  const referenceTypesToUpdate=fullReferenceUpdate?["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range","skill"]:[...(Array.isArray(input.skills)?["skill"]:[]),...(Array.isArray(input.languages)?["language"]:[])];
   const portfolioUrl=input.portfolioUrl===undefined?null:String(input.portfolioUrl||"").trim();
   if(portfolioUrl){let parsed;try{parsed=new URL(portfolioUrl)}catch{throw error(400,"portfolioUrl must be a valid HTTPS URL.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"portfolioUrl must use HTTPS.","VALIDATION_ERROR")}
   await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),education_summary=coalesce($9,education_summary),qualifications=coalesce($10,qualifications),skills=coalesce($11::jsonb,skills),languages=coalesce($12::jsonb,languages),certifications=coalesce($13::jsonb,certifications),portfolio_url=coalesce($14,portfolio_url),updated_at=now() where id=$15",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,input.educationSummary===undefined?null:String(input.educationSummary||"").trim(),input.qualifications===undefined?null:String(input.qualifications||"").trim(),skills===null?null:JSON.stringify(skills),languages===null?null:JSON.stringify(languages),certifications===null?null:JSON.stringify(certifications),portfolioUrl,p.id]);
-  if(Array.isArray(input.references)){
+  if(referenceTypesToUpdate.length){
    const allowed=["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range","skill"];
-   for(const relationType of allowed) await db.query("delete from professional_profile_reference where profile_id=$1 and relation_type=$2",[p.id,relationType]);
+   for(const relationType of referenceTypesToUpdate) await db.query("delete from professional_profile_reference where profile_id=$1 and relation_type=$2",[p.id,relationType]);
    const seenReferences=new Set();
-   for(const ref of input.references){
+   for(const ref of structuredReferences){
     if(!allowed.includes(ref.relationType)) throw error(400,"Unsupported professional reference relation.","INVALID_REFERENCE");
     const referenceKey=ref.relationType+":"+ref.referenceItemId;
     if(seenReferences.has(referenceKey)) continue;
