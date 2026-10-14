@@ -32,6 +32,9 @@ test("Phase 1 completes registration, profile and application identity flow",asy
   const app=await membership.createApplication(userId,{productCode:"BASIC"},"phase1-test-application");
   applicationId=app.id;
   assert.equal(app.status,"submitted");
+  const reviewQueueRow=(await membership.listApplicationsForReview()).find(row=>row.id===applicationId);
+  assert.ok(reviewQueueRow,"submitted application should appear in the administrator queue");
+  assert.ok(Array.isArray(reviewQueueRow.review_history),"administrator queue should include prior review decisions");
   assert.equal(app.fee_snapshot.amount,1200);
   const prematurePayment=(await getPool().query(`insert into payment_transaction(provider,idempotency_key,purpose,amount,currency,status,request_payload,channel,submitted_by,purpose_reference,source)
     values('manual',$1,'membership',1200,'ETB','pending','{}'::jsonb,'bank_transfer',$2,$3,'manual_entry') returning id`,[`phase1-premature:${suffix}`,userId,applicationId])).rows[0];
