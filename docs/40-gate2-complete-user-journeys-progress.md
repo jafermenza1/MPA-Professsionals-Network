@@ -14,6 +14,7 @@
 - Added a separate organization-owned mentorship-program flow, tied to a verified organization identity: create/edit draft, submit for moderation, Support Desk approval, public discovery, private participant request, organization response, and completion record.
 - Added the organization mentorship offer/request tables, server routes, moderation queue integration and public/member-facing workspace controls.
 - Added database-backed workflow coverage for separate provider, non-member requester, organization owner and Support Desk accounts.
+- Demand review, privacy-safe topic publication and unique interest assessment already have service/test coverage. **A first-class Support Desk provider-to-demand match record with provider acceptance/decline and requester-visible follow-up is still a Gate 2 blocker**; the existing “matched” status alone does not prove that a provider has been matched or accepted.
 
 ## Added or expanded workflow evidence
 
@@ -25,4 +26,4 @@
 
 Per the instruction to save validation until after the gate is assembled, **no test, type-check, build, migration application, browser run, or acceptance CI workflow has been executed for this Gate 2 save**. The listed tests are committed evidence to run later, not a claim that they currently pass.
 
-Before Gate 2 can be accepted, run the project’s agreed validation against the current PR head, apply the migrations in order on a disposable/test database, and execute browser journeys with separate accounts for professional, non-member, organization owner and Support Desk/admin. Investigate every failure without removing assertions or weakening the expected business rules.
+Before Gate 2 can be accepted, implement the explicit provider-to-demand match and response journey, then run the project’s agreed validation against the current PR head, apply the migrations in order on a disposable/test database, and execute browser journeys with separate accounts for professional, non-member, organization owner and Support Desk/admin. Investigate every failure without removing assertions or weakening the expected business rules.
