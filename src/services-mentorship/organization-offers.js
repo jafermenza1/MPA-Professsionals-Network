@@ -1,4 +1,5 @@
 import { getPool, withTransaction } from "../platform/db.js";
+import { assertOrganizationCapability } from "../platform/identity-policy.js";
 
 function fail(status,message,code="BUSINESS_RULE"){return Object.assign(new Error(message),{statusCode:status,code});}
 const TEAM_ROLES=["owner","administrator","project_manager"];
@@ -7,8 +8,9 @@ const clean=(value,max=5000)=>String(value??"").trim().slice(0,max);
 function values(input){return Array.isArray(input)?input.map(v=>clean(v,120)).filter(Boolean).slice(0,40):String(input??"").split(",").map(v=>clean(v,120)).filter(Boolean).slice(0,40);}
 async function audit(db,actor,action,type,id,requestId,metadata={}){await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]);}
 async function organizationAccess(db,organizationId,userId,{requireVerified=true}={}){
- const row=(await db.query("select om.role_code,o.verification_status,o.display_name from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[organizationId,userId])).rows[0];
- if(!row||!TEAM_ROLES.includes(row.role_code))throw fail(403,"An active organization owner or administrator is required for this mentorship offer.","ORGANIZATION_FORBIDDEN");
+ let row;
+ try { row=await assertOrganizationCapability(db,organizationId,userId,TEAM_ROLES); }
+ catch(cause) { throw fail(cause.statusCode||403,cause.message||"An active organization owner or administrator is required for this mentorship offer.",cause.code||"ORGANIZATION_FORBIDDEN"); }
  if(requireVerified&&row.verification_status!=="verified")throw fail(409,"Verify the organization before submitting a mentorship offer for publication.","ORGANIZATION_NOT_VERIFIED");
  return row;
 }
