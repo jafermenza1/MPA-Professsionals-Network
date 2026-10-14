@@ -36,14 +36,14 @@ Authoritative contracts:
 | Private files | `src/platform/private-file-storage.js`; upload authorization/content/confirm and authorized read routes in `server.js` | Keep storage outside public web root; test owner/organization/reviewer access and denial |
 | Domain modules | `src/membership/`, `src/verification/`, `src/talent/`, `src/organization-jobs/`, `src/services-mentorship/`, `src/reference-portfolio/`, plus `src/platform/` | See workflow matrix for screen/API/service/persistence mapping and unverified paths |
 | Test suites | `test/identity-password-validation.test.js`; `test/membership/`; `test/platform/`; `test/verification/`; `test/organization-jobs/`; `test/services-mentorship/`; `test/reference-portfolio/`; `scripts/ci-api-smoke.js`; `e2e/gate4.spec.js` | Unit/API/migration/browser checks are different evidence classes and must not be conflated |
-| CI | `.github/workflows/ci.yml`; PostgreSQL 16 service; install, migrations + rerun, isolated legacy-adoption scenario, unit tests, Next build, API smoke, Playwright Chromium/browser workflow | Historical baseline at `dd5eb406e04e4a775711c8f01c8c33bd32ea382a` lacked a lockfile and used `npm install`. Gate 1 subsequently committed `package-lock.json` and changed CI to `npm ci --no-audit --no-fund`; this inventory row is historical, not a current install claim. Current-head CI execution is deferred by the maintainer due to billing. |
+| Automated CI | `.github/workflows/ci.yml` (historical; removed 2026-10-14) | The workflow is removed from the currently listed branches. Retained test suites must be run manually; see `docs/36-manual-test-release-and-deployment-policy.md`. Historical Actions results do not certify current code. | Historical baseline at `dd5eb406e04e4a775711c8f01c8c33bd32ea382a` lacked a lockfile and used `npm install`. Gate 1 subsequently committed `package-lock.json` and changed CI to `npm ci --no-audit --no-fund`; this inventory row is historical, not a current install claim. Current-head CI execution is deferred by the maintainer due to billing. |
 | Operational files | `.env.example`, `Dockerfile`, deployment and migration runbooks | Secrets stay in environment/secret store; no production operation is authorized by this inventory |
 
 ## UI screen → API/service boundary
 
 | Web route | Main API/domain boundary | Known state and required verification |
 |---|---|---|
-| `/`, `/login`, `/register` | Public landing and current route entry points; `POST /api/v1/auth/register`, `POST /api/v1/auth/login` | Landing now presents current membership, job, mentorship, organization and tracking entry points. Visual/build/browser acceptance is still pending on the current head because CI has no assigned runner; auth expiry and role-change browser cases remain open |
+| `/`, `/login`, `/register` | Public landing and current route entry points; `POST /api/v1/auth/register`, `POST /api/v1/auth/login` | Landing now presents current membership, job, mentorship, organization and tracking entry points. Visual/build/browser acceptance is still pending on the current head because current-head validation has not been recorded manually; auth expiry and role-change browser cases remain open |
 | `/profile` | `GET /api/v1/me`, `PATCH /api/v1/me/profile`, `PATCH /api/v1/me/talent-profile`, `GET/PATCH /api/v1/me/talent-visibility` | API contracts exist; field-level persistence and private/public visibility must be tested |
 | `/dashboard`, `/track` | `GET /api/v1/me`, `/api/v1/me/application-tracking`, membership history and notification preferences | Verify loading/empty/error states and role-specific visibility |
 | `/jobs`, `/apply/job` | Jobs list/detail, eligibility, draft/apply/submit, saved jobs, alerts, application progress/notes/interviews | Public inquiry must not be represented as a formal application; ID-specific application and persisted candidate visibility remain open |
@@ -102,7 +102,7 @@ Migration filenames observed at the baseline:
 20. `020_gate4_draft_verification_timestamp.sql`
 21. `20261010190000_separate_directory_visibility.sql`
 
-The CI fixture establishes a known disposable baseline by applying migrations 001–010, then testing adoption and forward application. It does **not** establish that production has any particular prefix applied. Production baseline, backup/restore and rollback rehearsal remain operationally unverified and are explicitly outside G0/G1 sign-off.
+The historical automated fixture established a known disposable baseline by applying migrations 001–010, then testing adoption and forward application. It does **not** establish that production has any particular prefix applied. Production baseline, backup/restore and rollback rehearsal remain operationally unverified and are explicitly outside G0/G1 sign-off.
 
 ## Commands and evidence classes
 
@@ -132,3 +132,8 @@ The CI fixture establishes a known disposable baseline by applying migrations 00
 ## Gate 0 exit decision
 
 **G0 — PASS (baseline inventory recorded), with explicit follow-on risks.** The repository topology, authoritative contracts, screen/API/service families, migration chain, test commands, evidence limits and unresolved questions are recorded here and in `docs/31-workflow-reconciliation-matrix.md`. This does not mean workflows or production database readiness have passed. Any newly discovered route/screen mismatch reopens G0 for the affected area.
+
+
+## CI removal update — 2026-10-14
+
+The GitHub Actions workflow is removed. Test source files and test helper scripts remain and must be executed manually. Historical run links are not current-head evidence. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md).
