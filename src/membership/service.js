@@ -238,10 +238,13 @@ export async function createManualPayment(applicationId,userId,input,requestId){
 
 export async function verifyPayment(paymentId,verifierId,input,requestId){
   return withTransaction(async db=>{
-    const p=(await db.query(`select p.*,ap.application_id,a.user_id from payment_transaction p
+    const p=(await db.query(`select p.*,ap.application_id,a.user_id,a.status as application_status,a.fee_snapshot,a.approved_at from payment_transaction p
       join membership_application_payment ap on ap.payment_transaction_id=p.id
       join membership_application a on a.id=ap.application_id where p.id=$1 for update`,[paymentId])).rows[0];
     if(!p) throw httpError(404,"Payment not found.","NOT_FOUND");
+    if(p.application_status!=="payment_pending"||!p.approved_at) throw httpError(409,"Payment can only be verified after the membership application has been approved.","APPLICATION_NOT_APPROVED");
+    const fee=typeof p.fee_snapshot==="string"?JSON.parse(p.fee_snapshot):p.fee_snapshot;
+    if(!fee||Number(p.amount)!==Number(fee.amount)||String(p.currency||"").toUpperCase()!==String(fee.currency||"").toUpperCase()) throw httpError(409,"Payment amount or currency does not match the approved application fee.","PAYMENT_AMOUNT_MISMATCH");
     if(!["manual","bank_transfer","cash"].includes(p.channel) || p.source==="provider_webhook") throw httpError(400,"This payment is not eligible for manual verification.","INVALID_PAYMENT_CHANNEL");
     const decision=input.decision;
     if(!["approved","rejected","needs_correction"].includes(decision)) throw httpError(400,"Invalid payment verification decision.","VALIDATION_ERROR");
@@ -260,7 +263,7 @@ export async function verifyPayment(paymentId,verifierId,input,requestId){
 export async function activateApplication(applicationId,actorId,requestId){
   return withTransaction(async db=>{
     const app=(await db.query("select a.*,p.product_code,p.name,p.billing_model,p.duration_days,p.renewal_required from membership_application a join membership_product p on p.id=a.membership_product_id where a.id=$1 for update",[applicationId])).rows[0];
-    if(!app || app.status!=="paid") throw httpError(409,"Application must have a verified payment before activation.","ACTIVATION_NOT_READY");
+    if(!app || app.status!=="paid" || !app.approved_at) throw httpError(409,"Application must be approved and have a verified payment before activation.","ACTIVATION_NOT_READY");
     const pay=(await db.query("select pt.* from payment_transaction pt join membership_application_payment ap on ap.payment_transaction_id=pt.id where ap.application_id=$1 and pt.status='succeeded' order by pt.created_at desc limit 1",[applicationId])).rows[0];
     if(!pay) throw httpError(409,"No successful payment is linked to this application.","PAYMENT_NOT_CONFIRMED");
     const previous=app.previous_membership_id ? (await db.query("select * from membership_record where id=$1 for update",[app.previous_membership_id])).rows[0] : null;
