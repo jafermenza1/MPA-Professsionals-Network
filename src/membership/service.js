@@ -147,7 +147,7 @@ export async function listMembershipProducts(){
     coalesce(r.plan_description,p.description) description,
     coalesce(r.billing_model,p.billing_model) billing_model,
     (coalesce(r.base_amount,p.price)+coalesce(r.tax_amount,0)+coalesce(r.service_fee,0)) price,
-    coalesce(r.currency,p.currency) currency,coalesce(r.duration_days,p.duration_days) duration_days,
+    coalesce(r.currency,p.currency) currency,case when r.id is not null then r.duration_days else p.duration_days end duration_days,
     coalesce(r.renewal_required,p.renewal_required) renewal_required,
     coalesce(r.benefits,p.benefits) benefits,coalesce(r.grace_period_days,p.grace_period_days) grace_period_days,
     coalesce(r.eligibility,p.eligibility) eligibility,coalesce(r.effective_from,p.effective_from) effective_from,
@@ -266,14 +266,14 @@ export async function createApplication(userId,input,requestId){
     const fee={
       productCode:prod.product_code,productName:activeFeeRule?.plan_name||prod.name,amount:feeAmount,
       currency:activeFeeRule?.currency||prod.currency,billingModel:activeFeeRule?.billing_model||prod.billing_model,
-      durationDays:activeFeeRule?.duration_days??prod.duration_days,renewalRequired:activeFeeRule?.renewal_required??prod.renewal_required,
+      durationDays:activeFeeRule?activeFeeRule.duration_days:prod.duration_days,renewalRequired:activeFeeRule?.renewal_required??prod.renewal_required,
       gracePeriodDays:activeFeeRule?.grace_period_days??prod.grace_period_days,
       benefits:activeFeeRule?.benefits||prod.benefits,eligibility:activeFeeRule?.eligibility||prod.eligibility,
       feeRuleId:activeFeeRule?.id||null,feeRuleVersion:activeFeeRule?.version??null,
       feeBreakdown:activeFeeRule?{baseAmount:Number(activeFeeRule.base_amount),taxAmount:Number(activeFeeRule.tax_amount||0),serviceFee:Number(activeFeeRule.service_fee||0)}:null,
       effectiveFrom:activeFeeRule?.effective_from||prod.effective_from||null,
       effectiveTo:activeFeeRule?.effective_to||prod.effective_to||null,
-      durationPolicy:((activeFeeRule?.billing_model||prod.billing_model)==="recurring" && Number(activeFeeRule?.duration_days??prod.duration_days)===365)?"calendar_year_inclusive":"fixed_days_inclusive"
+      durationPolicy:((activeFeeRule?.billing_model||prod.billing_model)==="recurring" && Number(activeFeeRule?activeFeeRule.duration_days:prod.duration_days)===365)?"calendar_year_inclusive":"fixed_days_inclusive"
     };
     const trackingReference=await nextTrackingReference(db,"membership");
     const row=(await db.query(`insert into membership_application(user_id,tracking_reference,application_type,previous_membership_id,membership_product_id,status,submitted_at,data_snapshot,fee_snapshot)
