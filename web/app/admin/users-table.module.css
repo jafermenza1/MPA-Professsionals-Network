@@ -117,3 +117,5 @@
     min-width: 1050px;
   }
 }
+/* Keep account recovery actions readable on narrow admin workspaces. */
+.accountActions{display:flex;flex-wrap:wrap;gap:8px;min-width:220px}.accountActions button{white-space:normal;text-align:left}
