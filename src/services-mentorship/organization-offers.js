@@ -26,7 +26,7 @@ export async function createOrganizationMentorshipOffer(userId,input,requestId){
   const title=clean(input.title,180),description=clean(input.description,5000),deliveryMode=input.deliveryMode||"flexible",visibility=input.visibility||"public";
   if(title.length<4||description.length<10)throw fail(400,"Add a clear title and at least a short explanation of the mentorship program.","VALIDATION_ERROR");
   if(!["remote","onsite","hybrid","flexible"].includes(deliveryMode)||!["public","members"].includes(visibility))throw fail(400,"Choose a supported delivery mode and visibility.","VALIDATION_ERROR");
-  const row=(await db.query("insert into organization_mentorship_offer(organization_id,created_by,title,description,expertise,languages,delivery_mode,visibility) values($1,$2,$3,$4,$5,$6,$7,$8) returning *",[orgId,userId,title,description,values(input.expertise),values(input.languages),deliveryMode,visibility])).rows[0];
+  const row=(await db.query("insert into organization_mentorship_offer(organization_id,created_by,title,description,expertise,languages,delivery_mode,visibility) values($1,$2,$3,$4,$5,$6,$7,$8) returning *",[orgId,userId,title,description,JSON.stringify(values(input.expertise)),JSON.stringify(values(input.languages)),deliveryMode,visibility])).rows[0];
   await audit(db,userId,"organization.mentorship_offer_created","organization_mentorship_offer",row.id,requestId,{organizationId:orgId});
   return row;
  });
@@ -35,7 +35,7 @@ export async function updateOrganizationMentorshipOffer(offerId,userId,input,req
  return withTransaction(async db=>{
   const old=await offerAccess(db,offerId,userId);
   if(old.status==="closed")throw fail(409,"Closed mentorship offers cannot be edited or reopened.","INVALID_STATE");
-  const updated=(await db.query("update organization_mentorship_offer set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,title=coalesce($1,title),description=coalesce($2,description),expertise=coalesce($3,expertise),languages=coalesce($4,languages),delivery_mode=coalesce($5,delivery_mode),visibility=coalesce($6,visibility),updated_at=now() where id=$7 returning *",[input.title?clean(input.title,180):null,input.description?clean(input.description,5000):null,input.expertise!==undefined?values(input.expertise):null,input.languages!==undefined?values(input.languages):null,input.deliveryMode||null,input.visibility||null,offerId])).rows[0];
+  const updated=(await db.query("update organization_mentorship_offer set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,title=coalesce($1,title),description=coalesce($2,description),expertise=coalesce($3,expertise),languages=coalesce($4,languages),delivery_mode=coalesce($5,delivery_mode),visibility=coalesce($6,visibility),updated_at=now() where id=$7 returning *",[input.title?clean(input.title,180):null,input.description?clean(input.description,5000):null,input.expertise!==undefined?JSON.stringify(values(input.expertise)):null,input.languages!==undefined?JSON.stringify(values(input.languages)):null,input.deliveryMode||null,input.visibility||null,offerId])).rows[0];
   await audit(db,userId,"organization.mentorship_offer_updated","organization_mentorship_offer",offerId,requestId);
   return updated;
  });
