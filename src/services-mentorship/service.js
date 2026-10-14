@@ -81,7 +81,7 @@ export async function updateServiceListing(listingId,userId,input,requestId){
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
     if(row.provider_user_id!==userId) throw error(403,"Only the service provider can edit this listing.","FORBIDDEN");
     if(row.status==="closed") throw error(409,"Closed service listings cannot be edited.","INVALID_STATE");
-    const updated=(await db.query("update service_listing set title=coalesce($1,title),description=coalesce($2,description),service_category=coalesce($3,service_category),delivery_mode=coalesce($4,delivery_mode),location_label=coalesce($5,location_label),pricing_model=coalesce($6,pricing_model),price_amount=coalesce($7,price_amount),currency=coalesce($8,currency),visibility=coalesce($9,visibility),max_active_requests=coalesce($10,max_active_requests),updated_at=now() where id=$11 returning *",[input.title||null,input.description||null,input.serviceCategory||null,input.deliveryMode||null,input.locationLabel||null,input.pricingModel||null,input.priceAmount??null,input.currency||null,input.visibility||null,input.maxActiveRequests??null,listingId])).rows[0];
+    const updated=(await db.query("update service_listing set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,title=coalesce($1,title),description=coalesce($2,description),service_category=coalesce($3,service_category),delivery_mode=coalesce($4,delivery_mode),location_label=coalesce($5,location_label),pricing_model=coalesce($6,pricing_model),price_amount=coalesce($7,price_amount),currency=coalesce($8,currency),visibility=coalesce($9,visibility),max_active_requests=coalesce($10,max_active_requests),updated_at=now() where id=$11 returning *",[input.title||null,input.description||null,input.serviceCategory||null,input.deliveryMode||null,input.locationLabel||null,input.pricingModel||null,input.priceAmount??null,input.currency||null,input.visibility||null,input.maxActiveRequests??null,listingId])).rows[0];
     await audit(db,userId,"service.listing_updated","service_listing",listingId,requestId);
     return updated;
   });
@@ -102,7 +102,7 @@ export async function changeServiceListingStatus(listingId,userId,status,request
 }
 
 export async function listServices(viewerId=null,filters={}){
-  const db=getPool(); const args=[]; const where=["s.status='published'","exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))"];
+  const db=getPool(); const args=[]; const where=["s.status='published'","s.moderation_status='approved'","exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))"];
   if(viewerId){ where.push("(s.visibility='public' or s.visibility='members')"); }
   else where.push("s.visibility='public'");
   if(filters.category){ args.push(String(filters.category)); where.push("s.service_category=$"+args.length); }
@@ -361,7 +361,7 @@ export async function updateMentorProfile(profileId,userId,input,requestId){
     const row=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!row) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(row.user_id!==userId) throw error(403,"Only the mentor can edit this profile.","FORBIDDEN");
-    const updated=(await db.query("update mentor_profile set headline=coalesce($1,headline),bio=coalesce($2,bio),expertise=coalesce($3,expertise),languages=coalesce($4,languages),mentoring_modes=coalesce($5,mentoring_modes),max_active_mentees=coalesce($6,max_active_mentees),visibility=coalesce($7,visibility),updated_at=now() where id=$8 returning *",[input.headline||null,input.bio||null,input.expertise?JSON.stringify(normalizeArray(input.expertise)):null,input.languages?JSON.stringify(normalizeArray(input.languages)):null,input.mentoringModes?JSON.stringify(normalizeArray(input.mentoringModes)):null,input.maxActiveMentees||null,input.visibility||null,profileId])).rows[0];
+    const updated=(await db.query("update mentor_profile set status=case when status='active' then 'draft' else status end,moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,headline=coalesce($1,headline),bio=coalesce($2,bio),expertise=coalesce($3,expertise),languages=coalesce($4,languages),mentoring_modes=coalesce($5,mentoring_modes),max_active_mentees=coalesce($6,max_active_mentees),visibility=coalesce($7,visibility),updated_at=now() where id=$8 returning *",[input.headline||null,input.bio||null,input.expertise?JSON.stringify(normalizeArray(input.expertise)):null,input.languages?JSON.stringify(normalizeArray(input.languages)):null,input.mentoringModes?JSON.stringify(normalizeArray(input.mentoringModes)):null,input.maxActiveMentees||null,input.visibility||null,profileId])).rows[0];
     await audit(db,userId,"mentorship.profile_updated","mentor_profile",profileId,requestId);
     return updated;
   });
@@ -440,7 +440,7 @@ export async function createMentorshipRequest(menteeId,input,requestId){
 }
 
 async function mentorCandidates(db,request){
-  const mentors=(await db.query("select mp.*,p.display_name from mentor_profile mp join person p on p.user_id=mp.user_id where mp.status='active' and mp.visibility in ('members','public') and exists (select 1 from membership_record m where m.user_id=mp.user_id and m.status='active') and exists (select 1 from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=mp.user_id and vc.status='verified' and lower(vc.claim_code_snapshot)=any($1::text[])) and mp.user_id<>$2",[PROFESSIONAL_CLAIMS,request.mentee_user_id])).rows;
+  const mentors=(await db.query("select mp.*,p.display_name from mentor_profile mp join person p on p.user_id=mp.user_id where mp.status='active' and mp.moderation_status='approved' and mp.visibility in ('members','public') and exists (select 1 from membership_record m where m.user_id=mp.user_id and m.status='active') and exists (select 1 from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=mp.user_id and vc.status='verified' and lower(vc.claim_code_snapshot)=any($1::text[])) and mp.user_id<>$2",[PROFESSIONAL_CLAIMS,request.mentee_user_id])).rows;
   const results=[];
   for(const m of mentors){
     const active=(await db.query("select count(*)::int count from mentorship where mentor_user_id=$1 and status in ('active','paused')",[m.user_id])).rows[0].count;
