@@ -138,9 +138,11 @@ export default function Profile() {
   const load = useCallback(async () => {
     if (!token) {
       setProfile(null);
+      setOrganizationOnly(false);
       setError("");
       return;
     }
+    setOrganizationOnly(false);
     setLoading(true);
     setError("");
     setNotice("");
