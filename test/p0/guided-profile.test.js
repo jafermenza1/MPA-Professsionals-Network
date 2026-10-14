@@ -55,3 +55,5 @@ test("P1: reference CSV import validates duplicates and exports the selected dat
  const exported=await referencePortfolio.exportReferenceCsv(identity,key);
  assert.match(exported.csv,/P1_ANALYST/);assert.match(exported.csv,/"Analyst, business"/);
 });
+
+test.after(async()=>{await closePool();});
