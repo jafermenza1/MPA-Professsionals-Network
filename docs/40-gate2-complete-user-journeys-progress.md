@@ -14,16 +14,16 @@
 - Added a separate organization-owned mentorship-program flow, tied to a verified organization identity: create/edit draft, submit for moderation, Support Desk approval, public discovery, private participant request, organization response, and completion record.
 - Added the organization mentorship offer/request tables, server routes, moderation queue integration and public/member-facing workspace controls.
 - Added database-backed workflow coverage for separate provider, non-member requester, organization owner and Support Desk accounts.
-- Demand review, privacy-safe topic publication and unique interest assessment already have service/test coverage. **A first-class Support Desk provider-to-demand match record with provider acceptance/decline and requester-visible follow-up is still a Gate 2 blocker**; the existing “matched” status alone does not prove that a provider has been matched or accepted.
+- Added a first-class Support Desk provider-to-demand match record, candidate filtering for eligible published offers, provider/organization accept-or-decline responses, requester-visible match status, audit events and protection against multiple simultaneous acceptances.
 
 ## Added or expanded workflow evidence
 
 - `test/p0/guided-profile.test.js`: education and profile fields survive reload; portfolio evidence remains optional/private; CSV import/export is staged and publication switches the public reference set.
 - `test/p0/marketplace-demand.test.js`: provider listing submission is checked through the actual moderation queue.
-- `test/p1/complete-user-journeys.test.js`: service request through accepted delivery, outcome acceptance and feedback; verified-organization service fulfillment; individual mentorship moderation/matching/session/completion/feedback; organization mentorship offer moderation/request/acceptance/completion.
+- `test/p1/complete-user-journeys.test.js`: service request through accepted delivery, outcome acceptance and feedback; verified-organization service fulfillment; individual mentorship moderation/matching/session/completion/feedback; organization mentorship offer moderation/request/acceptance/completion; Support Desk demand-to-provider matching with provider acceptance and requester-visible follow-up.
 
 ## Deferred validation
 
 Per the instruction to save validation until after the gate is assembled, **no test, type-check, build, migration application, browser run, or acceptance CI workflow has been executed for this Gate 2 save**. The listed tests are committed evidence to run later, not a claim that they currently pass.
 
-Before Gate 2 can be accepted, implement the explicit provider-to-demand match and response journey, then run the project’s agreed validation against the current PR head, apply the migrations in order on a disposable/test database, and execute browser journeys with separate accounts for professional, non-member, organization owner and Support Desk/admin. Investigate every failure without removing assertions or weakening the expected business rules.
+Before Gate 2 can be accepted, run the project’s agreed validation against the current PR head, apply the migrations in order on a disposable/test database, and execute browser journeys with separate accounts for professional, non-member, organization owner and Support Desk/admin. Investigate every failure without removing assertions or weakening the expected business rules.
