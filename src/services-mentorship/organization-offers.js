@@ -61,7 +61,7 @@ export async function listMyOrganizationMentorshipOffers(userId){
 }
 export async function listOrganizationMentorshipOffers(viewerId=null){
  const db=getPool();
- return (await db.query("select x.id,x.organization_id,o.display_name organization_name,x.title,x.description,x.expertise,x.languages,x.delivery_mode,x.visibility,x.created_at from organization_mentorship_offer x join organization o on o.id=x.organization_id where x.status='published' and x.moderation_status='approved' and o.verification_status='verified' and (x.visibility='public' or ($1::uuid is not null and x.visibility='members' and "+ACTIVE_MEMBER_SQL+")) order by x.created_at desc limit 100",[viewerId||null,viewerId||null])).rows;
+ return (await db.query("select x.id,x.organization_id,o.display_name organization_name,x.title,x.description,x.expertise,x.languages,x.delivery_mode,x.visibility,x.created_at from organization_mentorship_offer x join organization o on o.id=x.organization_id where x.status='published' and x.moderation_status='approved' and o.verification_status='verified' and (x.visibility='public' or ($1::uuid is not null and x.visibility='members' and "+ACTIVE_MEMBER_SQL.replaceAll("$1","$2")+")) order by x.created_at desc limit 100",[viewerId||null,viewerId||null])).rows;
 }
 export async function requestOrganizationMentorship(offerId,requesterId,input,requestId){
  return withTransaction(async db=>{
