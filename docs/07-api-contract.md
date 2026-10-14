@@ -215,3 +215,6 @@ These endpoints support the added `/membership`, `/verification`, and `/recruitm
 - `POST /api/v1/admin/users/:id/one-time-session-link` queues a single-use sign-in link email for an active account, requiring user-management permission and an audit reason.
 - `POST /api/v1/auth/one-time-session/redeem` exchanges a valid, unused 20-minute link for a restricted session. Redemption revokes previous sessions; the user must set a new password.
 - Email delivery remains dependent on an operational notification-outbox sender; an accepted queue insert is not proof the email was delivered.
+
+
+Sign-in accepts either the account's email address or username. Username changes must not collide with another account's username or email address.
