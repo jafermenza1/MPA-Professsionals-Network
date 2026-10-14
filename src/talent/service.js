@@ -42,7 +42,6 @@ export async function updateProfessionalProfile(userId,input,requestId){
     const referenceKey=ref.relationType+":"+ref.referenceItemId;
     if(seenReferences.has(referenceKey)) continue;
     seenReferences.add(referenceKey);
-    if(!allowed.includes(ref.relationType)) throw error(400,"Unsupported professional reference relation.","INVALID_REFERENCE");
     const item=(await db.query("select ri.id,ri.code from reference_item ri join reference_dataset_version rv on rv.id=ri.dataset_version_id join reference_dataset rd on rd.id=rv.dataset_id where ri.id=$1 and rv.status='published' and rd.domain=$2 and ri.active=true",[ref.referenceItemId,ref.relationType])).rows[0];
     if(!item) throw error(400,"Reference item is not from a published dataset for the requested relation.","INVALID_REFERENCE");
     const customValue=String(ref.customValue||"").trim();
