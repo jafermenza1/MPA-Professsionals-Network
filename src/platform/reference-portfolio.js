@@ -21,20 +21,28 @@ function parseCsv(source){
  for(const required of ["code","label"]) if(!headers.includes(required)) throw fail(400,"CSV must include code and label columns.","CSV_COLUMNS_REQUIRED");
  return rows.filter(r=>r.some(v=>String(v).trim())).map((values,index)=>Object.fromEntries(headers.map((h,i)=>[h,values[i]??""]))).map((row,index)=>({...row,__row:index+2}));
 }
-async function datasetContext(db,key){
+async function datasetContext(db,key,{edit=false,actorId=null}={}){
  const dataset=(await db.query("select * from reference_dataset where dataset_key=$1 and status='active'",[key])).rows[0];
  if(!dataset) throw fail(404,"Reference dataset was not found.","NOT_FOUND");
- let version=(await db.query("select * from reference_dataset_version where dataset_id=$1 and status='published' order by published_at desc nulls last,created_at desc limit 1",[dataset.id])).rows[0];
- if(!version) version=(await db.query("insert into reference_dataset_version(dataset_id,version_label,status,import_method,notes,published_at) values($1,$2,'published','manual','Created by reference portfolio management.',now()) returning *",[dataset.id,"managed-"+new Date().toISOString().slice(0,10)+"-"+randomUUID().slice(0,8)] )).rows[0];
- return {dataset,version};
+ const published=(await db.query("select * from reference_dataset_version where dataset_id=$1 and status='published' order by published_at desc nulls last,created_at desc limit 1",[dataset.id])).rows[0]||null;
+ let draft=(await db.query("select * from reference_dataset_version where dataset_id=$1 and status in ('draft','validated','submitted','approved') order by created_at desc limit 1",[dataset.id])).rows[0]||null;
+ if(edit&&!draft){
+  const label="draft-"+new Date().toISOString().slice(0,10)+"-"+randomUUID().slice(0,8);
+  draft=(await db.query("insert into reference_dataset_version(dataset_id,version_label,status,import_method,notes,created_by) values($1,$2,'draft','manual','Working copy. Public forms continue using the published version until this draft is published.',$3) returning *",[dataset.id,label,actorId])).rows[0];
+  if(published) await db.query("insert into reference_item(dataset_version_id,code,parent_item_id,label,short_label,description,aliases,metadata,sort_order,active,effective_from,effective_to,created_by,updated_by) select $1,code,null,label,short_label,description,aliases,metadata,sort_order,active,effective_from,effective_to,$2,$2 from reference_item where dataset_version_id=$3",[draft.id,actorId,published.id]);
+ }
+ const version=draft||published;
+ if(!version) throw fail(409,"This reference list has no working or published version. Create a working copy before editing.","REFERENCE_VERSION_MISSING");
+ return {dataset,version,published,draft};
 }
+
 export async function listPublicReferenceSets(){
  const db=getPool();
  return (await db.query("select d.dataset_key,d.name,d.domain,ri.id,ri.code,ri.label,ri.description,ri.sort_order from reference_dataset d join reference_dataset_version v on v.dataset_id=d.id and v.status='published' join reference_item ri on ri.dataset_version_id=v.id and ri.active=true where d.status='active' and d.dataset_key like 'professional_%' order by d.name,ri.sort_order,ri.label")).rows;
 }
 export async function listReferenceDatasets(identity){
  assertReferenceAdmin(identity);const db=getPool();
- return (await db.query("select d.id,d.dataset_key,d.name,d.description,d.domain,d.status,v.id version_id,v.version_label,v.status version_status,(select count(*) from reference_item ri where ri.dataset_version_id=v.id and ri.active=true) item_count,v.published_at from reference_dataset d left join lateral (select * from reference_dataset_version x where x.dataset_id=d.id and x.status='published' order by x.published_at desc nulls last limit 1) v on true where d.dataset_key like 'professional_%' order by d.name")).rows;
+ return (await db.query("select d.id,d.dataset_key,d.name,d.description,d.domain,d.status,v.id version_id,v.version_label,v.status version_status,(select count(*) from reference_item ri where ri.dataset_version_id=v.id and ri.active=true) item_count,v.published_at,(select x.version_label from reference_dataset_version x where x.dataset_id=d.id and x.status='published' order by x.published_at desc nulls last limit 1) published_version_label from reference_dataset d left join lateral (select * from reference_dataset_version x where x.dataset_id=d.id and x.status in ('draft','validated','submitted','approved','published') order by case when x.status in ('draft','validated','submitted','approved') then 0 else 1 end,x.created_at desc limit 1) v on true where d.dataset_key like 'professional_%' order by d.name")).rows;
 }
 export async function listReferenceItems(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {dataset,version,published,draft}=await datasetContext(db,key);
@@ -63,14 +71,14 @@ export async function importReferenceCsv(identity,key,filename,csv){
  rows.forEach(row=>{const code=clean(row.code,80).toUpperCase();if(!code||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);});
  if(errors.length) return {status:"rejected",imported:0,errors};
  return withTransaction(async db=>{
-  const {dataset,version}=await datasetContext(db,key);let inserted=0,updated=0;
+  const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});let inserted=0,updated=0;
   for(const row of rows){
    const code=clean(row.code,80).toUpperCase(),label=clean(row.label,180),description=clean(row.description,2000)||null,active=!["false","0","inactive","no"].includes(String(row.active||"true").toLowerCase());
    const existing=(await db.query("select id,label,description,active from reference_item where dataset_version_id=$1 and code=$2 for update",[version.id,code])).rows[0];
    if(existing){await db.query("update reference_item set label=$1,description=$2,active=$3,sort_order=$4,updated_by=$5,updated_at=now() where id=$6",[label,description,active,Number(row.sort_order)||0,identity.sub,existing.id]);updated++;}
    else{await db.query("insert into reference_item(dataset_version_id,code,label,description,active,sort_order,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$7)",[version.id,code,label,description,active,Number(row.sort_order)||0,identity.sub]);inserted++;}
   }
-  await db.query("insert into reference_import(dataset_id,target_version_id,filename,format,status,uploaded_by,completed_at) values($1,$2,$3,'csv','published',$4,now())",[dataset.id,version.id,clean(filename,180)||"reference-import.csv",identity.sub]);
+  await db.query("insert into reference_import(dataset_id,target_version_id,filename,format,status,uploaded_by,completed_at) values($1,$2,$3,'csv','drafted',$4,now())",[dataset.id,version.id,clean(filename,180)||"reference-import.csv",identity.sub]);
   await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,outcome,metadata) values($1,'reference.csv_imported','reference_dataset',$2,'success',$3)",[identity.sub,dataset.id,JSON.stringify({datasetKey:key,rowCount:rows.length,inserted,updated})]);
   return {status:"imported",datasetKey:key,rowCount:rows.length,inserted,updated,errors:[]};
  });
