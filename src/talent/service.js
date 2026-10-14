@@ -63,6 +63,7 @@ export async function updateProfessionalProfile(userId,input,requestId){
   await audit(db,userId,"talent.profile_updated","professional_profile",p.id,requestId,{referenceCount:Array.isArray(input.references)?input.references.length:0,experienceCount:Array.isArray(input.experience)?input.experience.length:0});
   const saved=(await db.query("select id,professional_title,headline,bio,years_experience,availability_status,location_label,directory_summary,directory_visibility as visibility,education_summary,qualifications,skills,languages,certifications,portfolio_url,completion_percent from professional_profile where id=$1",[p.id])).rows[0];
   saved.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[p.id])).rows;
+  saved.references=(await db.query("select pr.relation_type,pr.reference_item_id,pr.custom_value,ri.code,ri.label from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.profile_id=$1 order by pr.relation_type",[p.id])).rows;
   return saved;
  });
 }
@@ -73,6 +74,7 @@ export async function getProfessionalProfile(userId){
  const row=(await db.query("select pp.id,pp.professional_title,pp.years_experience,pp.availability_status,pp.location_label,pp.directory_summary,pp.headline,pp.bio,pp.directory_visibility as visibility,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.completion_percent from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1",[userId])).rows[0];
  if(!row) throw error(404,"Professional profile not found.","NOT_FOUND");
  row.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[row.id])).rows;
+ row.references=(await db.query("select pr.relation_type,pr.reference_item_id,pr.custom_value,ri.code,ri.label from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.profile_id=$1 order by pr.relation_type",[row.id])).rows;
  return row;
 }
 
