@@ -371,10 +371,13 @@ export async function createManualPayment(applicationId,userId,input,requestId){
 
 export async function verifyPayment(paymentId,verifierId,input,requestId){
   return withTransaction(async db=>{
-    const p=(await db.query(`select p.*,ap.application_id,a.user_id,a.status as application_status,a.fee_snapshot,a.approved_at from payment_transaction p
-      join membership_application_payment ap on ap.payment_transaction_id=p.id
-      join membership_application a on a.id=ap.application_id where p.id=$1 for update`,[paymentId])).rows[0];
-    if(!p) throw httpError(404,"Payment not found.","NOT_FOUND");
+    const link=(await db.query("select application_id from membership_application_payment where payment_transaction_id=$1",[paymentId])).rows[0];
+    if(!link) throw httpError(404,"Payment not found.","NOT_FOUND");
+    // Lock application before payment to match submission, activation and reversal.
+    const app=(await db.query("select id,user_id,status,fee_snapshot,approved_at from membership_application where id=$1 for update",[link.application_id])).rows[0];
+    const payment=(await db.query("select * from payment_transaction where id=$1 for update",[paymentId])).rows[0];
+    if(!app||!payment) throw httpError(404,"Payment not found.","NOT_FOUND");
+    const p={...payment,application_id:link.application_id,user_id:app.user_id,application_status:app.status,fee_snapshot:app.fee_snapshot,approved_at:app.approved_at};
     if(p.application_status!=="payment_pending"||!p.approved_at) throw httpError(409,"Payment can only be verified after the membership application has been approved.","APPLICATION_NOT_APPROVED");
     if(p.status!=="pending") throw httpError(409,"Only a pending payment can be verified. This payment has already been decided or reversed.","PAYMENT_NOT_PENDING");
     if((await db.query("select 1 from membership_payment_reversal where payment_transaction_id=$1",[paymentId])).rowCount) throw httpError(409,"A reversed or refunded payment cannot be verified again. Submit a new payment for this application if needed.","PAYMENT_ALREADY_REVERSED");
