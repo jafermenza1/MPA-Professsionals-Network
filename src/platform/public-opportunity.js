@@ -57,7 +57,7 @@ async function getByToken(db,reference,token){
 
 export async function getPublicInquiry(reference,token){
  const db=getPool(); const r=await getByToken(db,reference,token);
- return {reference:r.public_reference,inquiryType:r.inquiry_type,jobTitle:r.job_title,status:r.status,contactName:r.contact_name,contactEmail:r.contact_email,contactPhone:r.contact_phone,intent:r.intent,details:r.details,nextStep:"Complete the detailed information below. A formal job application or mentorship request may still require an MPA account, verification or human review."};
+ return {reference:r.public_reference,inquiryType:r.inquiry_type,jobTitle:r.job_title,status:r.status,contactName:r.contact_name,contactEmail:r.contact_email,contactPhone:r.contact_phone,intent:r.intent,details:r.details,employerSharingConsent:r.employer_sharing_consent===true,employerSharingScope:r.employer_sharing_scope,employerSharingFields:Array.isArray(r.employer_sharing_fields)?r.employer_sharing_fields:JSON.parse(r.employer_sharing_fields||"[]"),employerSharingConsentVersion:r.employer_sharing_consent_version||null,employerSharingConsentedAt:r.employer_sharing_consented_at||null,employerSharingRevokedAt:r.employer_sharing_revoked_at||null,nextStep:"Complete the detailed information below. A formal job application or mentorship request may still require an MPA account, verification or human review."};
 }
 
 export async function updatePublicInquiryDetails(reference,token,input,requestId){
