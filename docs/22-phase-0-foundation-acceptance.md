@@ -1,11 +1,11 @@
 # Phase 0 — Foundation acceptance
 
-Phase 0 is complete only when all controls below are implemented and CI proves the baseline.
+Phase 0 is complete only when all controls below are implemented and recorded test evidence proves the baseline. The GitHub Actions CI workflow was removed on 2026-10-14; use the manual validation process in [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md).
 
 | Exit requirement | Implementation |
 |---|---|
 | Repository and environments | Git repository, `.env.example`, `.gitignore`, Dockerfile and Compose development environment |
-| CI | GitHub Actions on pushes/PRs; Node 20; PostgreSQL service; tests; migrations; startup smoke test |
+| Test and validation process | Retained Node tests, PostgreSQL migration/rerun tests, API smoke checks and startup smoke test, executed manually in an isolated test environment; GitHub Actions automation removed 2026-10-14 |
 | Database | PostgreSQL 16-compatible migrations; reference portfolio plus identity, roles, audit, file, notification and payment foundation |
 | Authentication | Signed bearer-token verification using an environment-provided HS256 secret |
 | Authorization | Role-based protected endpoint; `member` role required |
@@ -36,3 +36,6 @@ Production deployments must provide a strong `JWT_SECRET` and a managed PostgreS
 ## Phase 0 boundary
 
 Provider implementations (object storage, SMS/email, and payment gateway) are deliberately adapters, not hard-coded into the platform. Provider-specific integration belongs to the subsequent feature phases while the core contracts remain stable.
+
+
+**Current policy:** Historical GitHub Actions runs may be referenced as dated evidence only. They do not certify a newer commit. Record test commands, exact SHA, environment and output for any new acceptance decision.
