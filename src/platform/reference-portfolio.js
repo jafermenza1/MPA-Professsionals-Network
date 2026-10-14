@@ -73,6 +73,8 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
    row=(await db.query("update reference_item set label=$1,description=$2,aliases=$3,sort_order=$4,active=$5,updated_by=$6,updated_at=now() where id=$7 and dataset_version_id=$8 returning id,code,label,description,aliases,sort_order,active",[label,description||null,JSON.stringify(aliases),Number(input.sortOrder)||0,input.active!==false,identity.sub,targetId,version.id])).rows[0];
    if(!row) throw fail(404,"Reference item was not found in this dataset version.","NOT_FOUND");
   }else{
+   const duplicate=(await db.query("select id from reference_item where dataset_version_id=$1 and code=$2",[version.id,code])).rows[0];
+   if(duplicate)throw fail(409,"This code already exists in the working copy. Edit that item or choose a new permanent code.","REFERENCE_CODE_EXISTS");
    row=(await db.query("insert into reference_item(dataset_version_id,code,label,description,aliases,sort_order,active,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$8,$8) returning id,code,label,description,aliases,sort_order,active",[version.id,code,label,description||null,JSON.stringify(aliases),Number(input.sortOrder)||0,input.active!==false,identity.sub])).rows[0];
   }
   await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,'reference_item',$3,$4,'success',$5)",[identity.sub,itemId?"reference.item_updated":"reference.item_created",row.id,input.requestId||null,JSON.stringify({datasetKey:key,code,label,active:row.active})]);
@@ -97,8 +99,9 @@ export async function previewReferenceCsv(identity,key,filename,csv,providedMapp
 }
 export async function importReferenceCsv(identity,key,filename,csv,mapping={}){
  assertReferenceAdmin(identity);
- const rows=parseCsv(csv,mapping);const seen=new Set();const errors=[];
- rows.forEach(row=>{const code=clean(row.code,80).toUpperCase();if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required and Code must use letters, numbers, dot, underscore or hyphen."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);});
+ const rows=parseCsv(csv,mapping);const seen=new Set();const errors=[],parents=new Map();
+ rows.forEach(row=>{const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required and Code must use letters, numbers, dot, underscore or hyphen."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);if(parent){if(parent===code)errors.push({row:row.__row,message:"An item cannot be its own parent."});parents.set(code,parent);}});
+ for(const [code,parent] of parents){const visited=new Set([code]);let cursor=parent;while(cursor&&parents.has(cursor)){if(visited.has(cursor)){errors.push({row:rows.find(x=>clean(x.code,80).toUpperCase()===code)?.__row||0,message:"Parent relationships contain a cycle involving "+code+"."});break;}visited.add(cursor);cursor=parents.get(cursor);}}
  if(errors.length) return {status:"rejected",imported:0,errors};
  return withTransaction(async db=>{
   const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
