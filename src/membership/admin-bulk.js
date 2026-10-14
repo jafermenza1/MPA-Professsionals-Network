@@ -22,7 +22,7 @@ function csvRows(csv){
  const missing=required.filter(h=>!headers.includes(h));if(missing.length)throw problem(400,"Missing required columns: "+missing.join(", "),"MISSING_COLUMNS");
  return rows.map((values,index)=>({rowNumber:index+2,raw:Object.fromEntries(headers.map((h,i)=>[h,String(values[i]??"").trim()]))}));
 }
-function parseDate(v){if(!v)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(v)||Number.isNaN(Date.parse(v+"T00:00:00Z")))return null;return v;}
+function parseDate(v){if(!v)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return null;const d=new Date(v+"T00:00:00Z");return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===v?v:null;}
 function cleanRow(row){
  const x=row.raw,errors=[];
  const email=normalizeEmail(x.email),fullName=String(x.full_name||"").trim().replace(/\s+/g," "),membershipNumber=String(x.membership_number||"").trim(),productCode=String(x.product_code||"").trim().toUpperCase(),status=String(x.status||"").trim().toLowerCase();
@@ -93,12 +93,12 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
    if(row.match_status==="conflict"||row.match_status==="ignored"||row.match_status==="applied"){if(row.match_status==="conflict")conflictCount++;continue;}
    const product=productMap.get(row.product_code);
    if(!product){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',diagnostics=$2 where id=$1",[row.id,JSON.stringify(["Membership product is no longer active or does not exist."])]);continue;}
-   let userId=row.matched_user_id;
+   let userId=row.matched_user_id,accountCreatedForRow=false;
    if(!userId){
-    const existing=(await tx.query("select id from app_user where lower(email)=lower($1) for update",[row.email])).rows[0];
+     const existing=(await tx.query("select u.id from app_user u where lower(u.email)=lower($1) or ($2::text is not null and exists(select 1 from person p where p.user_id=u.id and p.phone=$2)) for update",[row.email,row.phone])).rows[0];
     if(existing){userId=existing.id;await tx.query("update membership_import_row set match_status='conflict',matched_user_id=$2,match_reason='Account appeared after preview; re-review required',diagnostics=$3 where id=$1",[row.id,userId,JSON.stringify(["An account with this email was created after preview. Re-run the preview to avoid duplicates."])]);conflictCount++;continue;}
     const names=String(row.full_name).trim().split(/\s+/),firstName=names.shift(),lastName=names.pop(),middleName=names.join(" ")||null;
-    const rawPassword=randomBytes(48).toString("base64url"),user=(await tx.query("insert into app_user(username,email,password_hash,status) values($1,$2,$3,'active') returning id,email",[row.email,row.email,hashPassword(rawPassword)])).rows[0];userId=user.id;createdAccounts++;accountCreatedForRow=true;
+     const rawPassword=randomBytes(48).toString("base64url"),user=(await tx.query("insert into app_user(username,email,password_hash,status) values($1,$2,$3,'active') on conflict do nothing returning id,email",[row.email,row.email,hashPassword(rawPassword)])).rows[0];if(!user){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',diagnostics=$2 where id=$1",[row.id,JSON.stringify(["An account conflict appeared during import. Re-run preview before retrying this row."])]);continue;}userId=user.id;createdAccounts++;accountCreatedForRow=true;
     const person=(await tx.query("insert into person(user_id,first_name,middle_name,last_name,display_name,phone) values($1,$2,$3,$4,$5,$6) returning id",[userId,firstName,middleName,lastName,row.full_name,row.phone])).rows[0];
     await tx.query("insert into professional_profile(person_id,completion_percent) values($1,20)",[person.id]);
     await tx.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code='member' on conflict do nothing",[userId]);
@@ -107,6 +107,7 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
     await tx.query("insert into member_invitation(user_id,token_hash,expires_at,created_by,import_id) values($1,$2,now()+interval '7 days',$3,$4)",[userId,tokenHash,identity.sub,importId]);
     await tx.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,'mpa_member_invitation',$2)",[row.email,JSON.stringify({displayName:row.full_name,invitationToken:token,claimPath:"/member-invitation/claim?token="+token,expiresInDays:7,importBatchId:importId})]);
    }
+   await tx.query("select pg_advisory_xact_lock(hashtext($1))",["membership:"+String(row.membership_number).toLowerCase()]);
    const dup=(await tx.query("select id from membership_record where lower(membership_number)=lower($1) and status<>'merged' for update",[row.membership_number])).rows[0];
    if(dup){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',matched_user_id=$2,diagnostics=$3 where id=$1",[row.id,userId,JSON.stringify(["Membership number already exists; no membership record was changed."])]);continue;}
    const member=(await tx.query("insert into membership_record(user_id,legacy_member_id,membership_product_id,membership_number,status,start_date,end_date,source,source_import_id,legacy_payload) values($1,$2,$3,$4,$5,$6,$7,'legacy_import',$8,$9) returning id",[userId,row.legacy_member_id,product.id,row.membership_number,row.status,row.start_date,row.end_date,importId,row.raw_payload])).rows[0];
