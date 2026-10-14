@@ -389,9 +389,10 @@ export async function activateApplication(applicationId,actorId,requestId){
     const app=(await db.query("select a.*,p.product_code,p.name,p.billing_model,p.renewal_required from membership_application a join membership_product p on p.id=a.membership_product_id where a.id=$1 for update of a",[applicationId])).rows[0];
     if(!app) throw httpError(404,"Membership application not found.","NOT_FOUND");
     if(app.status==="activated"){
-      const already=(await db.query("select * from membership_record where application_id=$1 order by created_at desc limit 1",[applicationId])).rows[0];
-      if(already&&already.status==="active"&&already.start_date<=new Date().toISOString().slice(0,10)&&(!already.end_date||already.end_date>=new Date().toISOString().slice(0,10))) return already;
-      throw httpError(409,already?"This application was activated previously, but its membership is no longer current. Review its status before taking further action.":"This application is marked activated but its membership record is missing. Contact membership support before retrying.",already?"MEMBERSHIP_NOT_CURRENT":"ACTIVATION_RECORD_MISSING");
+      const current=(await db.query("select * from membership_record where application_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) order by created_at desc limit 1",[applicationId])).rows[0];
+      if(current) return current;
+      const historical=(await db.query("select id from membership_record where application_id=$1 order by created_at desc limit 1",[applicationId])).rows[0];
+      throw httpError(409,historical?"This application was activated previously, but its membership is no longer current. Review its status before taking further action.":"This application is marked activated but its membership record is missing. Contact membership support before retrying.",historical?"MEMBERSHIP_NOT_CURRENT":"ACTIVATION_RECORD_MISSING");
     }
     if(app.status!=="paid" || !app.approved_at) throw httpError(409,"Application must be approved and have a verified payment before activation.","ACTIVATION_NOT_READY");
     const fee=typeof app.fee_snapshot==="string"?JSON.parse(app.fee_snapshot):app.fee_snapshot;
