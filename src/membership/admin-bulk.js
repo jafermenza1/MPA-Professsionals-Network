@@ -120,7 +120,7 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
  });
 }
 export async function exportMembers(identity,{q="",status="",format="csv"}={},requestId){
- assertImportAuthority(identity);if(format!=="csv")throw problem(400,"Member detail export currently supports CSV. Use the reports catalogue for PDF/XLSX outputs.","UNSUPPORTED_FORMAT");
+ assertImportAuthority(identity);if(!["csv","xlsx"].includes(format))throw problem(400,"Choose CSV or XLSX for member detail export.","UNSUPPORTED_FORMAT");
  const rows=(await getPool().query(`select mr.legacy_member_id,mr.membership_number,membership_product.product_code,membership_product.name product_name,mr.status,mr.start_date,mr.end_date,mr.source,u.email,p.phone,p.display_name full_name,mr.created_at
  from membership_record mr left join app_user u on u.id=mr.user_id left join person p on p.user_id=mr.user_id left join membership_product on membership_product.id=mr.membership_product_id
  where ($1='' or lower(coalesce(p.display_name,'')) like lower('%'||$1||'%') or lower(coalesce(u.email,'')) like lower('%'||$1||'%') or lower(mr.membership_number) like lower('%'||$1||'%'))
