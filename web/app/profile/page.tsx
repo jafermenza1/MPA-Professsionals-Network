@@ -379,7 +379,7 @@ export default function Profile() {
         <div className="eyebrow">Professional profile</div>
         <h1 className="h1">Membership is required to edit your profile.</h1>
         <p className="muted">Your current profile remains read-only until your membership fee is verified and your membership is activated. You can still browse public opportunities, request public services, and submit a job-interest request.</p>
-        <p><a className="btn btn-primary" href="/membership">Apply for or renew membership</a> <a className="btn btn-ghost" href="/dashboard">Return to dashboard</a></p>
+        <p><a className="btn btn-primary" href="/membership?next=%2Fprofile">Apply for or renew membership</a> <a className="btn btn-ghost" href="/dashboard">Return to dashboard</a></p>
       </Card>
     </div>
   );
