@@ -13,6 +13,7 @@ const journeys = [
   { title: "Join as a professional", text: "Apply for membership, build your profile and discover ways to contribute.", href: "/apply", action: "Start application", icon: UserCheck },
   { title: "Find a job", text: "Explore vacancies or begin with a short inquiry before the detailed application.", href: "/jobs", action: "Browse opportunities", icon: BriefcaseBusiness },
   { title: "Find mentorship", text: "Share your goals and begin a mentorship request, even before completing a profile.", href: "/mentorship", action: "Request mentorship", icon: GraduationCap },
+  { title: "Request a service or join a need", text: "Browse reviewed demand topics, signal interest, or submit a private request for help.", href: "/service-demand", action: "Explore service demand", icon: Search },
   { title: "Register an organization", text: "Submit your organization for review, recruit talent and build professional partnerships.", href: "/organizations", action: "Get started", icon: Building2 }
 ];
 
