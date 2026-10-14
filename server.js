@@ -135,14 +135,17 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && p==="api/v1/auth/register") { publicRateLimit(req,"register",5,60000); return ok(res,await membership.register(await body(req),requestId),requestId,201); }
     if(req.method==="GET" && p==="api/v1/membership/products") return ok(res,await membership.listMembershipProducts(),requestId);
     if(req.method==="GET" && p==="api/v1/admin/membership/products") {
+      const identity=await auth(req);
       anyRoleOrPermission(identity,["system_admin","reviewer"],["members.view","members.manage"]);
       return ok(res,await membership.listMembershipProductsForAdmin(),requestId);
     }
     if(req.method==="POST" && p==="api/v1/admin/membership/products") {
+      const identity=await auth(req);
       anyRoleOrPermission(identity,["system_admin"],["members.manage"]);
       return ok(res,await membership.saveMembershipProduct(identity.sub,null,await body(req),requestId),requestId,201);
     }
     if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/membership/products/")) {
+      const identity=await auth(req);
       anyRoleOrPermission(identity,["system_admin"],["members.manage"]);
       return ok(res,await membership.saveMembershipProduct(identity.sub,parts[5],await body(req),requestId),requestId);
     }
