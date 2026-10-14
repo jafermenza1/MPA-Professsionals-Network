@@ -15,6 +15,7 @@ import * as experience from "./src/platform/experience.js";
 import * as applicationTracking from "./src/platform/application-tracking.js";
 import * as publicOpportunity from "./src/platform/public-opportunity.js";
 import * as userAdmin from "./src/platform/user-admin.js";
+import * as referencePortfolio from "./src/platform/reference-portfolio.js";
 import { resolveAllowedOrigin } from "./src/platform/config.js";
 
 const config=loadConfig();
@@ -126,6 +127,12 @@ const server=http.createServer(async (req,res)=>{
     }
 
     if(req.method==="POST" && p==="api/v1/auth/logout") { const identity=await auth(req); return ok(res,await userAdmin.logout(identity.sub,identity.sid,requestId),requestId); }
+    if(req.method==="GET" && p==="api/v1/admin/reference-portfolio") { const identity=await auth(req); return ok(res,await referencePortfolio.listReferenceDatasets(identity),requestId); }
+    if(req.method==="GET" && parts.length===5 && p.startsWith("api/v1/admin/reference-portfolio/") && parts[4]==="items") { const identity=await auth(req); return ok(res,await referencePortfolio.listReferenceItems(identity,parts[3]),requestId); }
+    if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/admin/reference-portfolio/") && parts[4]==="items") { const identity=await auth(req); return ok(res,await referencePortfolio.saveReferenceItem(identity,parts[3],await body(req),null),requestId,201); }
+    if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/reference-portfolio/") && parts[4]==="items") { const identity=await auth(req); return ok(res,await referencePortfolio.saveReferenceItem(identity,parts[3],await body(req),parts[5]),requestId); }
+    if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/admin/reference-portfolio/") && parts[4]==="import") { const identity=await auth(req); const b=await body(req); return ok(res,await referencePortfolio.importReferenceCsv(identity,parts[3],b.filename||"reference.csv",b.csv||""),requestId,201); }
+    if(req.method==="GET" && parts.length===5 && p.startsWith("api/v1/admin/reference-portfolio/") && parts[4]==="export") { const identity=await auth(req); return ok(res,await referencePortfolio.exportReferenceCsv(identity,parts[3]),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/users") { const identity=await auth(req); return ok(res,await userAdmin.listUsers(identity,{q:query(req.url).get("q"),status:query(req.url).get("status")}),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/roles") { const identity=await auth(req); return ok(res,await userAdmin.listRoles(identity.sub),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/permissions") { const identity=await auth(req); return ok(res,await userAdmin.listPermissions(identity.sub),requestId); }
@@ -276,6 +283,13 @@ const server=http.createServer(async (req,res)=>{
       return ok(res,await membership.listApplicationsForReview(),requestId);
     }
 
+    if(req.method==="GET" && p==="api/v1/professional-reference-data") return ok(res,await referencePortfolio.listPublicReferenceSets(),requestId);
+    if(req.method==="GET" && p==="api/v1/me/education") return ok(res,await talent.getProfessionalEducation(identity.sub),requestId);
+    if(req.method==="PUT" && p==="api/v1/me/education") return ok(res,await talent.saveProfessionalEducation(identity.sub,await body(req),requestId),requestId);
+    if(req.method==="GET" && p==="api/v1/me/portfolio") return ok(res,await talent.getProfessionalPortfolio(identity.sub),requestId);
+    if(req.method==="POST" && p==="api/v1/me/portfolio") return ok(res,await talent.saveProfessionalPortfolioItem(identity.sub,await body(req),requestId,null),requestId,201);
+    if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/me/portfolio/")) return ok(res,await talent.saveProfessionalPortfolioItem(identity.sub,await body(req),requestId,parts[4]),requestId);
+    if(req.method==="DELETE" && parts.length===5 && p.startsWith("api/v1/me/portfolio/")) return ok(res,await talent.deleteProfessionalPortfolioItem(identity.sub,parts[4],requestId),requestId);
     if(req.method==="GET" && p==="api/v1/me/talent-profile") return ok(res,await talent.getProfessionalProfile(identity.sub),requestId);
     if(req.method==="PATCH" && p==="api/v1/me/talent-profile") return ok(res,await talent.updateProfessionalProfile(identity.sub,await body(req),requestId),requestId);
     if(req.method==="GET" && p==="api/v1/me/talent-visibility") return ok(res,await talent.getVisibility(identity.sub),requestId);
