@@ -12,6 +12,8 @@ const shareable = [
   ["experience", "Experience summary"],
   ["location", "Preferred location"],
   ["availability", "Availability"],
+  ["contactEmail", "Email address (optional contact sharing)"],
+  ["contactPhone", "Phone number (optional contact sharing)"],
 ] as const;
 
 export default function JobInterestPage() {
@@ -111,8 +113,10 @@ export default function JobInterestPage() {
       <h2 className="h2" style={{ marginTop: 12 }}>Your reference: {inquiry.public_reference}</h2>
       <p>{notice || inquiry.nextStep || "MPA Support Desk will review your request and determine an appropriate next step."}</p>
       {error ? <p role="alert" style={{ color: "var(--danger, #b91c1c)" }}>{error}</p> : null}
-      {!consentSaved && shareWithEmployers ? <button className="btn btn-primary" type="button" disabled={processingConsent} onClick={() => void retryConsent()}>{processingConsent ? "Saving consent…" : "Retry employer-sharing consent"}</button> : null}
-      {consentSaved ? <button className="btn btn-ghost" type="button" disabled={processingConsent} onClick={() => void revokeConsent()}>{processingConsent ? "Updating…" : "Revoke employer-sharing consent"}</button> : null}
+      {!consentSaved ? <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><input type="checkbox" checked={shareWithEmployers} onChange={e => setShareWithEmployers(e.target.checked)} />I explicitly opt in to named-employer sharing now. This is optional and separate from submitting my request.</label>
+        {shareWithEmployers ? <div style={{ display: "grid", gap: 8 }}>{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}<button className="btn btn-primary" type="button" disabled={processingConsent || !shareFields.length} onClick={() => void retryConsent()}>{processingConsent ? "Saving consent…" : "Save explicit sharing consent"}</button></div> : <p className="muted">Your request remains private. No employer can access it.</p>}
+      </div> : <button className="btn btn-ghost" type="button" disabled={processingConsent} onClick={() => void revokeConsent()}>{processingConsent ? "Updating…" : "Revoke employer-sharing consent"}</button>}
       <p className="muted">Consent permits only the selected fields to be shared with a specific verified organization after Support Desk review. It does not guarantee a vacancy, interview or job offer.</p>
     </Card> : <Card>
       <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
