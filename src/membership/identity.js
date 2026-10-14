@@ -50,5 +50,5 @@ export function validatePersonInput(input={}){
   const middleName=String(input.middleName||"").trim()||null;
   const lastName=String(input.lastName||"").trim();
   if(!firstName || !lastName) throw new Error("firstName and lastName are required.");
-  return {firstName,middleName,lastName,displayName:String(input.displayName||`${firstName} ${lastName}`).trim(),phone:normalizePhone(input.phone),dateOfBirth:input.dateOfBirth||null,sex:input.sex||null,nationality:input.nationality||null};
+  const rawGender=input.gender!==undefined?input.gender:input.sex;const gender=rawGender==null||String(rawGender).trim()===""?null:String(rawGender).trim().toLowerCase();if(gender!==null&&!["male","female"].includes(gender)){const error=new Error("Choose Male or Female, or leave Gender blank.");error.statusCode=400;error.code="GENDER_INVALID";throw error;}return {firstName,middleName,lastName,displayName:String(input.displayName||`${firstName} ${lastName}`).trim(),phone:normalizePhone(input.phone),dateOfBirth:input.dateOfBirth||null,sex:gender,gender,nationality:input.nationality||null};
 }
