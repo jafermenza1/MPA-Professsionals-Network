@@ -137,3 +137,8 @@ The historical automated fixture established a known disposable baseline by appl
 ## CI removal update — 2026-10-14
 
 The GitHub Actions workflow is removed. Test source files and test helper scripts remain and must be executed manually. Historical run links are not current-head evidence. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md).
+
+
+## CI removal update — 2026-10-14
+
+The GitHub Actions workflow is removed. Test source files and helper scripts remain and must be executed manually. Historical run links are not current-head evidence. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md).
