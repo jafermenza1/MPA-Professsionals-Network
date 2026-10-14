@@ -167,6 +167,8 @@ export async function createDemandProviderMatch(demandId,actorId,input,requestId
    offer=(await db.query("select id,user_id provider_user_id,status,moderation_status,visibility from mentor_profile where id=$1",[listingId])).rows[0];
    if(!offer||offer.status!=="active"||offer.moderation_status!=="approved"||offer.visibility!=="public")throw fail(409,"Choose a currently published, approved and public mentor offer.","MATCH_LISTING_UNAVAILABLE");
    providerUserId=offer.provider_user_id;
+   const eligible=(await db.query("select 1 where exists(select 1 from membership_record m where m.user_id=$1 and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)) and exists(select 1 from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=$1 and vc.status='verified' and lower(vc.claim_code_snapshot)=any($2::text[]))",[providerUserId,["professional_certification","education","employment","experience","service_capability"]])).rowCount>0;
+   if(!eligible)throw fail(409,"The mentor's membership or professional verification is no longer current.","MATCH_LISTING_UNAVAILABLE");
   }else{
    offer=(await db.query("select x.id,x.organization_id,x.status,x.moderation_status,x.visibility,o.verification_status from organization_mentorship_offer x join organization o on o.id=x.organization_id where x.id=$1",[listingId])).rows[0];
    if(!offer||offer.status!=="published"||offer.moderation_status!=="approved"||offer.visibility!=="public"||offer.verification_status!=="verified")throw fail(409,"Choose a currently published offer from a verified organization.","MATCH_LISTING_UNAVAILABLE");
