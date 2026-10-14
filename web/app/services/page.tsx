@@ -31,11 +31,11 @@ export default function Services(){
    setLoading(true);setError("");
    try{
      const params=new URLSearchParams();if(q.trim())params.set("q",q.trim());
-     const result=await api<{items:Service[]}>("/api/v1/services"+(params.toString()?"?"+params.toString():""));
+     const result=await api<{items:Service[]}>("/api/v1/services"+(params.toString()?"?"+params.toString():""),{},token||undefined);
      setItems(Array.isArray(result?.items)?result.items:[]);
    }catch(e){setItems([]);setError(e instanceof ApiError?e.message:"We couldn't load services right now.");}
    finally{setLoading(false);}
- },[]);
+ },[token]);
  const loadProviderWorkspace=useCallback(async()=>{
    if(!token){setMyListings([]);setOrganizations([]);return;}
    try{const [listings,orgs]=await Promise.all([api<ProviderListing[]>("/api/v1/me/service-listings",{},token),api<Org[]>("/api/v1/organizations",{},token)]);setMyListings(Array.isArray(listings)?listings:[]);setOrganizations(Array.isArray(orgs)?orgs:[]);}
@@ -82,7 +82,7 @@ export default function Services(){
  }
  async function submitRequest(e:FormEvent){
    e.preventDefault();if(!selected)return;
-   if(!token){setNotice("Sign in with an active membership to request a service.");return;}
+   if(!token){setNotice("Sign in to request this service. Member-only offers require an active membership.");return;}
    setSubmitting(true);setError("");setNotice("");
    try{
      const created=await api<ServiceRequest>("/api/v1/services/"+encodeURIComponent(selected.id)+"/requests",{method:"POST",body:JSON.stringify({message:message.trim()||undefined})},token);
@@ -94,7 +94,7 @@ export default function Services(){
  }
 
  return <div className="grid">
-   <div><div className="eyebrow">Professional services</div><h1 className="h1">Find help, then deliver it well.</h1><p className="muted">Browse published service offers. Requests require an active membership and are governed by provider acceptance and explicit status transitions.</p></div>
+   <div><div className="eyebrow">Professional services</div><h1 className="h1">Find help, then deliver it well.</h1><p className="muted">Browse published service offers. Public offers can be requested by signed-in users; member-only offers require an active membership. Providers must accept before work begins.</p></div>
    <Card id="provider-workspace"><div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}><div><div className="eyebrow">Provider workspace</div><h2 className="h2">Offer a professional service</h2><p className="muted">Create a draft, submit it for review, and track moderation status here. Public discovery begins only after approval.</p></div><Badge>Moderated publication</Badge></div>
     {!token?<p className="muted">Sign in to create or manage a service listing. Individual provider listings require an active membership; verified organizations can publish through an authorized organization role.</p>:<form className="grid" style={{gap:12,marginTop:14}} onSubmit={submitProviderListing}>
       <div className="grid grid-2"><label>Service title<input required minLength={3} maxLength={180} value={providerForm.title} onChange={e=>setProviderForm(v=>({...v,title:e.target.value}))} placeholder="e.g. Financial reporting and bookkeeping"/></label><label>Category<input required maxLength={120} value={providerForm.serviceCategory} onChange={e=>setProviderForm(v=>({...v,serviceCategory:e.target.value}))} placeholder="e.g. Finance, design, training"/></label></div>
@@ -125,7 +125,7 @@ export default function Services(){
      <button className="btn btn-primary" type="button" style={{marginTop:16,width:"100%"}} onClick={()=>{setSelected(service);setMessage("");setNotice("");}}>Request this service</button>
    </Card>)}</div>}
    {selected&&<Card id="service-request"><div className="row"><div><div className="eyebrow">New service request</div><h2 className="h2">{selected.title}</h2></div><button className="btn btn-ghost" type="button" onClick={()=>setSelected(null)}>Close</button></div>
-     {!token?<><p className="muted">Sign in with an active membership to request this service. A provider must accept before work begins.</p><a className="btn btn-primary" href="/login?next=/services">Sign in to continue</a></>:<form className="form-stack" onSubmit={submitRequest}><label>Message to the provider<textarea rows={4} value={message} onChange={e=>setMessage(e.target.value)} placeholder="Describe the help you need, intended outcome and any important context."/></label><p className="muted">Submitting creates a request in the “requested” state. No payment or service completion is implied.</p><button className="btn btn-primary" type="submit" disabled={submitting}>{submitting?"Submitting…":"Submit service request"} <Handshake size={16}/></button></form>}
+     {!token?<><p className="muted">Sign in to request this service. Member-only offers require an active membership. A provider must accept before work begins.</p><a className="btn btn-primary" href="/login?next=/services">Sign in to continue</a></>:<form className="form-stack" onSubmit={submitRequest}><label>Message to the provider<textarea rows={4} value={message} onChange={e=>setMessage(e.target.value)} placeholder="Describe the help you need, intended outcome and any important context."/></label><p className="muted">Submitting creates a request in the “requested” state. No payment or service completion is implied.</p><button className="btn btn-primary" type="submit" disabled={submitting}>{submitting?"Submitting…":"Submit service request"} <Handshake size={16}/></button></form>}
    </Card>}
    <Card><div className="row"><div><div className="h2">Your service requests</div><p className="muted">Requests and outcomes are visible to their permitted participants.</p></div><MessageSquareText color="var(--primary)"/></div>
      {!token?<p className="muted">Sign in to view requests you made or services you provide.</p>:requests.length===0?<p className="muted">No service requests are recorded for this account yet.</p>:<div className="grid">{requests.map(r=><div className="case-row" key={r.id}><div className="row"><b>{r.service_title||"Service request"}</b><Badge>{r.status.replaceAll("_"," ")}</Badge></div><small className="muted">{r.created_at?new Date(r.created_at).toLocaleString():"Request recorded"}</small>{r.message&&<p className="muted">{r.message}</p>}<div className="row" style={{gap:8,flexWrap:"wrap",marginTop:10}}>{(r.is_provider||r.provider_user_id===currentUserId)&&r.status==="requested"&&<><button className="btn btn-primary" type="button" disabled={transitioningId===r.id} onClick={()=>void updateRequest(r,"accepted")}>Accept request</button><button className="btn btn-ghost" type="button" disabled={transitioningId===r.id} onClick={()=>void updateRequest(r,"declined")}>Decline request</button></>}{(r.is_provider||r.provider_user_id===currentUserId)&&r.status==="accepted"&&<button className="btn btn-primary" type="button" disabled={transitioningId===r.id} onClick={()=>void updateRequest(r,"in_progress")}>Start delivery</button>}{(r.is_provider||r.provider_user_id===currentUserId)&&r.status==="in_progress"&&!r.provider_completed_at&&<button className="btn btn-primary" type="button" disabled={transitioningId===r.id} onClick={()=>void updateRequest(r,"completed")}>Submit delivery for acceptance</button>}{r.requester_user_id===currentUserId&&r.status==="in_progress"&&r.provider_completed_at&&!r.requester_accepted_at&&<button className="btn btn-primary" type="button" disabled={transitioningId===r.id} onClick={()=>void updateRequest(r,"accept_completion")}>Accept delivered outcome</button>}{r.requester_user_id===currentUserId&&["requested","accepted"].includes(r.status)&&<button className="btn btn-ghost" type="button" disabled={transitioningId===r.id} onClick={()=>void updateRequest(r,"cancelled")}>Cancel request</button>}</div></div>)}</div>}
