@@ -276,3 +276,8 @@ A gap is closed only when:
 8. **P3 — Validation and optimization:** manual role-separated E2E, accessibility/mobile checks, reporting reconciliation, restore and release evidence.
 
 All priorities are product requirements. Priority labels do not authorize skipping security, privacy, data migration review, or acceptance testing.
+
+
+### P2 implementation checkpoint — 2026-10-14
+
+The first code increment includes a permission-filtered report catalogue, live report previews, PDF/XLSX exports, generation/export audit events, and bulk approved-member import/export using the existing membership import staging tables. The implementation state is **code committed, acceptance pending**; this does not close the gap. Tests, migration validation, role-negative access checks, reconciliation evidence, and opening the generated files in PDF/Excel-compatible clients remain required.
