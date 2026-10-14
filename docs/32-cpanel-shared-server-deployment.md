@@ -187,3 +187,7 @@ System administrators can manage account status, assign roles, revoke all sessio
 10. Do not expose database credentials, JWT secrets, bootstrap passwords, private evidence, or reviewer notes in frontend builds or logs.
 
 The API uses bearer access tokens rather than browser cookies, so CSRF is not the primary session threat. HTTPS remains mandatory; exact CORS configuration is needed only for approved browser clients that call the API cross-origin instead of using the same-origin web rewrite.
+
+## Validation process update — 2026-10-14
+
+The GitHub Actions CI workflow has been removed from the currently listed branches. The test suites and build scripts remain available; execute them manually in local/staging environments as described in [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Do not run database upgrade fixtures against the live database. For the cPanel release itself, keep a separate deployment record of the exact commit/build ID, backup archive, portal/API smoke results, and manual workflow checks. Historical Actions links are not evidence that the current deployed commit passed the full test suite.
