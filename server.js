@@ -102,6 +102,7 @@ const server=http.createServer(async (req,res)=>{
     const parts=pathParts(req.url);
     const p=parts.join("/");
     if(req.method==="POST" && p==="api/v1/public/opportunity-inquiries") { publicRateLimit(req,"public-inquiry",10,60000); return ok(res,await publicOpportunity.createPublicInquiry(await body(req),requestId,optionalIdentity(req)),requestId,201); }
+    if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/public/opportunity-inquiries/") && parts[5]==="access") { publicRateLimit(req,"job-seeker-access",10,60000); const b=await body(req); return ok(res,await publicOpportunity.getPublicInquiry(parts[4],b.token||""),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/public/opportunity-inquiries/") && parts[5]==="sharing-history") { const b=await body(req); return ok(res,await publicOpportunity.getSharingHistory(parts[4],b.token||""),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/public/opportunity-inquiries/") && parts[5]==="sharing-consent") { publicRateLimit(req,"job-seeker-consent",10,60000); const b=await body(req); return ok(res,await publicOpportunity.updateSharingConsent(parts[4],b.token||"",b,requestId),requestId); }
     if(req.method==="GET" && parts.length===6 && p.startsWith("api/v1/public/opportunity-inquiries/") && parts[5]==="details") { const q=query(req.url); return ok(res,await publicOpportunity.getPublicInquiry(parts[4],q.get("token")||""),requestId); }
