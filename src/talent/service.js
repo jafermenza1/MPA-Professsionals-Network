@@ -231,14 +231,14 @@ async function validReference(db,id,domain,{required=false,custom=""}={}){
 }
 export async function getProfessionalEducation(userId){
  const db=getPool();const profileId=await profileIdFor(db,userId);
- return (await db.query(`select e.id,e.education_level_item_id,e.education_level_custom,e.institution_item_id,e.institution_name_custom,e.field_of_study_item_id,e.field_of_study_custom,e.qualification_item_id,e.qualification_custom,e.graduation_year,
+ return (await db.query(`select e.id,e.education_level_item_id,e.education_level_custom,e.institution_item_id,e.institution_name_custom,e.field_of_study_item_id,e.field_of_study_custom,e.qualification_item_id,e.qualification_custom,e.graduation_year,e.start_year,e.completion_year,e.currently_studying,e.explanation,e.visibility,
  el.label education_level_label,ins.label institution_label,fs.label field_of_study_label,q.label qualification_label
  from professional_education e
  join reference_item el on el.id=e.education_level_item_id
  left join reference_item ins on ins.id=e.institution_item_id
  left join reference_item fs on fs.id=e.field_of_study_item_id
  left join reference_item q on q.id=e.qualification_item_id
- where e.profile_id=$1 order by e.graduation_year desc nulls last,e.created_at desc`,[profileId])).rows;
+ where e.profile_id=$1 order by e.currently_studying desc,e.completion_year desc nulls last,e.created_at desc`,[profileId])).rows;
 }
 export async function saveProfessionalEducation(userId,input,requestId){
  const entries=Array.isArray(input?.education)?input.education:[];
@@ -253,13 +253,20 @@ export async function saveProfessionalEducation(userId,input,requestId){
    const field=await validReference(db,e.fieldOfStudyItemId,"field_of_study",{required:true,custom:fieldCustom});
    const qualification=await validReference(db,e.qualificationItemId,"qualification_type",{custom:qualificationCustom});
    const year=e.graduationYear===""||e.graduationYear==null?null:Number(e.graduationYear);
-   if(year!==null&&(!Number.isInteger(year)||year<1900||year>new Date().getFullYear()+10))throw error(400,"Graduation year must be a valid year.","VALIDATION_ERROR");
-   checked.push({level,institution,field,qualification,levelCustom,institutionCustom,fieldCustom,qualificationCustom,year});
+   const startYear=e.startYear===""||e.startYear==null?null:Number(e.startYear);
+   const completionYear=e.currentlyStudying?null:(e.completionYear===""||e.completionYear==null?(year===null?null:year):Number(e.completionYear));
+   const currentlyStudying=e.currentlyStudying===true;
+   const explanation=cleanOptional(e.explanation,1200);
+   const visibility=String(e.visibility||"private");
+   for(const [label,value] of [["Start year",startYear],["Completion year",completionYear]])if(value!==null&&(!Number.isInteger(value)||value<1900||value>new Date().getFullYear()+10))throw error(400,label+" must be a valid year.","VALIDATION_ERROR");
+   if(startYear!==null&&completionYear!==null&&completionYear<startYear)throw error(400,"Completion year cannot be earlier than the start year.","VALIDATION_ERROR");
+   if(!["private","members","public"].includes(visibility))throw error(400,"Choose a valid education visibility.","VALIDATION_ERROR");
+   checked.push({level,institution,field,qualification,levelCustom,institutionCustom,fieldCustom,qualificationCustom,year,startYear,completionYear,currentlyStudying,explanation,visibility});
   }
   await db.query("delete from professional_education where profile_id=$1",[profileId]);
-  for(const e of checked)await db.query("insert into professional_education(profile_id,education_level_item_id,education_level_custom,institution_item_id,institution_name_custom,field_of_study_item_id,field_of_study_custom,qualification_item_id,qualification_custom,graduation_year) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",[profileId,e.level.id,e.levelCustom,e.institution?.id,e.institutionCustom,e.field?.id,e.fieldCustom,e.qualification?.id,e.qualificationCustom,e.year]);
+  for(const e of checked)await db.query("insert into professional_education(profile_id,education_level_item_id,education_level_custom,institution_item_id,institution_name_custom,field_of_study_item_id,field_of_study_custom,qualification_item_id,qualification_custom,graduation_year,start_year,completion_year,currently_studying,explanation,visibility) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",[profileId,e.level.id,e.levelCustom,e.institution?.id,e.institutionCustom,e.field?.id,e.fieldCustom,e.qualification?.id,e.qualificationCustom,e.completionYear,e.startYear,e.completionYear,e.currentlyStudying,e.explanation,e.visibility]);
   await audit(db,userId,"talent.education_updated","professional_profile",profileId,requestId,{recordCount:checked.length});
-  return (await db.query(`select e.id,e.education_level_item_id,e.education_level_custom,e.institution_item_id,e.institution_name_custom,e.field_of_study_item_id,e.field_of_study_custom,e.qualification_item_id,e.qualification_custom,e.graduation_year,el.label education_level_label,ins.label institution_label,fs.label field_of_study_label,q.label qualification_label from professional_education e join reference_item el on el.id=e.education_level_item_id left join reference_item ins on ins.id=e.institution_item_id left join reference_item fs on fs.id=e.field_of_study_item_id left join reference_item q on q.id=e.qualification_item_id where e.profile_id=$1 order by e.graduation_year desc nulls last,e.created_at desc`,[profileId])).rows;
+  return (await db.query(`select e.id,e.education_level_item_id,e.education_level_custom,e.institution_item_id,e.institution_name_custom,e.field_of_study_item_id,e.field_of_study_custom,e.qualification_item_id,e.qualification_custom,e.graduation_year,e.start_year,e.completion_year,e.currently_studying,e.explanation,e.visibility,el.label education_level_label,ins.label institution_label,fs.label field_of_study_label,q.label qualification_label from professional_education e join reference_item el on el.id=e.education_level_item_id left join reference_item ins on ins.id=e.institution_item_id left join reference_item fs on fs.id=e.field_of_study_item_id left join reference_item q on q.id=e.qualification_item_id where e.profile_id=$1 order by e.graduation_year desc nulls last,e.created_at desc`,[profileId])).rows;
  });
 }
 export async function getProfessionalPortfolio(userId){
