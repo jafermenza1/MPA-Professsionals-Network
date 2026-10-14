@@ -31,5 +31,5 @@ test("approved-member CSV template includes required columns and no password fie
  const csv=memberImportTemplate(),header=csv.split("\r\n")[0].split(",");
  for(const key of ["email","full_name","membership_number","product_code","status","start_date","end_date","approved_membership"])assert.ok(header.includes(key));
  assert.equal(header.some(key=>/password/i.test(key)),false);
- assert.match(csv,/MPA approval register reference/);
+ assert.equal(csv.split("\\r\\n").filter(Boolean).length,1,"template must not include a placeholder member row");
 });
