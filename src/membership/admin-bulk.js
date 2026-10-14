@@ -97,6 +97,11 @@ export async function applyMemberImport(identity,importId,{reason=""}={},request
    await tx.query("select pg_advisory_xact_lock(hashtext($1))",["membership:"+String(row.membership_number).toLowerCase()]);
    const dup=(await tx.query("select id from membership_record where lower(membership_number)=lower($1) and status<>'merged' for update",[row.membership_number])).rows[0];
    if(dup){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',diagnostics=$2 where id=$1",[row.id,JSON.stringify(["Membership number already exists; no membership record was changed."])]);continue;}
+   if(row.legacy_member_id){
+    await tx.query("select pg_advisory_xact_lock(hashtext($1))",["legacy-member:"+String(row.legacy_member_id).toLowerCase()]);
+    const legacy=(await tx.query("select id from membership_record where source='legacy_import' and legacy_member_id=$1 for update",[row.legacy_member_id])).rows[0];
+    if(legacy){conflictCount++;await tx.query("update membership_import_row set match_status='conflict',diagnostics=$2 where id=$1",[row.id,JSON.stringify(["Legacy member ID already exists in an earlier import."])]);continue;}
+   }
    let userId=row.matched_user_id,accountCreatedForRow=false;
    if(!userId){
      const existing=(await tx.query("select u.id from app_user u where lower(u.email)=lower($1) or ($2::text is not null and exists(select 1 from person p where p.user_id=u.id and p.phone=$2)) for update",[row.email,row.phone])).rows[0];
