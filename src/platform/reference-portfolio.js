@@ -1,0 +1,82 @@
+import { randomUUID } from "node:crypto";
+import { getPool, withTransaction } from "./db.js";
+
+function fail(status,message,code="BUSINESS_RULE"){return Object.assign(new Error(message),{statusCode:status,code});}
+const ADMIN_ROLES=["system_admin","admin","platform_admin"];
+export function assertReferenceAdmin(identity){
+ const roles=Array.isArray(identity?.roles)?identity.roles:[];
+ const permissions=Array.isArray(identity?.permissions)?identity.permissions:[];
+ if(!ADMIN_ROLES.some(role=>roles.includes(role))&&!permissions.includes("reference:update")&&!permissions.includes("reference:import")) throw fail(403,"Reference portfolio administration permission is required.","FORBIDDEN");
+}
+const clean=(v,max=180)=>String(v??"").trim().slice(0,max);
+function csvEscape(value){const s=String(value??"");return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function parseCsv(source){
+ const rows=[];let row=[],cell="",quoted=false;
+ const text=String(source||"").replace(/^\uFEFF/,"");
+ for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(c==='"')quoted=false;else cell+=c;}else if(c==='"')quoted=true;else if(c===","){row.push(cell);cell="";}else if(c==="\n"){row.push(cell.replace(/\r$/,""));rows.push(row);row=[];cell="";}else cell+=c;}
+ if(quoted) throw fail(400,"CSV contains an unclosed quoted field.","CSV_INVALID");
+ if(cell.length||row.length){row.push(cell.replace(/\r$/,""));rows.push(row);}
+ if(rows.length<2) throw fail(400,"CSV must include a header row and at least one data row.","CSV_EMPTY");
+ const headers=rows.shift().map(h=>h.trim().toLowerCase());
+ for(const required of ["code","label"]) if(!headers.includes(required)) throw fail(400,"CSV must include code and label columns.","CSV_COLUMNS_REQUIRED");
+ return rows.filter(r=>r.some(v=>String(v).trim())).map((values,index)=>Object.fromEntries(headers.map((h,i)=>[h,values[i]??""]))).map((row,index)=>({...row,__row:index+2}));
+}
+async function datasetContext(db,key){
+ const dataset=(await db.query("select * from reference_dataset where dataset_key=$1 and status='active'",[key])).rows[0];
+ if(!dataset) throw fail(404,"Reference dataset was not found.","NOT_FOUND");
+ let version=(await db.query("select * from reference_dataset_version where dataset_id=$1 and status='published' order by published_at desc nulls last,created_at desc limit 1",[dataset.id])).rows[0];
+ if(!version) version=(await db.query("insert into reference_dataset_version(dataset_id,version_label,status,import_method,notes,published_at) values($1,$2,'published','manual','Created by reference portfolio management.',now()) returning *",[dataset.id,"managed-"+new Date().toISOString().slice(0,10)+"-"+randomUUID().slice(0,8)] )).rows[0];
+ return {dataset,version};
+}
+export async function listPublicReferenceSets(){
+ const db=getPool();
+ return (await db.query("select d.dataset_key,d.name,d.domain,ri.id,ri.code,ri.label,ri.description,ri.sort_order from reference_dataset d join reference_dataset_version v on v.dataset_id=d.id and v.status='published' join reference_item ri on ri.dataset_version_id=v.id and ri.active=true where d.status='active' and d.dataset_key like 'professional_%' order by d.name,ri.sort_order,ri.label")).rows;
+}
+export async function listReferenceDatasets(identity){
+ assertReferenceAdmin(identity);const db=getPool();
+ return (await db.query("select d.id,d.dataset_key,d.name,d.description,d.domain,d.status,v.id version_id,v.version_label,v.status version_status,(select count(*) from reference_item ri where ri.dataset_version_id=v.id and ri.active=true) item_count,v.published_at from reference_dataset d left join lateral (select * from reference_dataset_version x where x.dataset_id=d.id and x.status='published' order by x.published_at desc nulls last limit 1) v on true where d.dataset_key like 'professional_%' order by d.name")).rows;
+}
+export async function listReferenceItems(identity,key){
+ assertReferenceAdmin(identity);const db=getPool();const {dataset,version}=await datasetContext(db,key);
+ return {dataset:{dataset_key:dataset.dataset_key,name:dataset.name,domain:dataset.domain},version:{id:version.id,version_label:version.version_label},items:(await db.query("select id,code,label,description,sort_order,active,metadata from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows};
+}
+export async function saveReferenceItem(identity,key,input,itemId=null){
+ assertReferenceAdmin(identity);
+ const code=clean(input?.code,80).toUpperCase(),label=clean(input?.label,180),description=clean(input?.description,2000);
+ if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||label.length<1) throw fail(400,"Enter a code using letters/numbers and a clear label.","REFERENCE_ITEM_INVALID");
+ return withTransaction(async db=>{
+  const {dataset,version}=await datasetContext(db,key);
+  let row;
+  if(itemId){
+   row=(await db.query("update reference_item set code=$1,label=$2,description=$3,sort_order=$4,active=$5,updated_by=$6,updated_at=now() where id=$7 and dataset_version_id=$8 returning id,code,label,description,sort_order,active",[code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub,itemId,version.id])).rows[0];
+   if(!row) throw fail(404,"Reference item was not found in this dataset version.","NOT_FOUND");
+  }else{
+   row=(await db.query("insert into reference_item(dataset_version_id,code,label,description,sort_order,active,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$7) returning id,code,label,description,sort_order,active",[version.id,code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub])).rows[0];
+  }
+  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,'reference_item',$3,$4,'success',$5)",[identity.sub,itemId?"reference.item_updated":"reference.item_created",row.id,input.requestId||null,JSON.stringify({datasetKey:key,code,label,active:row.active})]);
+  return row;
+ });
+}
+export async function importReferenceCsv(identity,key,filename,csv){
+ assertReferenceAdmin(identity);
+ const rows=parseCsv(csv);const seen=new Set();const errors=[];
+ rows.forEach(row=>{const code=clean(row.code,80).toUpperCase();if(!code||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);});
+ if(errors.length) return {status:"rejected",imported:0,errors};
+ return withTransaction(async db=>{
+  const {dataset,version}=await datasetContext(db,key);let inserted=0,updated=0;
+  for(const row of rows){
+   const code=clean(row.code,80).toUpperCase(),label=clean(row.label,180),description=clean(row.description,2000)||null,active=!["false","0","inactive","no"].includes(String(row.active||"true").toLowerCase());
+   const existing=(await db.query("select id,label,description,active from reference_item where dataset_version_id=$1 and code=$2 for update",[version.id,code])).rows[0];
+   if(existing){await db.query("update reference_item set label=$1,description=$2,active=$3,sort_order=$4,updated_by=$5,updated_at=now() where id=$6",[label,description,active,Number(row.sort_order)||0,identity.sub,existing.id]);updated++;}
+   else{await db.query("insert into reference_item(dataset_version_id,code,label,description,active,sort_order,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$7)",[version.id,code,label,description,active,Number(row.sort_order)||0,identity.sub]);inserted++;}
+  }
+  await db.query("insert into reference_import(dataset_id,target_version_id,filename,format,status,uploaded_by,completed_at) values($1,$2,$3,'csv','published',$4,now())",[dataset.id,version.id,clean(filename,180)||"reference-import.csv",identity.sub]);
+  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,outcome,metadata) values($1,'reference.csv_imported','reference_dataset',$2,'success',$3)",[identity.sub,dataset.id,JSON.stringify({datasetKey:key,rowCount:rows.length,inserted,updated})]);
+  return {status:"imported",datasetKey:key,rowCount:rows.length,inserted,updated,errors:[]};
+ });
+}
+export async function exportReferenceCsv(identity,key){
+ assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
+ const rows=(await db.query("select code,label,coalesce(description,'') description,sort_order,active from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
+ return {filename:key+".csv",csv:["code,label,description,sort_order,active",...rows.map(row=>[row.code,row.label,row.description,row.sort_order,row.active].map(csvEscape).join(","))].join("\r\n")};
+}
