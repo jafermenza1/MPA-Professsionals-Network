@@ -64,7 +64,7 @@ The two new scoped workflow tests and the ATS test are additions to the suite, n
 
 ## Final execution gate
 
-Run on the same final branch SHA:
+Run manually on the same final branch SHA in a disposable/test environment:
 
 1. `npm ci --no-audit --no-fund`
 2. `npm run migrate` and `npm run migrate` again against isolated PostgreSQL 16.
@@ -75,3 +75,8 @@ Run on the same final branch SHA:
 7. Inspect the complete push and pull-request workflow results, not just workflow creation. Record passing run URLs and the exact SHA here and in `docs/31-workflow-reconciliation-matrix.md`.
 
 No production migration or deployment is authorized by this record. If GitHub does not assign a runner, the outcome is **blocked/unexecuted**, not pass or fail.
+
+
+## Test execution policy update — 2026-10-14
+
+The GitHub Actions CI workflow was removed by maintainer request. Historical Actions links remain historical evidence only. Manually execute the listed migration, unit, build, API smoke and Playwright checks on the exact candidate SHA, record complete output, and keep failed/unexecuted assertions open. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Never run migration-upgrade fixtures against production.
