@@ -91,6 +91,14 @@ test("P0: organization-only role cannot access a professional profile", async ()
     membership.updateProfile(userId, {}, "p0-organization-profile-boundary"),
     error => error.code === "PROFESSIONAL_PROFILE_FORBIDDEN"
   );
+  await assert.rejects(
+    serviceMentorship.createServiceListing(userId, { title: "Forbidden personal offer", description: "Organization-only accounts must use organization-owned listings.", serviceCategory: "p0-test" }, "p0-org-personal-service"),
+    error => error.code === "PROFESSIONAL_PROFILE_FORBIDDEN"
+  );
+  await assert.rejects(
+    serviceMentorship.createMentorProfile(userId, { headline: "Forbidden personal mentor profile" }, "p0-org-personal-mentor"),
+    error => error.code === "PROFESSIONAL_PROFILE_FORBIDDEN"
+  );
 });
 
 test("P0: no-vacancy job-seeker demand remains private until explicit named-employer consent and revocation", async () => {
