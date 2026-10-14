@@ -22,7 +22,7 @@ async function snapshotProgram(db,programId){
 }
 export async function listClaimTypes(){
  const db=getPool();
- return (await db.query("select claim_code,name,description from verification_claim_type order by name,claim_code")).rows;
+ return (await db.query("select claim_code,name from verification_claim_type order by name,claim_code")).rows;
 }
 export async function listPrograms(){
  const db=getPool();
