@@ -368,16 +368,6 @@ export default function Profile() {
   }
   const update = (key: keyof typeof blank, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
-  if (profile && profile.has_active_membership === false) return (
-    <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
-      <Card>
-        <div className="eyebrow">Professional profile</div>
-        <h1 className="h1">Membership is required to edit your profile.</h1>
-        <p className="muted">Your current profile remains read-only until your membership fee is verified and your membership is activated. You can still browse public opportunities, request public services, and submit a job-interest request.</p>
-        <p><a className="btn btn-primary" href="/membership">Apply for or renew membership</a> <a className="btn btn-ghost" href="/dashboard">Return to dashboard</a></p>
-      </Card>
-    </div>
-  );
   if (organizationOnly) return (
     <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
       <Card>
@@ -385,6 +375,16 @@ export default function Profile() {
         <h1 className="h1">This account uses an organization profile.</h1>
         <p className="muted">Professional directory profiles are separate from organization profiles. This account cannot access or edit a professional profile. Open the organization workspace to manage organizations you are authorized to access.</p>
         <p><a className="btn btn-primary" href="/organizations">Open organization workspace</a></p>
+      </Card>
+    </div>
+  );
+  if (profile && profile.has_active_membership === false) return (
+    <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
+      <Card>
+        <div className="eyebrow">Professional profile</div>
+        <h1 className="h1">Membership is required to edit your profile.</h1>
+        <p className="muted">Your current profile remains read-only until your membership fee is verified and your membership is activated. You can still browse public opportunities, request public services, and submit a job-interest request.</p>
+        <p><a className="btn btn-primary" href="/membership">Apply for or renew membership</a> <a className="btn btn-ghost" href="/dashboard">Return to dashboard</a></p>
       </Card>
     </div>
   );
