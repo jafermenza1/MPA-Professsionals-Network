@@ -6,6 +6,7 @@ import * as membership from "../../src/membership/service.js";
 import * as talent from "../../src/talent/service.js";
 import * as serviceMentorship from "../../src/services-mentorship/service.js";
 import * as publicOpportunity from "../../src/platform/public-opportunity.js";
+import * as organizationJobs from "../../src/organization-jobs/service.js";
 
 function identity(suffix) {
   const digits = suffix.replace(/[^0-9]/g, "").slice(0, 8).padEnd(8, "7");
@@ -110,8 +111,14 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
   assert.equal(granted.employer_sharing_consent, true);
   assert.deepEqual(granted.employer_sharing_fields, ["targetRole", "skills"]);
 
+  const organization = await organizationJobs.registerOrganization(support.user.id, {
+    legalName: "P0 Consent Test Organization " + randomUUID(),
+    displayName: "P0 Consent Test Organization"
+  }, "p0-consent-test-organization");
+  await db.query("update organization set verification_status='verified',public_visible=true,verified_at=now() where id=$1", [organization.id]);
+
   await assert.rejects(
-    publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: randomUUID(), fields: ["contactEmail"] }, "p0-share-outside-consent"),
+    publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: organization.id, fields: ["contactEmail"] }, "p0-share-outside-consent"),
     error => error.code === "CONSENT_FIELD_MISMATCH",
     "the Support Desk cannot share contact information outside the applicant's field-level consent"
   );
@@ -119,6 +126,13 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
     publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: randomUUID(), fields: ["targetRole"] }, "p0-share-to-unknown-organization"),
     error => error.code === "ORGANIZATION_NOT_ELIGIBLE"
   );
+  const shared = await publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: organization.id, fields: ["targetRole", "skills"] }, "p0-share-with-consent");
+  assert.equal(shared.status, "shared");
+  const employerView = await publicOpportunity.listSharedJobSeekerDemands(organization.id, support.user.id);
+  assert.equal(employerView.length, 1);
+  assert.equal(employerView[0].targetRole, "Accountant");
+  assert.deepEqual(employerView[0].skills, ["bookkeeping", "Excel"]);
+  assert.equal("contactEmail" in employerView[0], false, "contact details must not be shared unless separately consented");
 
   const revoked = await publicOpportunity.updateSharingConsent(inquiry.public_reference, inquiry.continuationToken, {
     employerSharingConsent: false
@@ -130,6 +144,11 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
   assert.equal(persisted.employer_sharing_scope, "support_desk_only");
   assert.deepEqual(persisted.employer_sharing_fields, []);
   assert.ok(persisted.employer_sharing_revoked_at);
+  assert.deepEqual(await publicOpportunity.listSharedJobSeekerDemands(organization.id, support.user.id), [], "revocation must remove employer access");
+  const history = await publicOpportunity.getSharingHistory(inquiry.public_reference, inquiry.continuationToken);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].organizationName, "P0 Consent Test Organization");
+  assert.equal(history[0].status, "revoked");
 });
 
 test.after("close P0 test database pool", async () => { await closePool(); });
