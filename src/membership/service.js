@@ -147,6 +147,7 @@ export async function listMembershipProducts(){
     coalesce(r.plan_description,p.description) description,
     coalesce(r.billing_model,p.billing_model) billing_model,
     (coalesce(r.base_amount,p.price)+coalesce(r.tax_amount,0)+coalesce(r.service_fee,0)) price,
+    coalesce(r.base_amount,p.price) base_amount,coalesce(r.tax_amount,0) tax_amount,coalesce(r.service_fee,0) service_fee,
     coalesce(r.currency,p.currency) currency,case when r.id is not null then r.duration_days else p.duration_days end duration_days,
     coalesce(r.renewal_required,p.renewal_required) renewal_required,
     coalesce(r.benefits,p.benefits) benefits,coalesce(r.grace_period_days,p.grace_period_days) grace_period_days,
