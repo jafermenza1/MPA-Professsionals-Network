@@ -1,6 +1,6 @@
 # Holistic Application Reconciliation Plan
 
-**Status:** Active — G0 PASS; G1 PASS on its verified implementation head; G2 PASS on its verified implementation head; G3 PASS on disposable PostgreSQL only (production baseline remains unverified); G4 scoped workflows expanded; current-head CI blocked before runner assignment; G5/G6 not passed  
+**Status:** Active — G0 PASS; G1 PASS on its verified implementation head; G2 PASS on its verified implementation head; G3 PASS on disposable PostgreSQL only (production baseline remains unverified); G4 scoped workflows expanded; current-head automated CI removed by maintainer decision; manual acceptance remains required; G5/G6 not passed  
 **Working branch:** `reconciliation/holistic-gates`  
 **Base branch:** `main`  
 **Scope:** One auditable branch for build reliability, authorization, database safety, connected workflows, end-to-end verification, and release readiness.
@@ -29,7 +29,7 @@ Authoritative references:
 3. Do not perform destructive data migrations or rewrite production data without a reviewed migration and explicit recovery plan.
 4. Every defect must have a reproducible test or a documented reason why automation is not feasible.
 5. Keep fixes focused and backward-compatible where practical; document any necessary API or schema compatibility change.
-6. A gate is **PASS** only when its acceptance evidence is recorded. A plan, code review, or CI configuration alone is not proof of execution.
+6. A gate is **PASS** only when its acceptance evidence is recorded. A plan, code review, or historical CI configuration/run alone is not proof of current execution.
 7. Never record secrets, real identity evidence, production credentials, or unnecessary personal data in tests or logs.
 8. Keep all reconciliation work on this branch until the pull request is reviewed. Do not merge or deploy automatically as part of this plan.
 
@@ -55,19 +55,19 @@ Gates are sequential for acceptance. A later gate may reveal work for an earlier
 - The web workspace is `web/`, using Next.js 14 and React 18.
 - PostgreSQL access uses `pg`; SQL migrations are under `db/migrations/`.
 - Root scripts currently declare `test`, `test:reference-portfolio`, `start`, `migrate`, `web:build`, and `web:dev`.
-- CI is defined in `.github/workflows/ci.yml`; it provisions PostgreSQL 16, runs `npm install`, migrations, tests, web build and a `/healthz` smoke check.
+- Historical note: `.github/workflows/ci.yml` previously provisioned PostgreSQL 16 and ran install, migrations, tests, web build and API smoke. The workflow has been removed; see [manual test and deployment policy](36-manual-test-release-and-deployment-policy.md).
 - The migration runner in `scripts/migrate.js` enumerates and executes every sorted SQL migration on every run. A migration ledger and safe rerun behavior have not yet been demonstrated.
 - The product contracts explicitly require server-side authorization and resource scope, privacy of sensitive evidence, auditable state changes, idempotent consequential operations, realistic migration tests, and end-to-end acceptance.
 - At baseline commit `dd5eb406e04e4a775711c8f01c8c33bd32ea382a`, no npm, pnpm or Yarn lockfile was present. Gate 1 generated the npm workspace lockfile on a network-enabled GitHub runner, committed it as `package-lock.json`, removed the temporary bootstrap/artifact/write-permission steps, restored CI to `contents: read`, and switched the pipeline to `npm ci --no-audit --no-fund`.
 - Existing test files cover identity/password validation, platform foundation/theme, membership import and lifecycle, Reference Portfolio validation/service, verification, organizations/jobs, and services/mentorship.
 - The web app contains public landing, registration/login, profile, dashboard, admin, field operations, jobs/apply, network, organizations, services, mentorship, opportunity intake, and inquiry tracking screens.
-- Only one CI workflow is present in the repository tree. It runs a migration/test/build/smoke sequence but does not itself demonstrate browser E2E coverage of every advertised capability.
+- At the time this historical inventory was written, one CI workflow existed. It was removed on 2026-10-14. Its historical runs are not evidence for later commits; manual validation is now the acceptance process.
 
 ### Initial risk register — hypotheses to verify during the gates
 
 | ID | Area | Initial observation / risk | Required proof or action |
 |---|---|---|---|
-| R-01 | Build/CI | Historical baseline lacked a lockfile and used `npm install`; Gate 1 later committed `package-lock.json` and switched CI to `npm ci`. | Preserve the committed lockfile and clean-install contract; current-head execution is deferred by maintainer billing instruction. |
+| R-01 | Build/reproducibility | Historical baseline lacked a lockfile; Gate 1 committed `package-lock.json` and prior CI used `npm ci`. | Preserve the lockfile and validate clean installation manually with `npm ci --no-audit --no-fund`; record exact commit and output. |
 | R-02 | API contract | Two `GET /api/v1/me` handlers existed; the first returned only account/role data and shadowed the later profile response consumed by the dashboard. | **Fix committed on this branch:** removed the shadowing handler; CI passed on the resulting server change. Add a focused authenticated route contract test during G5. |
 | R-03 | Authorization | Tokens contain role claims while account sessions are checked against the database. A role change may leave old role claims active until expiry unless sessions are revoked or roles are reloaded. | Trace every privileged route and role mutation; test role grant/removal and session revocation. |
 | R-04 | Migrations | The original runner had no history ledger and reran every SQL file on every invocation. | **Fix under CI validation:** migration runner now records filename + SHA-256 checksum, refuses edits to already-applied migration files, and applies each new migration and ledger entry in one transaction. CI now runs the migration command twice. A fresh-DB rerun is not a substitute for validating an existing-schema upgrade. |
@@ -170,7 +170,7 @@ Latest automatic workflow events on code SHA `7fa48319799d7d3a84437cefe1b847c674
 
 The last fully executed run is [38080002701](https://github.com/Jafermenza/ET-Professionals-Network/actions/runs/38080002701) on `a87be60e140a18253366b1de19c89cbb77a5fad5`. It ran migrations, unit tests and web build successfully but failed four browser tests: two newly added fixtures hit the shared public registration rate limit, a downstream test hit the same limit, and the mentorship outage fixture attempted to submit while its button was disabled. These are recorded as failures, not silently reclassified. The test fixtures and search readiness check were corrected after that run, and verification action responses were corrected to return committed state, but the fixes still require execution on the current head.
 
-**Next acceptance action:** after billing is restored, run push and PR CI on the same final head, resolve actual failures without weakening assertions, and record exact links. Until then G4 is implemented but unaccepted.
+**Current acceptance action:** run the manual validation sequence in [the manual test and deployment policy](36-manual-test-release-and-deployment-policy.md) on the exact release commit. Record actual unit, migration, build, API-smoke and browser results separately. Until current-head evidence is recorded, G4 remains unaccepted.
 
 
 ## Scoped G4 implementation follow-through (CI deferred by billing)
@@ -189,3 +189,8 @@ The current branch now adds:
 **G4 = IMPLEMENTED — EXECUTION DEFERRED, not PASS.** Automatic push/PR workflow events ended before any step ran (`runner_id: 0`, empty steps); no executable test result exists for the landing-page code or later documentation commits. Run the final suite on one exact branch SHA once billing permits it. Any actual failures must be corrected without removing or weakening assertions.
 
 Still open beyond the scoped workflow UI: project/task linkage and sync conflict semantics for the new encrypted offline field evidence queue; live payment and notification providers; verification checklist/referee/concern review UI and dedicated appeal-lifecycle browser acceptance; ATS interviewer feedback/ratings and complete candidate timeline UI; external calendar integration; events/calendar, learning/Moodle, projects/volunteers/donations and payment-to-donation allocation. These are recorded as implementation gaps rather than being represented as operational.
+
+
+## Validation policy update — 2026-10-14
+
+The GitHub Actions workflow `.github/workflows/ci.yml` has been removed from the currently listed branches by maintainer decision. References above to CI runs, run IDs and green historical commits describe evidence that was produced at those earlier commits only; they are not a current automated gate and must not be presented as validation of the current head. Retain the committed test suites and run them manually as described in [the Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). The current G4 status must be based on newly recorded execution output, not on historical Actions links.
