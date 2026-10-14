@@ -35,6 +35,14 @@ test("P1: education records are structured, repeatable and require custom values
  assert.equal(saved[0].institution_name_custom,"Regional Training Centre");
  const rows=(await db.query("select count(*)::int n from professional_education e join person p on p.id=(select person_id from professional_profile where id=e.profile_id) where p.user_id=$1",[userId])).rows[0];
  assert.equal(rows.n,2);
+ const reloadedEducation=await talent.getProfessionalEducation(userId);
+ assert.equal(reloadedEducation.length,2);
+ assert.ok(reloadedEducation.some(row=>row.institution_name_custom==="Regional Training Centre"));
+ await talent.updateProfessionalProfile(userId,{professionalTitle:"Community systems analyst",yearsExperience:4,skills:["service design","data analysis"],languages:["Afaan Oromo","Amharic"],certifications:["Project delivery"]},"p1-profile-skills-languages");
+ const reloadedProfile=await talent.getProfessionalProfile(userId);
+ assert.deepEqual(reloadedProfile.skills,["service design","data analysis"]);
+ assert.deepEqual(reloadedProfile.languages,["Afaan Oromo","Amharic"]);
+ assert.deepEqual(reloadedProfile.certifications,["Project delivery"]);
 });
 test("P1: portfolio supports multiple traceable items and keeps evidence optional/private",async()=>{
  const userId=await activeMember(randomUUID());
