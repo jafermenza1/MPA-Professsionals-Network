@@ -114,7 +114,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && parts.length===4 && p.startsWith("api/v1/jobs/")) { const v=optionalIdentity(req); return ok(res,await organizationJobs.getJob(parts[3],v?.sub||null),requestId); }
     if(req.method==="GET" && parts.length===5 && p.startsWith("api/v1/jobs/") && parts[4]==="applications") { const identity=await auth(req); return ok(res,await organizationJobs.listJobApplications(parts[3],identity.sub),requestId); }
 
-    if(req.method==="GET" && p==="api/v1/services") { const q=query(req.url); return ok(res,await servicesMentorship.listServices(null,{category:q.get("category"),q:q.get("q"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
+    if(req.method==="GET" && p==="api/v1/services") { const q=query(req.url); const viewer=req.headers.authorization?.startsWith("Bearer ")?await auth(req):null; return ok(res,await servicesMentorship.listServices(viewer?.sub||null,{category:q.get("category"),q:q.get("q"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
     if(req.method==="GET" && parts.length===4 && p.startsWith("api/v1/services/")) return ok(res,await servicesMentorship.getServiceListing(parts[3],null),requestId);
     if(req.method==="GET" && p==="api/v1/mentors") { const q=query(req.url); const viewer=req.headers.authorization?.startsWith("Bearer ")?await auth(req):null; return ok(res,await servicesMentorship.listMentors(viewer?.sub||null,{q:q.get("q"),topic:q.get("topic")}),requestId); }
     if(req.method==="POST" && p==="api/v1/files/uploads") { const identity=await auth(req); return ok(res,await authorizePrivateUpload(identity.sub,await body(req)),requestId,201); }
