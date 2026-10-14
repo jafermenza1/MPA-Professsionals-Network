@@ -29,7 +29,7 @@ async function datasetContext(db,key,{edit=false,actorId=null}={}){
  if(edit&&!draft){
   const label="draft-"+new Date().toISOString().slice(0,10)+"-"+randomUUID().slice(0,8);
   draft=(await db.query("insert into reference_dataset_version(dataset_id,version_label,status,import_method,notes,created_by) values($1,$2,'draft','manual','Working copy. Public forms continue using the published version until this draft is published.',$3) returning *",[dataset.id,label,actorId])).rows[0];
-  if(published) await db.query("insert into reference_item(dataset_version_id,code,parent_item_id,label,short_label,description,aliases,metadata,sort_order,active,effective_from,effective_to,created_by,updated_by) select $1,code,null,label,short_label,description,aliases,metadata,sort_order,active,effective_from,effective_to,$2,$2 from reference_item where dataset_version_id=$3",[draft.id,actorId,published.id]);
+  if(published) await db.query("with source as (select * from reference_item where dataset_version_id=$3), mapped as (select id,gen_random_uuid() new_id from source) insert into reference_item(id,dataset_version_id,code,parent_item_id,label,short_label,description,aliases,metadata,sort_order,active,effective_from,effective_to,created_by,updated_by) select child.new_id,$1,s.code,parent.new_id,s.label,s.short_label,s.description,s.aliases,s.metadata,s.sort_order,s.active,s.effective_from,s.effective_to,$2,$2 from source s join mapped child on child.id=s.id left join mapped parent on parent.id=s.parent_item_id",[draft.id,actorId,published.id]);
  }
  const version=draft||published;
  if(!version) throw fail(409,"This reference list has no working or published version. Create a working copy before editing.","REFERENCE_VERSION_MISSING");
