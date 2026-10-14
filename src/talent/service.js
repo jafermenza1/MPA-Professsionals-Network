@@ -24,8 +24,8 @@ export async function updateProfessionalProfile(userId,input,requestId){
   if(years!==null&&(!Number.isInteger(years)||years<0)) throw error(400,"yearsExperience must be a non-negative integer.","VALIDATION_ERROR");
   if(input.availabilityStatus!==undefined&&input.availabilityStatus!==null&&input.availabilityStatus!==""&&!["not_specified","available","limited","unavailable"].includes(input.availabilityStatus)) throw error(400,"availabilityStatus must be not_specified, available, limited or unavailable.","VALIDATION_ERROR");
   if(input.visibility!==undefined&&input.visibility!==null&&!["private","members","public"].includes(input.visibility)) throw error(400,"visibility must be private, members or public.","VALIDATION_ERROR");
-  const skills=Array.isArray(input.skills)?Array.from(new Map(input.skills.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\\s+/g," ").trim(),value])).values()).slice(0,40):null;
-  const languages=Array.isArray(input.languages)?Array.from(new Map(input.languages.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\\s+/g," ").trim(),value])).values()).slice(0,20):null;
+  const skills=Array.isArray(input.skills)?Array.from(new Map(input.skills.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,40):null;
+  const languages=Array.isArray(input.languages)?Array.from(new Map(input.languages.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,20):null;
   const certifications=Array.isArray(input.certifications)?input.certifications.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
   const portfolioUrl=input.portfolioUrl===undefined?null:String(input.portfolioUrl||"").trim();
   if(portfolioUrl){let parsed;try{parsed=new URL(portfolioUrl)}catch{throw error(400,"portfolioUrl must be a valid HTTPS URL.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"portfolioUrl must use HTTPS.","VALIDATION_ERROR")}
@@ -49,7 +49,7 @@ export async function updateProfessionalProfile(userId,input,requestId){
    for(const relationType of ["skill","language"]){
     const rows=(await db.query("select pr.custom_value,ri.label,ri.code,ri.aliases from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id join reference_dataset_version rv on rv.id=ri.dataset_version_id where pr.profile_id=$1 and pr.relation_type=$2 and rv.status='published' order by ri.label",[p.id,relationType])).rows;
     const values=rows.flatMap(row=>row.code==="OTHER"?String(row.custom_value||"").split(","): [row.label]).map(value=>String(value||"").trim()).filter(Boolean);
-    const deduped=Array.from(new Map(values.map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\\s+/g," ").trim(),value])).values()).slice(0,relationType==="skill"?40:20);
+    const deduped=Array.from(new Map(values.map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,relationType==="skill"?40:20);
     await db.query("update professional_profile set "+(relationType==="skill"?"skills":"languages")+"=$1::jsonb,updated_at=now() where id=$2",[JSON.stringify(deduped),p.id]);
    }
   }
