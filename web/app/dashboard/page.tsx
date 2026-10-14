@@ -16,7 +16,8 @@ type Tracking={summary?:{total?:number;active?:number;nextSteps?:number;membersh
 type Outcomes={jobs?:unknown[];services?:{id:string;status:string;service_title?:string;participant_role?:string}[];mentorships?:{id:string;status:string;participant_role?:string}[];inquiries?:{id:string;status:string;subject?:string;participant_role?:string}[]};
 type Organization={id:string;legal_name:string;display_name:string;verification_status?:string;role_code:string};
 type OrganizationPulse={organization:Organization;applications:number;activePipeline:number;openJobs:number;hires:number};
-type ReviewQueue={label:string;href:string;count:number;icon:"membership"|"verification"|"organization"|"appeal"};
+type ReviewQueueItem={id:string;title:string;status:string;reason:string;action:string;href:string;priority:"Urgent"|"High"|"Standard";deadline?:string|null;history:string;updatedAt?:string};
+type ReviewQueue={label:string;href:string;count:number;icon:"membership"|"verification"|"organization"|"appeal";items:ReviewQueueItem[]};
 type DashboardData={profile:Profile;tracking:Tracking|null;outcomes:Outcomes|null;organizations:Organization[];reviewQueues:ReviewQueue[];memberClarity:MemberClarity|null;errors:string[]};
 
 const roleLabels:Record<string,string>={member:"Professional member",mentor:"Mentor",mentee:"Mentee",reviewer:"Workflow reviewer",verification_reviewer:"Verification reviewer",ethics_reviewer:"Ethics reviewer",appeal_reviewer:"Appeal reviewer",finance_officer:"Finance officer",system_admin:"Platform administrator",super_admin:"Super administrator",admin:"Administrator",field_officer:"Field officer",project_manager:"Project manager",content_manager:"Content manager",event_manager:"Event manager",learning_admin:"Learning administrator"};
@@ -72,17 +73,79 @@ export default function Dashboard(){
       if(core[1].status==="rejected")errors.push("Personal outcomes");
       if(core[2].status==="rejected")errors.push("Organization memberships");
 
-      const queueRequests:{label:string;href:string;icon:ReviewQueue["icon"];request:Promise<unknown>;count:(value:any)=>number}[]=[];
-      if(roles.some(role=>["reviewer","finance_officer","system_admin"].includes(role)))queueRequests.push({label:"Membership review",href:"/membership",icon:"membership",request:api<unknown[]>("/api/v1/review/membership/applications",{},token),count:responseCount});
-      if(roles.some(role=>["verification_reviewer","ethics_reviewer","system_admin"].includes(role)))queueRequests.push({label:"Verification cases",href:"/verification",icon:"verification",request:api<{items?:unknown[]}>((roles.includes("system_admin")?"/api/v1/review/verification/cases":"/api/v1/review/verification/cases?reviewerId="+encodeURIComponent(profile.user_id)),{},token),count:value=>responseCount(value?.items)});
-      if(roles.some(role=>["reviewer","system_admin"].includes(role)))queueRequests.push({label:"Organization verification",href:"/organizations",icon:"organization",request:api<unknown[]>("/api/v1/review/organizations",{},token),count:responseCount});
-      if(roles.some(role=>["appeal_reviewer","system_admin"].includes(role)))queueRequests.push({label:"Independent appeals",href:"/verification",icon:"appeal",request:api<unknown[]>("/api/v1/review/verification/appeals",{},token),count:responseCount});
+      const queueRequests:{label:string;href:string;icon:ReviewQueue["icon"];request:Promise<unknown>;count:(value:any)=>number;kind:"membership"|"verification"|"organization"|"appeal"|"marketplace"|"demand"}[]=[];
+      if(roles.some(role=>["reviewer","finance_officer","system_admin"].includes(role)))queueRequests.push({label:"Membership review",href:"/membership",icon:"membership",kind:"membership",request:api<any[]>("/api/v1/review/membership/applications",{},token),count:responseCount});
+      if(roles.some(role=>["verification_reviewer","ethics_reviewer","system_admin"].includes(role)))queueRequests.push({label:"Verification cases",href:"/verification",icon:"verification",kind:"verification",request:api<{items?:any[]}>((roles.includes("system_admin")?"/api/v1/review/verification/cases":"/api/v1/review/verification/cases?reviewerId="+encodeURIComponent(profile.user_id)),{},token),count:value=>responseCount(value?.items)});
+      if(roles.some(role=>["reviewer","system_admin"].includes(role)))queueRequests.push({label:"Organization verification",href:"/organizations",icon:"organization",kind:"organization",request:api<any[]>("/api/v1/review/organizations",{},token),count:responseCount});
+      if(roles.some(role=>["appeal_reviewer","system_admin"].includes(role)))queueRequests.push({label:"Independent appeals",href:"/verification",icon:"appeal",kind:"appeal",request:api<any[]>("/api/v1/review/verification/appeals",{},token),count:responseCount});
+      if(roles.some(role=>["supporting_staff","reviewer","system_admin","admin"].includes(role))){
+        queueRequests.push({label:"Service and mentorship moderation",href:"/admin/marketplace",icon:"verification",kind:"marketplace",request:api<any[]>("/api/v1/admin/marketplace-listings",{},token),count:responseCount});
+        queueRequests.push({label:"Public demand review",href:"/admin/marketplace",icon:"verification",kind:"demand",request:api<any[]>("/api/v1/admin/marketplace-demand?status=submitted",{},token),count:responseCount});
+      }
       const queueResults=await Promise.allSettled(queueRequests.map(item=>item.request));
       const reviewQueues:ReviewQueue[]=[];
-      queueResults.forEach((result,index)=>{
-        if(result.status==="fulfilled")reviewQueues.push({label:queueRequests[index].label,href:queueRequests[index].href,icon:queueRequests[index].icon,count:queueRequests[index].count(result.value)});
-        else errors.push(queueRequests[index].label);
-      });
+      for(let index=0;index<queueResults.length;index++){
+        const result=queueResults[index],source=queueRequests[index];
+        if(result.status!=="fulfilled"){errors.push(source.label);continue;}
+        const payload:any=result.value;
+        const rows:any[]=Array.isArray(payload)?payload:Array.isArray(payload?.items)?payload.items:[];
+        const items:ReviewQueueItem[]=[];
+        for(const row of rows.slice(0,30)){
+          let title=String(row.display_name||row.name||row.subject_name||row.program_name||row.title||row.job_title||row.id||"Review item");
+          let status=String(row.status||row.case_status||row.moderation_status||"pending");
+          let reason="Review the current record and confirm the next safe action.";
+          let action="Open and review";
+          let history="No previous decision note is included in this queue response.";
+          let deadline:string|null=null;
+          let priority:ReviewQueueItem["priority"]="Standard";
+          let href=source.href;
+          if(source.kind==="membership"){
+            title=String(row.name||row.fee_snapshot?.productName||"Membership application");
+            status=String(row.status||"submitted");
+            reason=status==="correction_required"?"The applicant must resolve a requested correction.":status==="payment_pending"?"The approved fee is awaiting payment evidence.":status==="paid"?"Payment is recorded; activation may still be required.":"The membership application needs an authorized review.";
+            action=status==="payment_pending"?"Review payment evidence":status==="paid"?"Confirm activation eligibility":"Review application or request a correction";
+            history=String(row.latest_correction?.reviewer_note||row.reviewed_at&&("Last reviewed "+new Date(row.reviewed_at).toLocaleDateString())||"No previous review note recorded.");
+            priority=["correction_required","payment_pending","paid"].includes(status)?"High":"Standard";
+          }else if(source.kind==="verification"){
+            title=String(row.subject_name||row.program_name||"Verification case");
+            status=String(row.status||"submitted");
+            reason=status==="evidence_required"?"Required evidence is missing or needs review.":status==="member_response_required"?"The member is waiting to respond to an adverse decision.":status==="decision_pending"?"Checklist and claim results need a final authorized decision.":"Verification review is pending.";
+            action="Open case, checklist and decision history";
+            priority=status==="member_response_required"?"Urgent":["evidence_required","decision_pending"].includes(status)?"High":"Standard";
+            if(row.id){try{const detail=await api<any>("/api/v1/verification/cases/"+encodeURIComponent(row.id),{},token);const decision=detail.decisions?.[0];if(decision){history=String(decision.decision||"Decision")+(decision.reason?": "+decision.reason:"");deadline=decision.member_response_due_at||null;}}catch{/* The case remains actionable through its scoped review page. */}}
+          }else if(source.kind==="organization"){
+            title=String(row.display_name||row.legal_name||"Organization verification");
+            status=String(row.case_status||row.verification_status||"submitted");
+            reason=status==="correction_required"?"The organization must address the latest verification findings.":"Legal identity and supporting evidence need an authorized review.";
+            action="Review trust evidence and decision";
+            history=String(row.decision_reason||"No previous decision reason recorded.");
+            priority=status==="correction_required"?"High":"Standard";
+          }else if(source.kind==="appeal"){
+            title=String(row.subject_name||row.program_name||"Independent appeal");
+            status=String(row.status||"pending");
+            reason="An independent reviewer must assess the appeal against the original decision.";
+            action="Review appeal and record a reasoned decision";
+            history=String(row.original_decision||row.grounds||"Original decision history is available in the appeal record.");
+            priority="High";
+          }else if(source.kind==="marketplace"){
+            title=String(row.title||"Service or mentorship offer");
+            status=String(row.moderation_status||row.status||"pending");
+            reason="A provider offer needs moderation before public discovery.";
+            action="Review offer and moderation history";
+            history=String(row.moderation_note||"No previous moderation note recorded.");
+            priority="High";
+          }else{
+            title=String(row.title||"Public demand request");
+            status=String(row.status||"submitted");
+            reason="Support Desk must assess the need and publish only a privacy-safe public summary.";
+            action="Review demand and next step";
+            history=String(row.outcome_note||row.internal_note||"No previous outcome note recorded.");
+            priority="High";
+          }
+          items.push({id:String(row.id||row.case_id||row.organization_id||row.application_id||title),title,status,reason,action,href,priority,deadline,history,updatedAt:row.updated_at||row.submitted_at||row.created_at||undefined});
+        }
+        reviewQueues.push({label:source.label,href:source.href,icon:source.icon,count:source.count(payload),items});
+      }
 
       setData({profile,tracking,outcomes,organizations,reviewQueues,memberClarity,errors});
     }catch(e){setError(e instanceof ApiError?e.message:e instanceof Error?e.message:"We could not load your dashboard. Please retry.");}
