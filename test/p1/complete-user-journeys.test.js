@@ -145,6 +145,7 @@ test("Gate 2: Support Desk proposes a suitable provider and the provider respond
  await journeys.changeServiceListingStatus(listing.id,provider,"published","gate2-match-listing-submit");
  await marketplace.moderateListing("service",listing.id,staff,{decision:"approved",note:"Public provider offer reviewed."},"gate2-match-listing-approve");
  const demand=await marketplace.createDemand(requester,{demandType:"service",title:"Need operations support",description:"Our small team needs help improving weekly workflows and documenting reliable operating procedures.",category:"Operations",deliveryMode:"remote"},"gate2-match-demand-create");
+ await assert.rejects(marketplace.reviewDemand(demand.id,staff,{status:"matched",internalNote:"",outcomeCode:"provider_search"},"gate2-match-premature"),e=>e.code==="PROVIDER_MATCH_REQUIRED");
  const candidates=await marketplace.listDemandMatchCandidates(staff,"service");
  assert.ok(candidates.some(x=>x.id===listing.id&&x.listing_type==="service"));
  const match=await marketplace.createDemandProviderMatch(demand.id,staff,{listingType:"service",listingId:listing.id,note:"The offer's scope aligns with the requested workflow support."},"gate2-match-propose");
