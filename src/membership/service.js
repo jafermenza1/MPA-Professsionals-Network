@@ -84,8 +84,8 @@ export async function login(email,password,requestId,requestMeta={}){
   const recent=await db.query("select count(*)::int count from auth_login_attempt where identity_key=$1 and attempted_at>now()-interval '15 minutes' and succeeded=false",[identityKey]);
   if(recent.rows[0].count>=8) throw httpError(429,"Too many unsuccessful sign-in attempts. Try again later.","AUTH_RATE_LIMIT");
   const e=normalizeEmail(email);
-  const r=await db.query("select id,email,username,password_hash,status from app_user where lower(email)=lower($1)",[e]);
-  const user=r.rows[0];
+  const r=await db.query("select id,email,username,password_hash,status from app_user where lower(email)=lower($1) or lower(username)=lower($1) order by case when lower(email)=lower($1) then 0 else 1 end limit 2",[e]);
+  const user=r.rows.length===1?r.rows[0]:null;
   if(!user || user.status!=="active" || !verifyPassword(password,user.password_hash)){
     await db.query("insert into auth_login_attempt(identity_key,ip_address,succeeded) values($1,$2,false)",[identityKey,requestMeta.ip||null]);
     throw httpError(401,"Invalid credentials.","UNAUTHENTICATED");
