@@ -32,7 +32,7 @@ These modules are explicitly removed from the current production release scope a
 The current release scope explicitly excludes provider-backed payment and delivery evidence, as well as notification delivery proof. Those are not part of the current release and must not be treated as ready simply because the UI persists preferences.
 
 ### Mandatory release gates before sign-off
-- A final branch SHA must execute in a real GitHub Actions run with a runner assigned; no workflow created without a runner counts as a pass.
+- A final branch SHA must have recorded manual execution evidence from retained unit, migration, API smoke, build and browser suites. GitHub Actions CI was removed on 2026-10-14; historical runs do not validate the current head.
 - Production-like smoke validation against the real runtime and PostgreSQL remains outstanding and must be completed before deployment.
 - Cross-role browser E2E and negative-path acceptance for G5 remain incomplete and therefore do not count as production evidence.
 - Backup/restore, rollback rehearsal, and operational release-readiness checks are still open and must be completed before any production deployment decision.
@@ -180,3 +180,8 @@ The route inventory also shows only a small subset of the roles defined in the p
 - Registration now supports a safe same-origin `next` destination, checks for a session token, uses in-app navigation, and provides success/error feedback and a home link.
 - Logout now attempts the API's session-revocation endpoint before clearing local session state and returning to login. If the API is unavailable, local credentials are still cleared; server revocation cannot be claimed in that failure case.
 - The bootstrap bind-parameter fix is included in the branch. Database verification and deployed runtime verification remain required.
+
+
+## Validation process update — 2026-10-14
+
+GitHub Actions CI has been removed by maintainer request. The release criteria remain unchanged: use manual unit, migration, build, API smoke, browser, role-isolation and privacy checks and record results for the exact release SHA. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Keep all unexecuted checks OPEN.
