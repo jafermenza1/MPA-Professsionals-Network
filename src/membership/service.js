@@ -25,6 +25,15 @@ async function roles(db,userId){
   const r=await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);
   return r.rows.map(x=>x.role_code);
 }
+
+async function assertProfessionalProfileAccess(db,userId,{requireActiveMembership=false}={}){
+  const userRoles=await roles(db,userId);
+  if(!userRoles.some(role=>["member","professional"].includes(role))) throw httpError(403,"This account uses an organization profile. A professional profile is not available for this role.","PROFESSIONAL_PROFILE_FORBIDDEN");
+  if(requireActiveMembership){
+    const active=await db.query("select 1 from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) limit 1",[userId]);
+    if(!active.rowCount) throw httpError(403,"An active, current membership is required to edit a professional profile.","MEMBERSHIP_REQUIRED");
+  }
+}
 function amountFromProduct(product){ return Number(product.price); }
 
 export async function bootstrapAdmin(input){
@@ -94,12 +103,18 @@ export async function getMe(userId){
     coalesce((select jsonb_agg(r.role_code order by r.role_code) from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id),'[]'::jsonb) roles
     from app_user u left join person p on p.user_id=u.id left join professional_profile pr on pr.person_id=p.id where u.id=$1`,[userId]);
   if(!r.rows[0]) throw httpError(404,"Account not found.","NOT_FOUND");
-  return r.rows[0];
+  const row=r.rows[0];
+  const userRoles=Array.isArray(row.roles)?row.roles:[];
+  if(!userRoles.some(role=>["member","professional"].includes(role))){
+    row.profile_id=null; row.headline=null; row.bio=null; row.visibility=null; row.completion_percent=null;
+  }
+  return row;
 }
 
 export async function updateProfile(userId,input,requestId){
-  const person=validatePersonInput(input);
   await withTransaction(async db=>{
+    await assertProfessionalProfileAccess(db,userId,{requireActiveMembership:true});
+    const person=validatePersonInput(input);
     const current=await db.query("select id from person where user_id=$1 for update",[userId]);
     if(!current.rows[0]) throw httpError(404,"Person profile not found.","NOT_FOUND");
     const duplicate=await db.query("select user_id from person where phone=$1 and user_id<>$2",[person.phone,userId]);
