@@ -15,8 +15,8 @@ if(!apiKey||!from){
      where channel='email' and template_code='account.one_time_session_link'
        and ((status='pending' and (next_attempt_at is null or next_attempt_at<=now())) or (status='processing' and created_at<now()-interval '5 minutes'))
      order by created_at
-     for update skip locked
      limit 20
+     for update skip locked
    )
    update notification_outbox n set status='processing',attempts=n.attempts+1
    from candidates c where n.id=c.id
