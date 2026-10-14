@@ -44,6 +44,10 @@ test("P1 marketplace: private demand is reviewed before a privacy-safe public to
  assert.equal(refreshed.interest_count,1);
  assert.equal(refreshed.ready_count,1);
  assert.equal((await marketplaceDemand.listMyInterests(requester)).filter(row=>row.topic_id===topic.id).length,1);
+ const summary=await marketplaceDemand.getDemandSummary(staff,topic.id);
+ assert.equal(summary.uniqueInterests,1);
+ assert.equal(summary.readyCount,1);
+ assert.ok(summary.counts.some(row=>row.interest_level==="ready_to_engage"&&Number(row.count)===1));
 });
 test("P1 marketplace: organization demand is visible to its owner but not an unrelated account",async()=>{
  const owner=await account(randomUUID()),unrelated=await account(randomUUID());
