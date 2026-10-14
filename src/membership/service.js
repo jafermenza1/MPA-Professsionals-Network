@@ -142,18 +142,22 @@ export async function listMyApplications(userId){
 
 export async function listMembershipProducts(){
   const db=getPool();
-  return (await db.query(`select product_code,name,description,billing_model,price,currency,duration_days,renewal_required,benefits
-    from membership_product where active=true order by price asc,name asc`)).rows;
+  return (await db.query(`select product_code,name,description,billing_model,price,currency,duration_days,renewal_required,benefits,grace_period_days,eligibility,effective_from,effective_to
+    from membership_product where active=true and (effective_from is null or effective_from<=current_date) and (effective_to is null or effective_to>=current_date) order by price asc,name asc`)).rows;
 }
 
 async function product(db,code){
-  const r=await db.query("select * from membership_product where product_code=$1 and active=true",[String(code||"").toUpperCase()]);
+  const r=await db.query("select * from membership_product where product_code=$1 and active=true and (effective_from is null or effective_from<=current_date) and (effective_to is null or effective_to>=current_date)",[String(code||"").toUpperCase()]);
   if(!r.rows[0]) throw httpError(400,"Unknown or inactive membership product.","INVALID_PRODUCT");
   return r.rows[0];
 }
 
 export async function createApplication(userId,input,requestId){
   return withTransaction(async db=>{
+    // Serialize applications for one account so concurrent submits cannot both
+    // pass the pending-application check.
+    const account=(await db.query("select id from app_user where id=$1 for update",[userId])).rows[0];
+    if(!account) throw httpError(404,"Account not found.","NOT_FOUND");
     const prod=await product(db,input.productCode);
     const active=await db.query("select * from membership_record where user_id=$1 and status='active' order by end_date desc nulls last limit 1",[userId]);
     const type=input.applicationType||"new";
@@ -166,7 +170,22 @@ export async function createApplication(userId,input,requestId){
     if(pending.rows[0]) throw httpError(409,"You already have an active membership application.","APPLICATION_EXISTS");
     const me=await getMe(userId);
     const snapshot={person:{firstName:me.first_name,middleName:me.middle_name,lastName:me.last_name,displayName:me.display_name,phone:me.phone,dateOfBirth:me.date_of_birth,sex:me.sex,nationality:me.nationality},profile:{headline:me.headline,bio:me.bio}};
-    const fee={productCode:prod.product_code,productName:prod.name,amount:amountFromProduct(prod),currency:prod.currency,billingModel:prod.billing_model,durationDays:prod.duration_days};
+    const activeFeeRule=(await db.query(`select * from membership_fee_rule
+      where membership_product_id=$1 and effective_from<=current_date and (effective_to is null or effective_to>=current_date)
+      order by version desc limit 1`,[prod.id])).rows[0]||null;
+    const feeAmount=activeFeeRule
+      ? Number(activeFeeRule.base_amount)+Number(activeFeeRule.tax_amount||0)+Number(activeFeeRule.service_fee||0)
+      : amountFromProduct(prod);
+    const fee={
+      productCode:prod.product_code,productName:prod.name,amount:feeAmount,
+      currency:activeFeeRule?.currency||prod.currency,billingModel:prod.billing_model,
+      durationDays:prod.duration_days,feeRuleId:activeFeeRule?.id||null,
+      feeRuleVersion:activeFeeRule?.version??null,
+      feeBreakdown:activeFeeRule?{baseAmount:Number(activeFeeRule.base_amount),taxAmount:Number(activeFeeRule.tax_amount||0),serviceFee:Number(activeFeeRule.service_fee||0)}:null,
+      effectiveFrom:activeFeeRule?.effective_from||prod.effective_from||null,
+      effectiveTo:activeFeeRule?.effective_to||prod.effective_to||null,
+      durationPolicy:"fixed_days_inclusive"
+    };
     const trackingReference=await nextTrackingReference(db,"membership");
     const row=(await db.query(`insert into membership_application(user_id,tracking_reference,application_type,previous_membership_id,membership_product_id,status,submitted_at,data_snapshot,fee_snapshot)
       values($1,$2,$3,$4,$5,'submitted',now(),$6,$7) returning *`,[userId,trackingReference,type,active.rows[0]?.id||null,prod.id,snapshot,fee])).rows[0];
@@ -217,8 +236,20 @@ export async function createManualPayment(applicationId,userId,input,requestId){
     if(!Number.isFinite(amount) || amount!==Number(fee.amount)) throw httpError(400,"Payment amount must exactly match the approved application fee.","PAYMENT_AMOUNT_MISMATCH");
     const idem=String(input.idempotencyKey||"").trim();
     if(!idem) throw httpError(400,"idempotencyKey is required.","VALIDATION_ERROR");
-    const existing=await db.query("select * from payment_transaction where idempotency_key=$1",[idem]);
-    if(existing.rows[0]) return existing.rows[0];
+    const existing=await db.query(`select pt.*,ap.application_id,a.user_id as application_user_id
+      from payment_transaction pt
+      left join membership_application_payment ap on ap.payment_transaction_id=pt.id
+      left join membership_application a on a.id=ap.application_id
+      where pt.idempotency_key=$1 for update of pt`,[idem]);
+    if(existing.rows[0]){
+      const prior=existing.rows[0];
+      if(prior.purpose!=="membership"||prior.application_id!==applicationId||prior.application_user_id!==userId||
+         Number(prior.amount)!==amount||String(prior.currency).trim().toUpperCase()!==String(fee.currency).trim().toUpperCase()||
+         prior.submitted_by!==userId){
+        throw httpError(409,"This payment reference was already used for a different submission. Refresh the application and submit again with a new reference.","IDEMPOTENCY_CONFLICT");
+      }
+      return prior;
+    }
     const p=(await db.query(`insert into payment_transaction(provider,provider_transaction_id,idempotency_key,purpose,amount,currency,status,request_payload,channel,submitted_by,purpose_reference,source)
       values('manual',null,$1,'membership', $2,$3,'pending',$4::jsonb,$5,$6,$7,'manual_entry') returning *`,
       [idem,amount,fee.currency,JSON.stringify({channel:input.channel||"manual",reference:input.reference||null}),input.channel||"manual",userId,input.reference||applicationId])).rows[0];
@@ -260,22 +291,36 @@ export async function verifyPayment(paymentId,verifierId,input,requestId){
 
 export async function activateApplication(applicationId,actorId,requestId){
   return withTransaction(async db=>{
-    const app=(await db.query("select a.*,p.product_code,p.name,p.billing_model,p.duration_days,p.renewal_required from membership_application a join membership_product p on p.id=a.membership_product_id where a.id=$1 for update",[applicationId])).rows[0];
-    if(!app || app.status!=="paid" || !app.approved_at) throw httpError(409,"Application must be approved and have a verified payment before activation.","ACTIVATION_NOT_READY");
-    const pay=(await db.query("select pt.* from payment_transaction pt join membership_application_payment ap on ap.payment_transaction_id=pt.id where ap.application_id=$1 and pt.status='succeeded' order by pt.created_at desc limit 1",[applicationId])).rows[0];
-    if(!pay) throw httpError(409,"No successful payment is linked to this application.","PAYMENT_NOT_CONFIRMED");
+    const app=(await db.query("select a.*,p.product_code,p.name,p.billing_model,p.renewal_required from membership_application a join membership_product p on p.id=a.membership_product_id where a.id=$1 for update of a",[applicationId])).rows[0];
+    if(!app) throw httpError(404,"Membership application not found.","NOT_FOUND");
+    if(app.status==="activated"){
+      const already=(await db.query("select * from membership_record where application_id=$1 order by created_at desc limit 1",[applicationId])).rows[0];
+      if(already) return already;
+      throw httpError(409,"This application is marked activated but its membership record is missing. Contact membership support before retrying.","ACTIVATION_RECORD_MISSING");
+    }
+    if(app.status!=="paid" || !app.approved_at) throw httpError(409,"Application must be approved and have a verified payment before activation.","ACTIVATION_NOT_READY");
+    const fee=typeof app.fee_snapshot==="string"?JSON.parse(app.fee_snapshot):app.fee_snapshot;
+    const pay=(await db.query(`select pt.* from payment_transaction pt
+      join membership_application_payment ap on ap.payment_transaction_id=pt.id
+      where ap.application_id=$1 and pt.status='succeeded'
+        and not exists (select 1 from membership_payment_reversal mr where mr.payment_transaction_id=pt.id)
+      order by pt.created_at desc limit 1 for update of pt`,[applicationId])).rows[0];
+    if(!pay) throw httpError(409,"No unreversed successful payment is linked to this application.","PAYMENT_NOT_CONFIRMED");
+    if(!fee||Number(pay.amount)!==Number(fee.amount)||String(pay.currency||"").trim().toUpperCase()!==String(fee.currency||"").trim().toUpperCase()){
+      throw httpError(409,"The payment no longer matches the application’s saved fee terms. Membership has not been activated.","PAYMENT_AMOUNT_MISMATCH");
+    }
     const previous=app.previous_membership_id ? (await db.query("select * from membership_record where id=$1 for update",[app.previous_membership_id])).rows[0] : null;
     const start=new Date(); start.setUTCHours(0,0,0,0);
     if(previous?.status==="active" && previous.end_date && new Date(previous.end_date)>=start) start.setTime(new Date(previous.end_date).getTime()+86400000);
     let end=null;
-    if(app.duration_days) end=new Date(start.getTime()+Number(app.duration_days)*86400000-86400000);
+    if(fee.durationDays!==null && fee.durationDays!==undefined) end=new Date(start.getTime()+Number(fee.durationDays)*86400000-86400000);
     const number=`MPA-${start.getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`;
     if(previous?.status==="active") await db.query("update membership_record set status='expired',end_date=coalesce(end_date,$1),updated_at=now() where id=$2",[new Date(start.getTime()-86400000).toISOString().slice(0,10),previous.id]);
     const membership=(await db.query(`insert into membership_record(user_id,membership_product_id,membership_number,status,start_date,end_date,source,application_id)
       values($1,$2,$3,'active',$4,$5,'online',$6) returning *`,[app.user_id,app.membership_product_id,number,start.toISOString().slice(0,10),end?.toISOString().slice(0,10)||null,applicationId])).rows[0];
     await db.query("update membership_application set status='activated',activated_at=now(),updated_at=now() where id=$1",[applicationId]);
     await db.query("update payment_reconciliation set membership_id=$1,reconciled_at=coalesce(reconciled_at,now()) where payment_transaction_id=$2 and reconciliation_status='matched'",[membership.id,pay.id]);
-    await db.query("insert into membership_event(membership_id,event_type,effective_at,actor_user_id,source,details) values($1,'activated',now(),$2,'membership_application',$3)",[membership.id,actorId,JSON.stringify({applicationId,paymentId:pay.id,productCode:app.product_code})]);
+    await db.query("insert into membership_event(membership_id,event_type,effective_at,actor_user_id,source,details) values($1,'activated',now(),$2,'membership_application',$3)",[membership.id,actorId,JSON.stringify({applicationId,paymentId:pay.id,productCode:app.product_code,durationDays:fee.durationDays,durationPolicy:fee.durationPolicy||"fixed_days_inclusive",feeRuleId:fee.feeRuleId||null,feeRuleVersion:fee.feeRuleVersion??null})]);
     await audit(db,actorId,"membership.activated","membership_record",membership.id,requestId,{applicationId,paymentId:pay.id});
     await notify(db,app.user_id,"membership_activated","membership_record",membership.id,{membershipNumber:number,productCode:app.product_code});
     return membership;
