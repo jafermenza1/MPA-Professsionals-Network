@@ -215,3 +215,31 @@ For each increment, update the screen → API → service → persistence row in
 The first P0 code increment is committed on `reconciliation/holistic-gates`, with the full progress and remaining validation record in [39 — P0 Implementation Progress and Roadmap](39-p0-implementation-progress-and-roadmap.md). Current implementation includes organization-only professional-profile redaction/denial, current-membership date guards for profile editing and provider publication/discovery, approved-application + verified-payment enforcement, and a no-vacancy job-interest workflow with versioned, field-scoped, revocable named-employer consent plus Support Desk and employer-scoped routes.
 
 **Acceptance remains OPEN.** Unit tests, TypeScript/build, disposable migration/rerun, API privacy matrix and browser journeys have not been executed for this branch head. No CI workflow is to be created or enabled until all current gaps are implemented. Do not merge or deploy.
+
+## 11. Current implementation checkpoint — 2026-10-14
+
+Work continues on draft PR [#3](https://github.com/jafermenza1/MPA-Professsionals-Network/pull/3), branch `reconciliation/holistic-gates`. Keep it open until all currently registered gaps are implemented and accepted. No GitHub Actions CI workflow is enabled during this remediation period.
+
+### P0 status
+P0 code for organization/professional profile boundaries, current membership and payment/approval gates, public service requests by non-members, and consent-based job-seeker demand is committed. Manual test, migration rerun, build and privacy-matrix evidence are still outstanding; P0 is not accepted.
+
+### P1 status
+The first guided professional profile increment is committed:
+- structured education rows and multiple portfolio records;
+- admin-managed reference list UI and CSV import/export endpoints;
+- starter choices and `Other` custom values;
+- Gender label with Male/Female options;
+- optional private evidence upload using the existing authorization/upload/confirm lifecycle, including mobile camera capture where supported and owner-only download;
+- visibility-filtered education and portfolio in the professional directory projection;
+- focused regression tests.
+
+**Not yet validated:** migration apply/rerun, unit tests, TypeScript/build, CSV edge cases, and private evidence owner/other-user/public-API checks. Reference-list edits currently update the published version in place; the full draft/approval/publication version workflow remains outstanding.
+
+### Next work order
+1. Validate P0 and P1 manually against a disposable PostgreSQL database and correct failures without weakening existing tests.
+2. Finish reference portfolio versioning and import preview/review before treating administrator reference data as production-grade.
+3. Continue P1 service/mentorship lifecycle, private unmet-demand intake, publication, matching, interest levels and outcomes.
+4. Continue accessible forms, retained input on errors, and truthful save/submission/retry notifications.
+5. Implement P2 configurable role-scoped reporting and branded PDF/XLSX export, plus live published homepage feeds.
+6. Complete P3 manual E2E, isolation/security, backup/restore rehearsal, monitoring and deployment acceptance.
+7. Keep PR #3 open/draft and do not restore CI until all current gaps are implemented and accepted.
