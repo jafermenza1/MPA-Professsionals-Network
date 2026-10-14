@@ -108,7 +108,7 @@ export default function Dashboard(){
             status=String(row.status||"submitted");
             reason=status==="correction_required"?"The applicant must resolve a requested correction.":status==="payment_pending"?"The approved fee is awaiting payment evidence.":status==="paid"?"Payment is recorded; activation may still be required.":"The membership application needs an authorized review.";
             action=status==="payment_pending"?"Review payment evidence":status==="paid"?"Confirm activation eligibility":"Review application or request a correction";
-            history=String(row.latest_correction?.reviewer_note||row.reviewed_at&&("Last reviewed "+new Date(row.reviewed_at).toLocaleDateString())||"No previous review note recorded.");
+            const priorReviews=Array.isArray(row.review_history)?row.review_history.map((entry:any)=>String(entry.decision||"Review")+(entry.note?": "+entry.note:"")+(entry.createdAt?" ("+new Date(entry.createdAt).toLocaleDateString()+")":"")).join(" · "):"";history=priorReviews||String(row.latest_correction?.reviewer_note||row.reviewed_at&&("Last reviewed "+new Date(row.reviewed_at).toLocaleDateString())||"No previous review note recorded.");
             priority=["correction_required","payment_pending","paid"].includes(status)?"High":"Standard";
           }else if(source.kind==="verification"){
             title=String(row.subject_name||row.program_name||"Verification case");
