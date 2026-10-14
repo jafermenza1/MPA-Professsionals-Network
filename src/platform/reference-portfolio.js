@@ -53,10 +53,16 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
  const code=clean(input?.code,80).toUpperCase(),label=clean(input?.label,180),description=clean(input?.description,2000);
  if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||label.length<1) throw fail(400,"Enter a code using letters/numbers and a clear label.","REFERENCE_ITEM_INVALID");
  return withTransaction(async db=>{
-  const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
+  const {dataset,version,published}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
   let row;
   if(itemId){
-   row=(await db.query("update reference_item set code=$1,label=$2,description=$3,sort_order=$4,active=$5,updated_by=$6,updated_at=now() where id=$7 and dataset_version_id=$8 returning id,code,label,description,sort_order,active",[code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub,itemId,version.id])).rows[0];
+   let targetId=itemId;
+   const inWorkingCopy=(await db.query("select id from reference_item where id=$1 and dataset_version_id=$2",[itemId,version.id])).rows[0];
+   if(!inWorkingCopy&&published){
+    const original=(await db.query("select code from reference_item where id=$1 and dataset_version_id=$2",[itemId,published.id])).rows[0];
+    if(original) targetId=(await db.query("select id from reference_item where dataset_version_id=$1 and code=$2",[version.id,original.code])).rows[0]?.id||itemId;
+   }
+   row=(await db.query("update reference_item set code=$1,label=$2,description=$3,sort_order=$4,active=$5,updated_by=$6,updated_at=now() where id=$7 and dataset_version_id=$8 returning id,code,label,description,sort_order,active",[code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub,targetId,version.id])).rows[0];
    if(!row) throw fail(404,"Reference item was not found in this dataset version.","NOT_FOUND");
   }else{
    row=(await db.query("insert into reference_item(dataset_version_id,code,label,description,sort_order,active,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$7) returning id,code,label,description,sort_order,active",[version.id,code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub])).rows[0];
