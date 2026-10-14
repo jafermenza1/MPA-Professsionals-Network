@@ -264,11 +264,12 @@ export async function createApplication(userId,input,requestId){
       order by effective_from desc,version desc limit 1`,[prod.id])).rows[0]||null;
     const planBillingModel=activeFeeRule?.billing_model||prod.billing_model;
     const planRenewalRequired=activeFeeRule?.renewal_required??prod.renewal_required;
-    const active=await db.query("select * from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) order by end_date desc nulls last limit 1",[userId]);
+    const active=await db.query("select mr.*,mp.billing_model current_billing_model,mp.renewal_required current_renewal_required from membership_record mr left join membership_product mp on mp.id=mr.membership_product_id where mr.user_id=$1 and mr.status='active' and mr.start_date<=current_date and (mr.end_date is null or mr.end_date>=current_date) order by mr.end_date desc nulls last limit 1",[userId]);
     const type=input.applicationType||"new";
     if(type==="new" && active.rows[0]) throw httpError(409,"An active membership already exists. Use renewal.","ACTIVE_MEMBERSHIP");
     if(type==="renewal"){
       if(!active.rows[0]) throw httpError(400,"Renewal requires an existing active membership.","RENEWAL_NOT_ELIGIBLE");
+      if(active.rows[0].current_billing_model==="lifetime"||!active.rows[0].current_renewal_required) throw httpError(400,"Your current membership does not require renewal. Choose a new application only if membership support has advised you to change plans.","CURRENT_PLAN_NOT_RENEWABLE");
       if(planBillingModel==="lifetime" || !planRenewalRequired) throw httpError(400,"This membership product does not support renewal.","RENEWAL_NOT_SUPPORTED");
     }
     const pending=await db.query("select id from membership_application where user_id=$1 and status in ('submitted','in_review','correction_required','approved','payment_pending','paid') limit 1",[userId]);
@@ -422,6 +423,10 @@ export async function activateApplication(applicationId,actorId,requestId){
     const previous=app.previous_membership_id ? (await db.query("select * from membership_record where id=$1 for update",[app.previous_membership_id])).rows[0] : null;
     const start=new Date(); start.setUTCHours(0,0,0,0);
     if(previous?.status==="active" && previous.end_date && new Date(previous.end_date)>=start) start.setTime(new Date(previous.end_date).getTime()+86400000);
+    const todayUtc=new Date();todayUtc.setUTCHours(0,0,0,0);
+    if(app.application_type==="renewal"&&start.getTime()>todayUtc.getTime()){
+      throw httpError(409,"Your current membership remains active through "+(previous?.end_date?String(previous.end_date).slice(0,10):"its recorded end date")+". Activate the paid renewal on or after "+start.toISOString().slice(0,10)+"; your current access has not been changed.","RENEWAL_NOT_DUE");
+    }
     // Retire stale active rows before inserting a replacement. Authorization
     // already checks dates, but the database's one-active-row constraint also
     // requires stale records to be transitioned out of the active state.
