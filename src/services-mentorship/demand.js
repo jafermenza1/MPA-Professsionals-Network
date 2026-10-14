@@ -85,6 +85,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   await staff(db,actorId);
   const demand=(await db.query("select * from marketplace_demand where id=$1 for update",[demandId])).rows[0];
   if(!demand)throw fail(404,"Demand request not found.","NOT_FOUND");
+  if(status==="matched"&&!(await db.query("select 1 from marketplace_demand_provider_match where demand_id=$1 and status='accepted' limit 1",[demandId])).rowCount)throw fail(409,"A provider must accept a proposed match before this demand can be marked matched.","PROVIDER_MATCH_REQUIRED");
   if(["converted","closed","declined"].includes(demand.status))throw fail(409,"Resolved demand cannot be changed; record a new request if needs have changed.","INVALID_STATE");
   const note=clean(input.internalNote,3000)||null;
   const outcomeNote=clean(input.outcomeNote,3000)||null;
