@@ -86,6 +86,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   const outcome=input.publishTopic?"topic_published":(input.outcomeCode||null);
   if(outcome&&!["provider_search","topic_published","listing_created","program_project","no_action","duplicate_merged","declined"].includes(outcome))throw fail(400,"Unsupported outcome code.","VALIDATION_ERROR");
   let topic=null;
+  if(input.interestGoal!==undefined&&input.interestGoal!==null&&input.interestGoal!==""&&(!Number.isInteger(Number(input.interestGoal))||Number(input.interestGoal)<1||Number(input.interestGoal)>1000000))throw fail(400,"Interest target must be a positive whole number.","VALIDATION_ERROR");
   if(input.publishTopic){
    if(!["service","mentorship"].includes(demand.demand_type))throw fail(400,"Unsupported demand topic type.","VALIDATION_ERROR");
    const title=required(input.publicTitle,"Public title",180),summary=required(input.publicSummary,"Public summary",1000),category=required(input.publicCategory||demand.category,"Public category",120);
