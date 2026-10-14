@@ -21,7 +21,7 @@ export async function updateOwnCredentials(identity,input,requestId){
   const usernameChanged=usernameInput!==undefined&&usernameInput!==String(user.username).toLowerCase();
   if(usernameChanged){await tx.query("select pg_advisory_xact_lock(hashtext($1))",["account_username:"+usernameInput]);if(!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(usernameInput))throw err(400,"Choose a username with 3–40 letters, numbers, dots, underscores or hyphens. It must start with a letter or number.","USERNAME_INVALID");}
   if(!recovery&&!verifyPassword(currentPassword,user.password_hash))throw err(400,"That current password does not match. Please try again.","CURRENT_PASSWORD_INCORRECT");
-  if(usernameChanged){const duplicate=await tx.query("select id from app_user where lower(username)=lower($1) and id<>$2 limit 1",[usernameInput,userId]);if(duplicate.rowCount)throw err(409,"That username is already in use. Try another one.","USERNAME_TAKEN")}
+  if(usernameChanged){const duplicate=await tx.query("select id from app_user where id<>$2 and (lower(username)=lower($1) or lower(email)=lower($1)) limit 1",[usernameInput,userId]);if(duplicate.rowCount)throw err(409,"That username is already in use. Try another one.","USERNAME_TAKEN")}
   const nextUsername=usernameChanged?usernameInput:user.username;
   if(usernameChanged)await tx.query("update app_user set username=$1,updated_at=now() where id=$2",[nextUsername,userId]);
   let revokedOtherSessions=0;
