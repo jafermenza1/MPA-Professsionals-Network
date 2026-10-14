@@ -124,9 +124,7 @@ export async function changeServiceListingStatus(listingId,userId,status,request
 }
 
 export async function listServices(viewerId=null,filters={}){
-  const db=getPool(); const args=[]; const where=["s.status='published'","s.moderation_status='approved'","((s.organization_id is not null and exists (select 1 from organization o where o.id=s.organization_id and o.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))))"];
-  if(viewerId){ where.push("(s.visibility='public' or s.visibility='members')"); }
-  else where.push("s.visibility='public'");
+  const db=getPool(); const args=[viewerId||null]; const where=["s.status='published'","s.moderation_status='approved'","((s.organization_id is not null and exists (select 1 from organization o where o.id=s.organization_id and o.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))))","(s.visibility='public' or ($1::uuid is not null and s.visibility='members' and exists(select 1 from membership_record vm where vm.user_id=$1 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))"];
   if(filters.category){ args.push(String(filters.category)); where.push("s.service_category=$"+args.length); }
   if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(s.title ilike $"+args.length+" or s.description ilike $"+args.length+" or s.service_category ilike $"+args.length+")"); }
   const limit=Math.min(Math.max(Number(filters.limit)||25,1),100),offset=Math.max(Number(filters.offset)||0,0);
@@ -136,7 +134,7 @@ export async function listServices(viewerId=null,filters={}){
 
 export async function getServiceListing(listingId,viewerId=null){
   const db=getPool();
-  const row=(await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.id=$1 and s.status='published' and s.moderation_status='approved' and ((s.organization_id is not null and exists (select 1 from organization org where org.id=s.organization_id and org.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)))) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
+  const row=(await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.id=$1 and s.status='published' and s.moderation_status='approved' and ((s.organization_id is not null and exists (select 1 from organization org where org.id=s.organization_id and org.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)))) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members' and exists(select 1 from membership_record vm where vm.user_id=$2 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))",[listingId,viewerId||null])).rows[0];
   if(!row) throw error(404,"Service listing not found or not visible.","NOT_FOUND");
   return row;
 }
