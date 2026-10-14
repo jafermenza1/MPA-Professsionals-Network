@@ -80,3 +80,8 @@ No production migration or deployment is authorized by this record. If GitHub do
 ## Test execution policy update — 2026-10-14
 
 The GitHub Actions CI workflow was removed by maintainer request. Historical Actions links remain historical evidence only. Manually execute the listed migration, unit, build, API smoke and Playwright checks on the exact candidate SHA, record complete output, and keep failed/unexecuted assertions open. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Never run migration-upgrade fixtures against production.
+
+
+## Test execution policy update — 2026-10-14
+
+The GitHub Actions CI workflow was removed by maintainer request. Historical Actions links remain historical evidence only. Manually execute the listed migration, unit, build, API smoke and Playwright checks on the exact candidate SHA, record complete output, and keep failed/unexecuted assertions open. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Never run migration-upgrade fixtures against production.
