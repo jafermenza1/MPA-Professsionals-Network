@@ -9,7 +9,7 @@ import styles from "./dashboard.module.css";
 
 type Profile={user_id:string;email:string;display_name?:string;first_name?:string;last_name?:string;completion_percent?:number;status?:string;roles?:string[];has_active_membership?:boolean;visibility?:string};
 type MembershipApplication={id:string;tracking_reference?:string;application_type?:string;status:string;updated_at?:string;fee_snapshot?:{amount?:number|string;currency?:string;productName?:string;productCode?:string};payment?:{status?:string;amount?:number|string;currency?:string;verified_at?:string}|null;latest_correction?:{status?:string;reviewer_note?:string;requested_fields?:unknown}|null};
-type VerificationSummary={id:string;status:string;program_name?:string;program_code?:string;claims?:{claim_code?:string;claim_type_name?:string;status:string}[];checklist_version_snapshot?:{items?:{itemCode?:string;label?:string;required?:boolean}[]}[];checkResults?:{item_code?:string;label?:string;required?:boolean;outcome?:string}[]};
+type VerificationSummary={id:string;status:string;program_name?:string;program_code?:string;claims?:{claim_code?:string;claim_type_name?:string;status:string}[];decisions?:{decision?:string;reason?:string;decided_at?:string;member_response_due_at?:string|null}[];checklist_version_snapshot?:{items?:{itemCode?:string;label?:string;required?:boolean}[]}[];checkResults?:{item_code?:string;label?:string;required?:boolean;outcome?:string}[]};
 type MemberClarity={applications:MembershipApplication[];cases:VerificationSummary[];profileVisibility:string;profileLoaded:boolean;verifiedClaims:string[];missingRequirements:string[]};
 type TrackingItem={id:string;type:string;title:string;subtitle?:string;status:string;statusLabel?:string;updatedAt?:string;nextAction?:string};
 type Tracking={summary?:{total?:number;active?:number;nextSteps?:number;memberships?:number;organizations?:number;jobApplications?:number};items?:TrackingItem[];attentionItems?:TrackingItem[];hasMore?:boolean;limit?:number;offset?:number};
@@ -33,6 +33,7 @@ export default function Dashboard(){
   const [data,setData]=useState<DashboardData|null>(null);
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
+  const [reviewPage,setReviewPage]=useState(0);
   const [selectedOrganizationId,setSelectedOrganizationId]=useState("");
   const [organizationPulse,setOrganizationPulse]=useState<OrganizationPulse|null>(null);
   const [organizationLoading,setOrganizationLoading]=useState(false);
@@ -92,8 +93,7 @@ export default function Dashboard(){
         const payload:any=result.value;
         const rows:any[]=Array.isArray(payload)?payload:Array.isArray(payload?.items)?payload.items:[];
         const items:ReviewQueueItem[]=[];
-        const reviewRows=rows.slice(0,30);
-        const verificationDetails=source.kind==="verification"?await Promise.all(reviewRows.slice(0,15).map(row=>api<any>("/api/v1/verification/cases/"+encodeURIComponent(row.id),{},token).catch(()=>null))):[];
+        const reviewRows=rows;
         for(let rowIndex=0;rowIndex<reviewRows.length;rowIndex++){
           const row=reviewRows[rowIndex];
           let title=String(row.display_name||row.name||row.subject_name||row.program_name||row.title||row.job_title||row.id||"Review item");
@@ -117,7 +117,7 @@ export default function Dashboard(){
             reason=status==="evidence_required"?"Required evidence is missing or needs review.":status==="member_response_required"?"The member is waiting to respond to an adverse decision.":status==="decision_pending"?"Checklist and claim results need a final authorized decision.":"Verification review is pending.";
             action="Open case, checklist and decision history";
             priority=status==="member_response_required"?"Urgent":["evidence_required","decision_pending"].includes(status)?"High":"Standard";
-            const detail=verificationDetails[rowIndex];if(detail&&Array.isArray(detail.decisions)&&detail.decisions.length){history=detail.decisions.map((entry:any)=>String(entry.decision||"Decision")+(entry.reason?": "+entry.reason:"")+(entry.decided_at?" ("+new Date(entry.decided_at).toLocaleDateString()+")":"")).join(" · ");const latest=detail.decisions[0];deadline=latest.member_response_due_at||null;if(deadline&&new Date(deadline).getTime()<Date.now())priority="Urgent";}
+            const decisions=Array.isArray(row.decisions)?row.decisions:[];if(decisions.length){history=decisions.map((entry:any)=>String(entry.decision||"Decision")+(entry.reason?": "+entry.reason:"")+(entry.decided_at?" ("+new Date(entry.decided_at).toLocaleDateString()+")":"")).join(" · ");const latest=decisions[0];deadline=latest.member_response_due_at||null;if(deadline&&new Date(deadline).getTime()<Date.now())priority="Urgent";}
           }else if(source.kind==="organization"){
             title=String(row.display_name||row.legal_name||"Organization verification");
             status=String(row.case_status||row.verification_status||"submitted");
@@ -203,7 +203,8 @@ export default function Dashboard(){
   const mentorshipRows=data?.outcomes?.mentorships||[];
   const activeEngagements=serviceRows.filter(item=>!terminalStatuses.has(item.status)).length+mentorshipRows.filter(item=>!terminalStatuses.has(item.status)).length;
   const reviewCount=(data?.reviewQueues||[]).reduce((sum,queue)=>sum+queue.count,0);
-  const assignedItems=(data?.reviewQueues||[]).flatMap(queue=>queue.items.map(item=>({...item,queueLabel:queue.label}))).sort((a,b)=>({Urgent:0,High:1,Standard:2}[a.priority]-{Urgent:0,High:1,Standard:2}[b.priority])).slice(0,12);
+  const assignedItems=(data?.reviewQueues||[]).flatMap(queue=>queue.items.map(item=>({...item,queueLabel:queue.label}))).sort((a,b)=>({Urgent:0,High:1,Standard:2}[a.priority]-{Urgent:0,High:1,Standard:2}[b.priority])||(a.deadline?new Date(a.deadline).getTime():Number.MAX_SAFE_INTEGER)-(b.deadline?new Date(b.deadline).getTime():Number.MAX_SAFE_INTEGER));
+  const reviewPageSize=12,reviewPageCount=Math.max(1,Math.ceil(assignedItems.length/reviewPageSize)),safeReviewPage=Math.min(reviewPage,reviewPageCount-1),visibleAssignedItems=assignedItems.slice(safeReviewPage*reviewPageSize,(safeReviewPage+1)*reviewPageSize);
   const roleNames=[...new Set(roles.map(roleName))];
   const selectedOrganization=data?.organizations.find(org=>org.id===selectedOrganizationId);
   const workspaces=[
@@ -244,7 +245,8 @@ export default function Dashboard(){
           <div className={styles.sectionHeading}><div><div className={styles.kicker}>Priorities</div><h2>Needs your attention</h2></div><button className="btn btn-ghost" type="button" onClick={()=>void load()} disabled={loading}><RefreshCw size={15}/>{loading?"Refreshing…":"Refresh"}</button></div>
           {loading&&!data?<p className={styles.muted}>Loading your scoped activity…</p>:null}
           {attentionItems.length>0&&<div className={styles.rows}>{attentionItems.slice(0,5).map(item=><a className={styles.activity} href={item.type==="organization"?"/organizations":"/track"} key={item.type+item.id}><span className={styles.activityIcon}><Clock3 size={17}/></span><span className={styles.activityBody}><b>{item.title}</b><small>{item.nextAction}</small></span><Badge tone="gold">{item.statusLabel||item.status}</Badge><ArrowUpRight size={16}/></a>)}</div>}
-          {reviewCount>0&&<div className={styles.rows} aria-label="Unified review queue">{assignedItems.map(item=><div className={styles.activity} key={item.queueLabel+item.id}><span className={styles.activityIcon}><ShieldCheck size={17}/></span><span className={styles.activityBody}><b>{item.title}</b><small>{item.queueLabel} · {item.reason}</small><small><b>Next action:</b> {item.action}</small><small><b>History:</b> {item.history}</small><small><b>Deadline:</b> {item.deadline?new Date(item.deadline).toLocaleString():"No deadline recorded"}{item.updatedAt?" · Last updated "+new Date(item.updatedAt).toLocaleDateString():""}</small></span><span className={styles.activityBody}><Badge tone={item.priority==="Urgent"?"gold":item.priority==="High"?"gold":"slate"}>{item.priority} priority</Badge><Badge tone="slate">{item.status.replaceAll("_"," ")}</Badge><a className={styles.secondaryLink} href={item.href}>Open authorized workspace <ArrowUpRight size={14}/></a></span></div>)}</div>}
+          {reviewCount>0&&<div className={styles.rows} aria-label="Unified review queue">{visibleAssignedItems.map(item=><div className={styles.activity} key={item.queueLabel+item.id}><span className={styles.activityIcon}><ShieldCheck size={17}/></span><span className={styles.activityBody}><b>{item.title}</b><small>{item.queueLabel} · {item.reason}</small><small><b>Next action:</b> {item.action}</small><small><b>History:</b> {item.history}</small><small><b>Deadline:</b> {item.deadline?new Date(item.deadline).toLocaleString():"No deadline recorded"}{item.updatedAt?" · Last updated "+new Date(item.updatedAt).toLocaleDateString():""}</small></span><span className={styles.activityBody}><Badge tone={item.priority==="Urgent"?"gold":item.priority==="High"?"gold":"slate"}>{item.priority} priority</Badge><Badge tone="slate">{item.status.replaceAll("_"," ")}</Badge><a className={styles.secondaryLink} href={item.href}>Open authorized workspace <ArrowUpRight size={14}/></a></span></div>)}</div>}
+          {assignedItems.length>reviewPageSize&&<div className={styles.row} style={{justifyContent:"space-between",alignItems:"center",marginTop:12}}><span className={styles.muted}>Showing {safeReviewPage*reviewPageSize+1}–{Math.min((safeReviewPage+1)*reviewPageSize,assignedItems.length)} of {assignedItems.length} assigned items</span><div className="row" style={{gap:8}}><button className="btn btn-ghost" type="button" disabled={safeReviewPage===0} onClick={()=>setReviewPage(page=>Math.max(0,page-1))}>Previous</button><button className="btn btn-ghost" type="button" disabled={safeReviewPage>=reviewPageCount-1} onClick={()=>setReviewPage(page=>Math.min(reviewPageCount-1,page+1))}>Next</button></div></div>}
           {reviewCount>assignedItems.length&&<div className={styles.inlineLinks}>{(data?.reviewQueues||[]).filter(queue=>queue.count>0).map(queue=><a key={queue.label} href={queue.href}>{queue.label} ({queue.count}) <ArrowRight size={14}/></a>)}</div>}
           {data&&!(data.tracking?.summary?.nextSteps||0)&&!reviewCount&&<div className={styles.emptyInline}><CheckCircle2 size={19}/><div><b>You’re up to date</b><p>No pending personal actions or assigned review items were returned for your account.</p></div></div>}
           {(data?.tracking?.summary?.nextSteps||0)>attentionItems.length&&<a className={styles.secondaryLink} href="/track">View all {data?.tracking?.summary?.nextSteps} personal next steps <ArrowRight size={14}/></a>}
