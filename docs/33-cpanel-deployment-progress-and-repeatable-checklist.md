@@ -258,3 +258,10 @@ The deployment and migration steps described above have been completed and check
 2. Negative authorization tests across user roles and accounts.
 3. Verification that private uploads, reviewer notes, and session-protected routes remain inaccessible without the required authorization.
 4. A documented rollback procedure for both the portal build and any future database migration.
+
+
+## Test and CI policy update — 2026-10-14
+
+The GitHub Actions CI workflow `.github/workflows/ci.yml` has been removed from the currently listed branches. This is a change to automation, not removal of the test suites. Historical Actions runs cited in other records remain historical evidence for the exact commits that ran; they do not certify the current release.
+
+For future releases, use [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md) to run unit, migration, build, API smoke and Playwright tests manually in a local/staging environment with isolated PostgreSQL and test accounts. Never run migration-upgrade fixtures against the live database. Record the exact SHA, commands, discovered test counts, output, portal/API smoke status, backup path and remaining gaps. The current live smoke results recorded on 2026-10-14 were: API health HTTP 200, API readiness HTTP 200, and portal membership products HTTP 200. The user reports that the portal workflows they tested are working well; this remains user-reported manual evidence, not an exhaustive security audit or restore rehearsal.
