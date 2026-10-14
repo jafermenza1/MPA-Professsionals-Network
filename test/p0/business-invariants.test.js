@@ -101,8 +101,12 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
 
   await assert.rejects(
     publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: randomUUID(), fields: ["contactEmail"] }, "p0-share-outside-consent"),
-    error => error.code === "ORGANIZATION_NOT_ELIGIBLE",
-    "consent must be checked before the employer target is accepted"
+    error => error.code === "CONSENT_FIELD_MISMATCH",
+    "the Support Desk cannot share contact information outside the applicant's field-level consent"
+  );
+  await assert.rejects(
+    publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: randomUUID(), fields: ["targetRole"] }, "p0-share-to-unknown-organization"),
+    error => error.code === "ORGANIZATION_NOT_ELIGIBLE"
   );
 
   const revoked = await publicOpportunity.updateSharingConsent(inquiry.public_reference, inquiry.continuationToken, {
