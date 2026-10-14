@@ -10,6 +10,13 @@ async function audit(db,actor,action,type,id,requestId,metadata={}) {
 async function activeMember(db,userId){
   return (await db.query("select 1 where "+ACTIVE_MEMBER_SQL,[userId])).rowCount>0;
 }
+async function isServiceProviderActor(db,requestId,userId){
+ const request=(await db.query("select sr.provider_user_id,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1",[requestId])).rows[0];
+ if(!request)return false;
+ if(request.provider_user_id===userId)return true;
+ if(!request.organization_id)return false;
+ return Boolean((await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[request.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
+}
 async function assertServiceListingAccess(db,row,userId){
  if(row.organization_id){
   const membership=(await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[row.organization_id,userId])).rows[0];
@@ -243,7 +250,7 @@ export async function createServiceMilestone(requestId,userId,input,requestIdHea
   return withTransaction(async db=>{
     const r=(await db.query("select * from service_request where id=$1 for update",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.provider_user_id!==userId) throw error(403,"Only the provider can define delivery milestones.","FORBIDDEN");
+    if(!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"Only the provider or authorized organization team can define delivery milestones.","FORBIDDEN");
     if(!["accepted","in_progress"].includes(r.status)) throw error(409,"Milestones can only be added to an accepted or active engagement.","INVALID_STATE");
     if(!input.title) throw error(400,"Milestone title is required.","VALIDATION_ERROR");
     const row=(await db.query("insert into service_request_milestone(request_id,title,description,due_at,created_by) values($1,$2,$3,$4,$5) returning *",[requestId,input.title,input.description||null,input.dueAt||null,userId])).rows[0];
@@ -255,7 +262,7 @@ export async function createServiceMilestone(requestId,userId,input,requestIdHea
 export async function listServiceMilestones(requestId,userId){
   const db=getPool(); const r=(await db.query("select provider_user_id,requester_user_id from service_request where id=$1",[requestId])).rows[0];
   if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-  if(r.provider_user_id!==userId&&r.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+  if(r.requester_user_id!==userId&&!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
   return (await db.query("select * from service_request_milestone where request_id=$1 order by due_at nulls last,created_at",[requestId])).rows;
 }
 
@@ -263,7 +270,7 @@ export async function listServiceDeliveries(requestId,userId){
  const db=getPool();
  const participant=(await db.query("select provider_user_id,requester_user_id from service_request where id=$1",[requestId])).rows[0];
  if(!participant) throw error(404,"Service request not found.","NOT_FOUND");
- if(participant.provider_user_id!==userId&&participant.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+ if(participant.requester_user_id!==userId&&!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
  return (await db.query(`select d.*,m.title milestone_title,p.display_name submitter_name
   from service_request_delivery d left join service_request_milestone m on m.id=d.milestone_id
   join person p on p.user_id=d.submitted_by
@@ -274,7 +281,7 @@ export async function submitServiceDelivery(requestId,userId,input,requestIdHead
   return withTransaction(async db=>{
     const r=(await db.query("select * from service_request where id=$1 for update",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.provider_user_id!==userId) throw error(403,"Only the provider can submit delivery.","FORBIDDEN");
+    if(!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"Only the provider or authorized organization team can submit delivery.","FORBIDDEN");
     if(r.status!=="in_progress") throw error(409,"Service must be in progress before delivery is submitted.","INVALID_STATE");
     if(!input.description) throw error(400,"Delivery description is required.","VALIDATION_ERROR");
     if(input.fileObjectId){
@@ -341,7 +348,7 @@ export async function submitServiceFeedback(requestId,userId,input,requestIdHead
   return withTransaction(async db=>{
     const r=(await db.query("select * from service_request where id=$1",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.requester_user_id!==userId&&r.provider_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+    if(r.requester_user_id!==userId&&!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
     if(r.status!=="completed") throw error(409,"Service feedback requires a completed engagement.","SERVICE_NOT_COMPLETED");
     const target=input.targetRole||"service";
     if(target==="provider"&&r.provider_user_id===userId) throw error(400,"A provider cannot rate themselves.","SELF_RATING");
