@@ -35,9 +35,7 @@ async function assertServiceListingAccess(db,row,userId){
   return membership;
  }
  if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
- const professionalRole=(await db.query("select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1 and r.role_code=any($2::text[]) limit 1",[userId,["member","professional"]])).rowCount>0;
- if(!professionalRole) throw error(403,"An organization account cannot manage a professional-owned service listing.","PROFESSIONAL_PROFILE_FORBIDDEN");
- if(!(await activeMember(db,userId))) throw error(403,"A current active membership is required to manage a professional service listing.","MEMBERSHIP_REQUIRED");
+ await requirePersonalProfessionalCapability(db,userId);
  return null;
 }
 async function professionalVerified(db,userId){
