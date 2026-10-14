@@ -8,8 +8,8 @@ type Product={product_code:string;name:string;description?:string;billing_model:
 type Application={id:string;user_id?:string;application_type:string;status:string;created_at:string;updated_at:string;fee_snapshot:any;product_code?:string;name?:string;payment?:{id:string;status:string;amount:string|number;currency:string;channel:string;verification_note?:string|null}|null;latest_correction?:{id:string;requested_fields:any;reviewer_note?:string;status:string}|null;attachments?:{id:string;fileObjectId:string;fileName:string;attachmentType:string;createdAt:string}[]};
 type Me={roles?:string[];permissions?:string[];has_active_membership?:boolean};
 type AdminPlan=Product&{description?:string|null;active:boolean;effective_from?:string|null;effective_to?:string|null;grace_period_days?:number;eligibility?:Record<string,unknown>;current_fee_amount?:string|number;current_fee_currency?:string;current_fee_version?:number|null;fee_rule_history?:{version:number;plan_name?:string;plan_description?:string|null;baseAmount:number|string;currency:string;taxAmount:number|string;serviceFee:number|string;effectiveFrom:string;effectiveTo?:string|null;durationDays?:number|null;billingModel:string;renewalRequired:boolean;gracePeriodDays:number;benefits?:string[];eligibility?:Record<string,unknown>}[]};
-type PlanDraft={productCode:string;name:string;description:string;amount:string;currency:string;taxAmount:string;serviceFee:string;billingModel:string;durationDays:string;renewalRequired:boolean;gracePeriodDays:string;effectiveFrom:string;active:boolean;benefits:string;eligibilityText:string};
-const blankPlan:PlanDraft={productCode:"",name:"",description:"",amount:"0",currency:"ETB",taxAmount:"0",serviceFee:"0",billingModel:"recurring",durationDays:"365",renewalRequired:true,gracePeriodDays:"0",effectiveFrom:new Date().toISOString().slice(0,10),active:true,benefits:"",eligibilityText:"{}"};
+type PlanDraft={productCode:string;name:string;description:string;amount:string;currency:string;taxAmount:string;serviceFee:string;billingModel:string;durationDays:string;renewalRequired:boolean;gracePeriodDays:string;effectiveFrom:string;active:boolean;benefits:string;eligibility:Record<string,unknown>;eligibilityText:string};
+const blankPlan:PlanDraft={productCode:"",name:"",description:"",amount:"0",currency:"ETB",taxAmount:"0",serviceFee:"0",billingModel:"recurring",durationDays:"365",renewalRequired:true,gracePeriodDays:"0",effectiveFrom:new Date().toISOString().slice(0,10),active:true,benefits:"",eligibility:{},eligibilityText:""};
 const statusTone=(status:string)=>["active","paid","approved","succeeded"].includes(status)?"green":["rejected","failed","closed"].includes(status)?"gold":["correction_required","payment_pending","pending"].includes(status)?"gold":"slate";
 export default function Membership(){
  const token=useUiStore(s=>s.token),hydrated=useUiStore(s=>s.hydrated);
@@ -65,13 +65,14 @@ export default function Membership(){
    gracePeriodDays:String(latest?.gracePeriodDays??plan.grace_period_days??0),
    effectiveFrom:new Date().toISOString().slice(0,10),active:plan.active,
    benefits:(Array.isArray(latest?.benefits)?latest!.benefits!:Array.isArray(plan.benefits)?plan.benefits as string[]:[]).join("\n"),
-   eligibilityText:JSON.stringify(latest?.eligibility||plan.eligibility||{},null,2)
+   eligibility:(latest?.eligibility||plan.eligibility||{}) as Record<string,unknown>,eligibilityText:Array.isArray((latest?.eligibility||plan.eligibility||{} as Record<string,unknown>).requirements)?((latest?.eligibility||plan.eligibility as Record<string,unknown>).requirements as string[]).join("\n"):""
   });
  }
  async function savePlan(e:FormEvent){
   e.preventDefault();setBusy("plan");setError("");setNotice("");
-  let eligibility:Record<string,unknown>;
-  try{const parsed=JSON.parse(planDraft.eligibilityText||"{}");if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))throw new Error();eligibility=parsed;}catch{setError("Eligibility rules must be a valid JSON object. You can leave the default {} if there are no special requirements.");return;}
+  const eligibility:Record<string,unknown>={...planDraft.eligibility};
+  const requirements=planDraft.eligibilityText.split("\n").map(x=>x.trim()).filter(Boolean).slice(0,40);
+  if(requirements.length)eligibility.requirements=requirements;else delete eligibility.requirements;
   try{
    const body={productCode:planDraft.productCode,name:planDraft.name,description:planDraft.description,amount:Number(planDraft.amount),currency:planDraft.currency,billingModel:planDraft.billingModel,durationDays:planDraft.durationDays===""?null:Number(planDraft.durationDays),renewalRequired:planDraft.renewalRequired,gracePeriodDays:Number(planDraft.gracePeriodDays),effectiveFrom:planDraft.effectiveFrom,active:planDraft.active,benefits:planDraft.benefits.split("\n").map(x=>x.trim()).filter(Boolean),eligibility,taxAmount:Number(planDraft.taxAmount),serviceFee:Number(planDraft.serviceFee),expectedVersion:editingPlanCode?String(adminPlans.find(p=>p.product_code===editingPlanCode)?.fee_rule_history?.[0]?.version??""):""};
    await api(editingPlanCode?"/api/v1/admin/membership/products/"+encodeURIComponent(editingPlanCode):"/api/v1/admin/membership/products",{method:editingPlanCode?"PATCH":"POST",body:JSON.stringify(body)},token);
@@ -121,7 +122,7 @@ export default function Membership(){
     </div>
     <label>Plan description<textarea value={planDraft.description} onChange={e=>setPlanDraft({...planDraft,description:e.target.value})} placeholder="Explain who this plan is for and what it includes."/></label>
     <label>Benefits (one per line)<textarea value={planDraft.benefits} onChange={e=>setPlanDraft({...planDraft,benefits:e.target.value})} placeholder={"Member directory access\nProfessional development opportunities"}/></label>
-    <label>Eligibility rules (JSON object)<textarea value={planDraft.eligibilityText} onChange={e=>setPlanDraft({...planDraft,eligibilityText:e.target.value})} rows={3}/></label>
+    <label>Eligibility requirements (one per line)<textarea value={planDraft.eligibilityText} onChange={e=>setPlanDraft({...planDraft,eligibilityText:e.target.value})} rows={3} placeholder={"Must be registered in the profession.\nProvide a valid qualification."}/></label>
     <label className="row"><input type="checkbox" checked={planDraft.renewalRequired} disabled={planDraft.billingModel==="lifetime"} onChange={e=>setPlanDraft({...planDraft,renewalRequired:e.target.checked})}/> Renewal required</label>
     <label className="row"><input type="checkbox" checked={planDraft.active} onChange={e=>setPlanDraft({...planDraft,active:e.target.checked})}/> Available for new applications</label>
     <div className="row" style={{flexWrap:"wrap"}}><button className="btn btn-primary" disabled={busy==="plan"}>{busy==="plan"?"Saving plan…":editingPlanCode?"Save new plan version":"Create membership plan"}</button>{editingPlanCode&&<button type="button" className="btn btn-ghost" onClick={()=>{setEditingPlanCode("");setPlanDraft(blankPlan)}}>Cancel editing</button>}</div>
