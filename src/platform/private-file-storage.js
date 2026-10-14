@@ -87,8 +87,10 @@ export async function readAuthorizedPrivateFile(userId,fileId,roles=[],requestId
   }
   if(!allowed && roles.some(role=>["reviewer","verification_reviewer","ethics_reviewer","appeal_reviewer","system_admin"].includes(role))){
     const linked=await db.query("select 1 from organization_verification_evidence where file_object_id=$1 limit 1",[fileId]);
-    const professionalEvidence=await db.query(`select 1 from professional_portfolio_item pi join professional_profile pp on pp.id=pi.profile_id join person p on p.id=pp.person_id join verification_case vc on vc.subject_user_id=p.user_id where pi.evidence_file_id=$1 and p.user_id=$2 and (vc.assigned_reviewer_id=$3 or $4=true or $5=true) limit 1`,[fileId,f.created_by,userId,roles.includes("system_admin"),roles.some(role=>["verification_reviewer","ethics_reviewer","appeal_reviewer"].includes(role))]);
-    allowed=linked.rowCount>0||professionalEvidence.rowCount>0;
+    const reviewerRole=roles.some(role=>["verification_reviewer","ethics_reviewer","appeal_reviewer"].includes(role));
+    const professionalEvidence=await db.query(`select 1 from professional_portfolio_item pi join professional_profile pp on pp.id=pi.profile_id join person p on p.id=pp.person_id join verification_case vc on vc.subject_user_id=p.user_id where pi.evidence_file_id=$1 and p.user_id=$2 and (vc.assigned_reviewer_id=$3 or $4=true or $5=true) limit 1`,[fileId,f.created_by,userId,roles.includes("system_admin"),reviewerRole]);
+    const caseEvidence=await db.query(`select 1 from verification_evidence e join verification_case vc on vc.id=e.case_id where e.file_object_id=$1 and vc.subject_user_id=$2 and (vc.assigned_reviewer_id=$3 or $4=true or $5=true) limit 1`,[fileId,f.created_by,userId,roles.includes("system_admin"),reviewerRole]);
+    allowed=linked.rowCount>0||professionalEvidence.rowCount>0||caseEvidence.rowCount>0;
   }
   if(!allowed) throw fail(403,"You do not have permission to read this private file.","FORBIDDEN");
   const {readFile}=await import("node:fs/promises");
