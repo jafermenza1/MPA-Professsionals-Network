@@ -83,14 +83,20 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   if(!demand)throw fail(404,"Demand request not found.","NOT_FOUND");
   if(["converted","closed","declined"].includes(demand.status))throw fail(409,"Resolved demand cannot be changed; record a new request if needs have changed.","INVALID_STATE");
   const note=clean(input.internalNote,3000)||null;
-  const outcome=input.outcomeCode||null;
+  const outcome=input.publishTopic?"topic_published":(input.outcomeCode||null);
   if(outcome&&!["provider_search","topic_published","listing_created","program_project","no_action","duplicate_merged","declined"].includes(outcome))throw fail(400,"Unsupported outcome code.","VALIDATION_ERROR");
   let topic=null;
   if(input.publishTopic){
    if(!["service","mentorship"].includes(demand.demand_type))throw fail(400,"Unsupported demand topic type.","VALIDATION_ERROR");
    const title=required(input.publicTitle,"Public title",180),summary=required(input.publicSummary,"Public summary",1000),category=required(input.publicCategory||demand.category,"Public category",120);
    if(title.length<4||summary.length<10)throw fail(400,"Public title and summary are too short.","VALIDATION_ERROR");
-   topic=(await db.query("insert into marketplace_demand_topic(demand_type,title,summary,category,delivery_mode,location_label,interest_goal,published_by,source_demand_id,closes_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id,title,status,published_at",[demand.demand_type,title,summary,category,allowedMode(input.deliveryMode||demand.delivery_mode),clean(input.publicLocationLabel,180)||null,input.interestGoal?Math.max(1,Number(input.interestGoal)):null,actorId,demand.id,input.closesAt||null])).rows[0];
+   topic=(await db.query("select id,title,status,published_at from marketplace_demand_topic where source_demand_id=$1 for update",[demand.id])).rows[0];
+   if(topic){
+    if(topic.status==="closed")throw fail(409,"A previously closed demand topic cannot be reopened from the same request.","INVALID_STATE");
+    topic=(await db.query("update marketplace_demand_topic set title=$1,summary=$2,category=$3,delivery_mode=$4,location_label=$5,interest_goal=$6,closes_at=$7,status='published',updated_at=now() where id=$8 returning id,title,status,published_at",[title,summary,category,allowedMode(input.deliveryMode||demand.delivery_mode),clean(input.publicLocationLabel,180)||null,input.interestGoal?Math.max(1,Number(input.interestGoal)):null,input.closesAt||null,topic.id])).rows[0];
+   } else {
+    topic=(await db.query("insert into marketplace_demand_topic(demand_type,title,summary,category,delivery_mode,location_label,interest_goal,published_by,source_demand_id,closes_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id,title,status,published_at",[demand.demand_type,title,summary,category,allowedMode(input.deliveryMode||demand.delivery_mode),clean(input.publicLocationLabel,180)||null,input.interestGoal?Math.max(1,Number(input.interestGoal)):null,actorId,demand.id,input.closesAt||null])).rows[0];
+   }
   }
   const next=topic?"topic_published":status;
   const updated=(await db.query("update marketplace_demand set status=$1,internal_note=coalesce($2,internal_note),outcome_code=coalesce($3,outcome_code),outcome_note=coalesce($4,outcome_note),reviewed_by=$5,reviewed_at=now(),resolved_at=case when $1 in ('converted','closed','declined','topic_published') then now() else resolved_at end,updated_at=now() where id=$6 returning id,status,outcome_code,outcome_note,reviewed_by,reviewed_at,resolved_at",[next,note,outcome,clean(input.outcomeNote,3000)||null,actorId,demandId])).rows[0];
