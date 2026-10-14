@@ -18,7 +18,7 @@ function csvRows(csv){
  if(!rows.length)throw problem(400,"The CSV file is empty.","EMPTY_IMPORT");
  const headers=rows.shift().map(h=>h.trim().toLowerCase().replace(/[\s-]+/g,"_"));
  if(new Set(headers).size!==headers.length)throw problem(400,"The CSV has duplicate column headings.","DUPLICATE_COLUMNS");
- const required=["email","full_name","membership_number","product_code","status","start_date","end_date","approved_membership"];
+ const required=["email","full_name","membership_number","product_code","status","start_date","end_date","approved_membership","approval_reference"];
  const missing=required.filter(h=>!headers.includes(h));if(missing.length)throw problem(400,"Missing required columns: "+missing.join(", "),"MISSING_COLUMNS");
  return rows.map((values,index)=>({rowNumber:index+2,raw:Object.fromEntries(headers.map((h,i)=>[h,String(values[i]??"").trim()]))}));
 }
@@ -37,6 +37,7 @@ function cleanRow(row){
  if(startDate&&endDate&&endDate<startDate)errors.push("end_date cannot be before start_date.");
  if(approved!=="yes"&&approved!=="no")errors.push("approved_membership must be yes or no.");
  if(approved!=="yes")errors.push("This import is only for members already approved by MPA; confirm yes or resolve the record separately.");
+ if(!String(x.approval_reference||"").trim())errors.push("Provide the MPA approval register, minute, resolution or other source reference for audit traceability.");
  if(status==="active"&&approved!=="yes")errors.push("Active membership requires explicit confirmation that MPA already approved the member.");
  if(status==="active"&&endDate&&endDate<new Date().toISOString().slice(0,10))errors.push("An expired end date cannot be imported as active.");
  return {...row,email,phone:normalizePhone(x.phone),fullName,membershipNumber,productCode,status,startDate,endDate,approved:approved==="yes",legacyMemberId:String(x.legacy_member_id||"").trim()||null,approvalReference:String(x.approval_reference||"").trim()||null,notes:String(x.notes||"").trim()||null,errors};
