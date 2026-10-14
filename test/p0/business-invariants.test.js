@@ -110,6 +110,10 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
   }, "p0-sharing-consent-granted");
   assert.equal(granted.employer_sharing_consent, true);
   assert.deepEqual(granted.employer_sharing_fields, ["targetRole", "skills"]);
+  assert.equal(granted.employer_sharing_consent_version, "job-seeker-sharing-v1");
+  const recovered = await publicOpportunity.getPublicInquiry(inquiry.public_reference, inquiry.continuationToken);
+  assert.equal(recovered.employerSharingConsent, true);
+  assert.deepEqual(recovered.employerSharingFields, ["targetRole", "skills"]);
 
   const organization = await organizationJobs.registerOrganization(support.user.id, {
     legalName: "P0 Consent Test Organization " + randomUUID(),
