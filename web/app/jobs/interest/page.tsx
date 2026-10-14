@@ -5,6 +5,9 @@ import { Card, Badge } from "../../../components/ui";
 
 type Inquiry = { id: string; public_reference: string; continuationToken: string; nextStep?: string };
 type ConsentResult = { employer_sharing_consent: boolean; nextStep?: string };
+type ShareHistory = { shareId: string; organizationName: string; sharedFields: string[]; sharedAt: string; revokedAt?: string | null; status: string };
+
+function labelsForHistory(field: string) { return ({ targetRole: "Target role", skills: "Skills", experience: "Experience", location: "Location", workMode: "Work mode", availability: "Availability", professionalSummary: "Professional summary", education: "Education", intent: "Applicant introduction", contactName: "Name", contactEmail: "Email address", contactPhone: "Phone number" } as Record<string,string>)[field] || field; }
 
 const shareable = [
   ["targetRole", "Target role"],
@@ -24,6 +27,8 @@ export default function JobInterestPage() {
   const [shareWithEmployers, setShareWithEmployers] = useState(false);
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
   const [consentSaved, setConsentSaved] = useState(false);
+  const [sharingHistory, setSharingHistory] = useState<ShareHistory[]>([]);
+  const [sharingHistoryError, setSharingHistoryError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -32,6 +37,16 @@ export default function JobInterestPage() {
   function toggleField(field: string, checked: boolean) {
     setShareFields(current => checked ? [...new Set([...current, field])] : current.filter(item => item !== field));
   }
+  async function refreshSharingHistory(item: Inquiry) {
+    setSharingHistoryError("");
+    try {
+      const rows = await api<ShareHistory[]>("/api/v1/public/opportunity-inquiries/" + encodeURIComponent(item.public_reference) + "/sharing-history?token=" + encodeURIComponent(item.continuationToken));
+      setSharingHistory(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      setSharingHistoryError(e instanceof ApiError ? e.message : "Sharing history could not be loaded. Retry without resubmitting your request.");
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setError(""); setNotice("");
@@ -54,6 +69,7 @@ export default function JobInterestPage() {
         })
       });
       setInquiry(created);
+      void refreshSharingHistory(created);
       if (shareWithEmployers) {
         setProcessingConsent(true);
         try {
@@ -62,6 +78,7 @@ export default function JobInterestPage() {
             body: JSON.stringify({ token: created.continuationToken, employerSharingConsent: true, scope: "named_employer", fields: shareFields })
           });
           setConsentSaved(true);
+          await refreshSharingHistory(created);
           setNotice("Your job-interest request was submitted. MPA Support Desk will review it. You opted in to sharing only the fields selected above with a named, verified employer after review; no employer has been given access yet.");
         } catch (consentError) {
           setNotice("Your job-interest request was submitted privately. Employer-sharing consent was not saved, so no employer sharing is enabled. Keep this page open and retry the consent step below.");
@@ -83,6 +100,7 @@ export default function JobInterestPage() {
         body: JSON.stringify({ token: inquiry.continuationToken, employerSharingConsent: true, scope: "named_employer", fields: shareFields })
       });
       setConsentSaved(true);
+      await refreshSharingHistory(inquiry);
       setNotice("Your sharing preference is saved. MPA Support Desk must still review the request and select a named, verified employer before anything is shared.");
     } catch (e) { setError(e instanceof ApiError ? e.message : "Consent could not be saved. No employer sharing is enabled."); }
     finally { setProcessingConsent(false); }
@@ -97,6 +115,7 @@ export default function JobInterestPage() {
       });
       setConsentSaved(false);
       setShareWithEmployers(false);
+      await refreshSharingHistory(inquiry);
       setNotice("Employer-sharing consent was revoked. Existing employer access has been revoked; the request remains private to MPA Support Desk.");
     } catch (e) { setError(e instanceof ApiError ? e.message : "We couldn't confirm consent revocation. Please retry."); }
     finally { setProcessingConsent(false); }
@@ -117,6 +136,11 @@ export default function JobInterestPage() {
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><input type="checkbox" checked={shareWithEmployers} onChange={e => setShareWithEmployers(e.target.checked)} />I explicitly opt in to named-employer sharing now. This is optional and separate from submitting my request.</label>
         {shareWithEmployers ? <div style={{ display: "grid", gap: 8 }}>{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}<button className="btn btn-primary" type="button" disabled={processingConsent || !shareFields.length} onClick={() => void retryConsent()}>{processingConsent ? "Saving consent…" : "Save explicit sharing consent"}</button></div> : <p className="muted">Your request remains private. No employer can access it.</p>}
       </div> : <button className="btn btn-ghost" type="button" disabled={processingConsent} onClick={() => void revokeConsent()}>{processingConsent ? "Updating…" : "Revoke employer-sharing consent"}</button>}
+      <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
+        <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><h3 className="h2">Employer sharing history</h3><button className="btn btn-ghost" type="button" onClick={() => void refreshSharingHistory(inquiry)}>Refresh history</button></div>
+        {sharingHistoryError ? <p role="alert">{sharingHistoryError}</p> : null}
+        {sharingHistory.length ? sharingHistory.map(item => <div key={item.shareId} className="case-row"><b>{item.organizationName}</b><p className="muted">Fields shared: {item.sharedFields.map(field => labelsForHistory(field)).join(", ")} · {new Date(item.sharedAt).toLocaleString()}</p><Badge>{item.status}</Badge>{item.revokedAt ? <p className="muted">Access revoked {new Date(item.revokedAt).toLocaleString()}.</p> : null}</div>) : <p className="muted">No employer has received this request. If you opted in, Support Desk review is still required before any sharing.</p>}
+      </div>
       <p className="muted">Consent permits only the selected fields to be shared with a specific verified organization after Support Desk review. It does not guarantee a vacancy, interview or job offer.</p>
     </Card> : <Card>
       <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
