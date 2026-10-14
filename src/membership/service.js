@@ -361,6 +361,8 @@ export async function verifyPayment(paymentId,verifierId,input,requestId){
       join membership_application a on a.id=ap.application_id where p.id=$1 for update`,[paymentId])).rows[0];
     if(!p) throw httpError(404,"Payment not found.","NOT_FOUND");
     if(p.application_status!=="payment_pending"||!p.approved_at) throw httpError(409,"Payment can only be verified after the membership application has been approved.","APPLICATION_NOT_APPROVED");
+    if(p.status!=="pending") throw httpError(409,"Only a pending payment can be verified. This payment has already been decided or reversed.","PAYMENT_NOT_PENDING");
+    if((await db.query("select 1 from membership_payment_reversal where payment_transaction_id=$1",[paymentId])).rowCount) throw httpError(409,"A reversed or refunded payment cannot be verified again. Submit a new payment for this application if needed.","PAYMENT_ALREADY_REVERSED");
     const fee=typeof p.fee_snapshot==="string"?JSON.parse(p.fee_snapshot):p.fee_snapshot;
     if(!fee||Number(p.amount)!==Number(fee.amount)||String(p.currency||"").toUpperCase()!==String(fee.currency||"").toUpperCase()) throw httpError(409,"Payment amount or currency does not match the approved application fee.","PAYMENT_AMOUNT_MISMATCH");
     if(!["manual","bank_transfer","cash"].includes(p.channel) || p.source==="provider_webhook") throw httpError(400,"This payment is not eligible for manual verification.","INVALID_PAYMENT_CHANNEL");
@@ -482,7 +484,9 @@ export async function listApplicationsForReview(){
        where ap.application_id=a.id order by pt.created_at desc limit 1) payment,
       coalesce((select jsonb_agg(jsonb_build_object('decision',rv.decision,'note',rv.note,'createdAt',rv.created_at) order by rv.created_at desc) from membership_application_review rv where rv.application_id=a.id),'[]'::jsonb) review_history
     from membership_application a join membership_product p on p.id=a.membership_product_id
-    where a.status in ('submitted','in_review','correction_required','payment_pending','paid') order by a.created_at asc`);
+    where a.status in ('submitted','in_review','correction_required','payment_pending','paid')
+      or (a.status='activated' and exists(select 1 from membership_application_payment apx join payment_transaction ptx on ptx.id=apx.payment_transaction_id where apx.application_id=a.id and ptx.status='succeeded' and not exists(select 1 from membership_payment_reversal rtx where rtx.payment_transaction_id=ptx.id)))
+    order by a.created_at asc`);
   return r.rows;
 }
 
