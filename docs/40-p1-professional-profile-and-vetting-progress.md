@@ -61,3 +61,8 @@ Do not treat this increment as production-accepted until all of the following ha
 - The starter skills vocabulary is intentionally small and is expected to be managed through the existing reference-data administration workflow.
 - The new gender regression test is added, but broader integration/browser coverage remains in the deferred gate.
 - No acceptance or production-readiness claim is made.
+
+### Payment declaration and finance reconciliation UX follow-through
+- Bank-transfer declarations now require a transaction reference in the member form; cash/other manual channels may provide one when available. Members can attach a private receipt/bank confirmation to an application while payment is pending.
+- The authorized reviewer/finance queue now shows applicant identity, application tracking reference, saved fee-version amount, payment reference/channel/status, verification and reconciliation notes, reversal details, submitted attachments and review history. Private application attachments can be opened by scoped finance/member-review permissions and those reads are audited.
+- This is code-only; payment proof access, finance permission boundaries, correction/retry, reconciliation outcomes and reversal flows remain part of the deferred final gate.
