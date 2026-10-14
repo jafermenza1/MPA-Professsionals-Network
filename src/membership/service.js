@@ -282,7 +282,7 @@ export async function createApplication(userId,input,requestId){
       ? Number(activeFeeRule.base_amount)+Number(activeFeeRule.tax_amount||0)+Number(activeFeeRule.service_fee||0)
       : amountFromProduct(prod);
     const fee={
-      productCode:prod.product_code,productName:activeFeeRule?.plan_name||prod.name,amount:feeAmount,
+      productCode:prod.product_code,productName:activeFeeRule?.plan_name||prod.name,productDescription:activeFeeRule?.plan_description||prod.description||null,amount:feeAmount,
       currency:activeFeeRule?.currency||prod.currency,billingModel:activeFeeRule?.billing_model||prod.billing_model,
       durationDays:activeFeeRule?activeFeeRule.duration_days:prod.duration_days,renewalRequired:activeFeeRule?.renewal_required??prod.renewal_required,
       gracePeriodDays:activeFeeRule?.grace_period_days??prod.grace_period_days,
