@@ -33,3 +33,5 @@
 @media(max-width:900px){.feedGrid{grid-template-columns:minmax(0,1fr)}.items{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:640px){.network{padding:28px 14px}.intro{margin-bottom:22px}.intro>p:last-child{font-size:14px}.feed{padding:15px;border-radius:18px}.feedHead{grid-template-columns:38px minmax(0,1fr);gap:10px}.feedIcon{width:38px;height:38px}.viewAll{grid-column:2;justify-self:start;margin-top:-2px}.items{grid-template-columns:minmax(0,1fr)}.item{min-height:0}.skeleton{min-height:110px}}
 @media(prefers-reduced-motion:reduce){.item,.skeleton span{transition:none;animation:none}}
+
+.reassurance{margin:8px 0 0;color:var(--muted);font-size:11px;line-height:1.5}
