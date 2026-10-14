@@ -5,7 +5,7 @@
 **Hosting:** cPanel / CloudLinux Node.js Selector on the Sapphire host  
 **Purpose:** Preserve what was actually deployed, the evidence observed, and the safe sequence to use for future deployments.
 
-> This record is an operational journal, not a claim that every production acceptance item is complete. The portal deployment and HTTP smoke checks passed. The live PostgreSQL schema and migration ledger have **not** yet been inspected, and no production migration is approved by this record.
+> This record is an operational journal, not a blanket guarantee of production readiness. The portal build, basic HTTP smoke tests, live PostgreSQL schema checks, and repository migration application have now been observed as successful. The user also reports that the portal workflows they tested are working well. Backup restoration has not been rehearsed, and security/recovery acceptance should remain separately tracked.
 
 ## 1. Live application layout
 
@@ -102,20 +102,35 @@ These API checks returned HTTP 200:
 
 Interpretation: `readyz` confirms the application reported that database configuration is present; do **not** treat that response alone as proof that every database query works or that the schema is migrated correctly.
 
-### 2.6 Database inspection remains pending
+### 2.6 Live PostgreSQL inspection, backup, and migrations completed
 
-The following SSH check was run from the API root:
+The running API's configured PostgreSQL database was inspected through the Node `pg` client in a read-only transaction. The connection string and credentials were not printed.
 
+Observed before migration:
+- Connected database: `muslimjq_mpaportal`.
+- Public tables: 103.
+- `public.app_schema_migration` did not exist.
+- The user stated that no important live data had been recorded and explicitly authorized proceeding with the existing database. The existing cPanel database configuration was left unchanged.
+- Read-only checks found the existing schema had a mixture of present and missing objects, including missing tracking-reference columns, permission tables, and private upload session table.
+
+A PostgreSQL custom-format backup was created before the migration:
 ```text
-Node: v22.23.3
-API root: /home/muslimjq/ET-Professionals-Network
-Migration files: 25
-DATABASE_URL in this SSH shell: not set
+/home/muslimjq/db-backups/mpa-2026-10-13T21-55-17-493Z.dump
 ```
+Reported size was 363,355 bytes. `pg_restore --list` succeeded. This validates that the archive is readable/listable; it is **not** a restore rehearsal.
 
-The user confirmed the database is configured in cPanel and does not want to change that configuration. The absent variable in the interactive SSH shell does not mean the cPanel application has no database configuration.
+The migration runner was then invoked with the operator-confirmed baseline:
+```bash
+MIGRATION_BASELINE=017_production_security_and_sessions.sql npm run migrate
+```
+The runner recorded migrations 001–017 as the confirmed legacy baseline and successfully applied migrations 018, 019, 020, 021, 022, 023, 024, and `20261010190000_separate_directory_visibility.sql`. The notice that a directory-visibility constraint did not exist and was skipped was informational, not a failure.
 
-**Not yet done:** No direct read-only inventory of the live PostgreSQL database, no inspection of `public.app_schema_migration`, and no production migration. Do not run migrations until the actual target database, schema, ledger/baseline, and backup/restore readiness are verified.
+Post-migration read-only verification reported:
+- 25 migrations recorded; latest is `20261010190000_separate_directory_visibility.sql`.
+- `app_permission`, `app_user_permission`, `private_upload_session`, `professional_profile.directory_visibility`, `professional_profile.skills`, and tracking-reference columns on job and membership applications were present.
+- All 25 migration filenames matched the repository's current `main` migration inventory at the time checked.
+
+Do not rerun the historical migration chain blindly. For future releases, use the ledger and checksum checks, inspect any new migration, back up first, and follow the migration runbook. The operator-confirmed baseline was used for this deployment only after the user authorized proceeding; do not copy that baseline into another database without independently verifying its schema.
 
 ## 3. Repeatable deployment procedure for the next release
 
@@ -187,7 +202,7 @@ Follow [Database Migration Operations Runbook](32-migration-operations-runbook.m
 6. Rehearse the migration against the restored copy and obtain explicit approval before production changes.
 7. Keep the old database until the replacement or migration is verified and accepted.
 
-For this current deployment, the database check is still pending. The user has confirmed cPanel configuration exists and asked that it remain unchanged. The next investigation should be read-only and must not print secrets.
+For this deployment, migrations have been applied and the post-migration schema was checked as recorded in §2.6. The cPanel database configuration was not changed. For future migrations, continue to use read-only inspection first, never expose secrets, and verify the backup/restore plan before modifying production.
 
 ## 4. Terminal operating rules
 
@@ -205,16 +220,41 @@ For this current deployment, the database check is still pending. The user has c
 |---|---|---|
 | Portal build activation | Completed | Staging/live build ID matched: `2u9g5g0gF5gnIaKn-Gp2q` |
 | Portal route smoke tests | Passed | Home, login, jobs each returned HTTP 200 |
-| API health endpoint | Previously passed | `/healthz` returned status `ok` |
-| API readiness endpoint | Previously passed, limited evidence | `/readyz` returned `databaseConfigured: true`; live query/schema still needs validation |
-| cPanel DB configuration | Configured per user | Leave unchanged; do not reveal URL |
-| SSH `DATABASE_URL` | Not present | Interactive SSH environment differs from cPanel app environment |
-| Migration inventory | 25 SQL files | No production migration executed by this record |
-| Live migration ledger/schema | Pending | Perform read-only inspection of actual API database |
-| Backup restore rehearsal | Not established | Archive listing passed; restore rehearsal still recommended |
-| Full authenticated/business workflow acceptance | Partial/pending | Continue tests after DB verification |
+| API health endpoint | Passed | Latest check: HTTP 200 |
+| API readiness endpoint | Passed | Latest check: HTTP 200; this alone is not a full functional test |
+| Portal-to-API membership products | Passed | Direct API and portal proxy returned HTTP 200 with product JSON |
+| Manual portal workflows | User-reported working | User reports the tested flows are working well; this is not an independent exhaustive test report |
+| Live database identity/schema | Checked | Connected to `muslimjq_mpaportal`; 103 public tables before migration |
+| Migration ledger | Passed | 25 migration rows; latest `20261010190000_separate_directory_visibility.sql` |
+| Current main migration inventory | Passed | All 25 repository migration files accounted for at time of check |
+| Critical schema checks | Passed | Permission tables, private upload session, skills, directory visibility, and tracking-reference columns verified |
+| cPanel DB configuration | Preserved | No connection settings changed; secrets were not printed |
+| Database backup archive | Created and list-validated | `/home/muslimjq/db-backups/mpa-2026-10-13T21-55-17-493Z.dump`; restore rehearsal still recommended |
+| Backup restore rehearsal | Not yet verified | Restore to an isolated database and verify before relying on recovery |
+| Security/isolation acceptance | Not exhaustively documented | Continue authorization, cross-account isolation, and private-evidence tests |
 
 ## 6. Related guidance
 
 - [Shared cPanel deployment and test runbook](32-cpanel-shared-server-deployment.md)
 - [Database Migration Operations Runbook](32-migration-operations-runbook.md)
+
+
+## 7. Follow-up validation recorded on 2026-10-14
+
+The user confirmed that the live portal workflows they exercised are working well. Additional external smoke checks were run after migration:
+
+```text
+API health: HTTP 200
+API readiness: HTTP 200
+Portal products: HTTP 200
+```
+
+The following endpoints were also checked earlier and returned HTTP 200: portal home, login, jobs, direct API membership products, and the portal-proxied membership products endpoint. The portal-proxied `/api/healthz` returned HTTP 401 because that path is not the public API health check; use the API origin's `/healthz` and `/readyz` for health checks. A 401 on the portal proxy path should not be interpreted as a health-check failure by itself.
+
+### Current acceptance boundary
+
+The deployment and migration steps described above have been completed and checked. The user's manual functional confirmation is recorded as user-reported evidence. Do not overstate this as a full security audit or complete disaster-recovery certification. Before onboarding substantial real records, prioritize:
+1. A controlled restore rehearsal into an isolated database.
+2. Negative authorization tests across user roles and accounts.
+3. Verification that private uploads, reviewer notes, and session-protected routes remain inaccessible without the required authorization.
+4. A documented rollback procedure for both the portal build and any future database migration.
