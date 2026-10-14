@@ -37,15 +37,15 @@ export async function listReferenceDatasets(identity){
  return (await db.query("select d.id,d.dataset_key,d.name,d.description,d.domain,d.status,v.id version_id,v.version_label,v.status version_status,(select count(*) from reference_item ri where ri.dataset_version_id=v.id and ri.active=true) item_count,v.published_at from reference_dataset d left join lateral (select * from reference_dataset_version x where x.dataset_id=d.id and x.status='published' order by x.published_at desc nulls last limit 1) v on true where d.dataset_key like 'professional_%' order by d.name")).rows;
 }
 export async function listReferenceItems(identity,key){
- assertReferenceAdmin(identity);const db=getPool();const {dataset,version}=await datasetContext(db,key);
- return {dataset:{dataset_key:dataset.dataset_key,name:dataset.name,domain:dataset.domain},version:{id:version.id,version_label:version.version_label},items:(await db.query("select id,code,label,description,sort_order,active,metadata from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows};
+ assertReferenceAdmin(identity);const db=getPool();const {dataset,version,published,draft}=await datasetContext(db,key);
+ return {dataset:{dataset_key:dataset.dataset_key,name:dataset.name,domain:dataset.domain},version:{id:version.id,version_label:version.version_label,status:version.status,hasDraft:Boolean(draft),publishedVersionLabel:published?.version_label||null},items:(await db.query("select id,code,label,description,sort_order,active,metadata from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows};
 }
 export async function saveReferenceItem(identity,key,input,itemId=null){
  assertReferenceAdmin(identity);
  const code=clean(input?.code,80).toUpperCase(),label=clean(input?.label,180),description=clean(input?.description,2000);
  if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||label.length<1) throw fail(400,"Enter a code using letters/numbers and a clear label.","REFERENCE_ITEM_INVALID");
  return withTransaction(async db=>{
-  const {dataset,version}=await datasetContext(db,key);
+  const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
   let row;
   if(itemId){
    row=(await db.query("update reference_item set code=$1,label=$2,description=$3,sort_order=$4,active=$5,updated_by=$6,updated_at=now() where id=$7 and dataset_version_id=$8 returning id,code,label,description,sort_order,active",[code,label,description||null,Number(input.sortOrder)||0,input.active!==false,identity.sub,itemId,version.id])).rows[0];
@@ -75,6 +75,25 @@ export async function importReferenceCsv(identity,key,filename,csv){
   return {status:"imported",datasetKey:key,rowCount:rows.length,inserted,updated,errors:[]};
  });
 }
+
+export async function publishReferenceDataset(identity,key,reason=""){
+  assertReferenceAdmin(identity);
+  return withTransaction(async db=>{
+    const {dataset,version,draft}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
+    if(!draft||!["draft","validated","submitted","approved"].includes(version.status)) throw fail(409,"Only a working draft can be published. Refresh the list and try again.","REFERENCE_DRAFT_REQUIRED");
+    const summary=(await db.query("select count(*)::int total,count(*) filter(where active=true)::int active,count(*) filter(where trim(code)='' or trim(label)='')::int invalid from reference_item where dataset_version_id=$1",[version.id])).rows[0];
+    if(Number(summary.total)<1||Number(summary.active)<1||Number(summary.invalid)>0) throw fail(409,"This working copy needs at least one active item and valid codes and labels before publication.","REFERENCE_VALIDATION_FAILED");
+    const duplicate=(await db.query("select code from reference_item where dataset_version_id=$1 group by code having count(*)>1 limit 1",[version.id])).rows[0];
+    if(duplicate) throw fail(409,"This working copy contains duplicate codes. Correct them before publishing.","REFERENCE_DUPLICATE_CODE");
+    const previous=(await db.query("select id from reference_dataset_version where dataset_id=$1 and status='published' for update",[dataset.id])).rows[0];
+    if(previous) await db.query("update reference_dataset_version set status='archived',effective_to=coalesce(effective_to,current_date) where id=$1",[previous.id]);
+    const published=(await db.query("update reference_dataset_version set status='published',published_at=now(),approved_by=$1,effective_from=coalesce(effective_from,current_date),notes=coalesce(notes,'')||$2 where id=$3 returning id,version_label,status,published_at",[identity.sub,reason.trim()?"\nPublication note: "+clean(reason,1000):"",version.id])).rows[0];
+    await db.query("insert into reference_publication(dataset_version_id,action,performed_by,reason) values($1,'publish',$2,$3)",[version.id,identity.sub,clean(reason,1000)||null]);
+    await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,outcome,metadata) values($1,'reference.dataset_published','reference_dataset',$2,'success',$3)",[identity.sub,dataset.id,{versionId:version.id,versionLabel:version.version_label,previousVersionId:previous?.id||null}]);
+    return {datasetKey:key,version:published,previousVersionId:previous?.id||null,activeItemCount:Number(summary.active)};
+  });
+}
+
 export async function exportReferenceCsv(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
  const rows=(await db.query("select code,label,coalesce(description,'') description,sort_order,active from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
