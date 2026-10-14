@@ -508,7 +508,7 @@ export default function Organizations() {
             </ol>
             <div className="row" style={{flexWrap:"wrap",gap:8}}>
               <a className="btn btn-ghost" href="/recruitment">Open recruitment</a>
-              <a className="btn btn-ghost" href="/professionals">Search professionals</a>
+              <a className="btn btn-ghost" href="/network">Search professional network</a>
               <a className="btn btn-ghost" href="/jobs">View job opportunities</a>
             </div>
           </Card>
@@ -698,7 +698,7 @@ export default function Organizations() {
                   <div className="row" style={{flexWrap:"wrap",gap:8}}>
                     {org.verification_status==="verified" ? <>
                       <a className="btn btn-primary" href="/recruitment">Manage jobs and hiring</a>
-                      <a className="btn btn-ghost" href="/professionals">Find professionals</a>
+                      <a className="btn btn-ghost" href="/network">Find professional network</a>
                       <a className="btn btn-ghost" href="/services">Publish services</a>
                       <a className="btn btn-ghost" href="/mentorship">Mentorship offers</a>
                     </> : <button className="btn btn-ghost" type="button" onClick={() => {setEvidenceOrg(org.id);document.getElementById("org-evidence")?.scrollIntoView({behavior:"smooth",block:"start"});}}>Complete trust checklist</button>}
