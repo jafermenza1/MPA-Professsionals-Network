@@ -131,7 +131,7 @@ export async function listMyApplications(userId){
   const db=getPool();
   return (await db.query(`select a.id,a.tracking_reference,a.application_type,a.status,a.submitted_at,a.reviewed_at,a.approved_at,a.created_at,a.updated_at,
       a.data_snapshot,a.fee_snapshot,
-      (select jsonb_build_object('id',p.id,'status',p.status,'amount',p.amount,'currency',p.currency,'channel',p.channel,'created_at',p.created_at,'verified_at',p.verified_at)
+      (select jsonb_build_object('id',p.id,'status',p.status,'amount',p.amount,'currency',p.currency,'channel',p.channel,'created_at',p.created_at,'verified_at',p.verified_at,'verification_note',p.verification_note)
        from membership_application_payment ap join payment_transaction p on p.id=ap.payment_transaction_id
        where ap.application_id=a.id order by p.created_at desc limit 1) as payment,
       (select jsonb_build_object('id',c.id,'requested_fields',c.requested_fields,'reviewer_note',c.reviewer_note,'status',c.status,'applicant_response',c.applicant_response)
@@ -155,7 +155,7 @@ export async function listMembershipProducts(){
     from membership_product p
     left join lateral (select fr.* from membership_fee_rule fr where fr.membership_product_id=p.id
       and fr.effective_from<=current_date and (fr.effective_to is null or fr.effective_to>=current_date)
-      order by fr.version desc limit 1) r on true
+      order by fr.effective_from desc,fr.version desc limit 1) r on true
     where p.active=true and (p.effective_from is null or p.effective_from<=current_date)
       and (p.effective_to is null or p.effective_to>=current_date)
     order by (coalesce(r.base_amount,p.price)+coalesce(r.tax_amount,0)+coalesce(r.service_fee,0)) asc,coalesce(r.plan_name,p.name) asc`)).rows;
