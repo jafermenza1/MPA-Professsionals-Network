@@ -223,6 +223,7 @@ export default function AdminPage() {
             </Badge>
           ))}
           {(isPlatformAdmin || roles.includes("supporting_staff")) && <a className="btn btn-ghost" href="/support/job-seeker-demands">Review job-seeker demand and consent</a>}
+          {isPlatformAdmin && <a className="btn btn-ghost" href="/admin/reference-portfolio">Manage professional reference lists and CSV imports</a>}
         </div>
       </div>
       {error && (
