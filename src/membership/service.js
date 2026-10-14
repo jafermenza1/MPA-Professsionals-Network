@@ -5,6 +5,7 @@ import { loadConfig } from "../platform/config.js";
 import { nextTrackingReference } from "../platform/tracking-reference.js";
 import { hashPassword, verifyPassword, normalizeEmail, normalizePhone, normalizeName, validatePersonInput } from "./identity.js";
 import { assertProfessionalProfileCapability } from "../platform/identity-policy.js";
+import { membershipEndDate } from "../platform/membership-duration.js";
 
 function httpError(status,message,code="BUSINESS_RULE"){
   const e=new Error(message); e.statusCode=status; e.code=code; return e;
@@ -272,7 +273,7 @@ export async function createApplication(userId,input,requestId){
       feeBreakdown:activeFeeRule?{baseAmount:Number(activeFeeRule.base_amount),taxAmount:Number(activeFeeRule.tax_amount||0),serviceFee:Number(activeFeeRule.service_fee||0)}:null,
       effectiveFrom:activeFeeRule?.effective_from||prod.effective_from||null,
       effectiveTo:activeFeeRule?.effective_to||prod.effective_to||null,
-      durationPolicy:"fixed_days_inclusive"
+      durationPolicy:((activeFeeRule?.billing_model||prod.billing_model)==="recurring" && Number(activeFeeRule?.duration_days??prod.duration_days)===365)?"calendar_year_inclusive":"fixed_days_inclusive"
     };
     const trackingReference=await nextTrackingReference(db,"membership");
     const row=(await db.query(`insert into membership_application(user_id,tracking_reference,application_type,previous_membership_id,membership_product_id,status,submitted_at,data_snapshot,fee_snapshot)
@@ -400,8 +401,16 @@ export async function activateApplication(applicationId,actorId,requestId){
     const previous=app.previous_membership_id ? (await db.query("select * from membership_record where id=$1 for update",[app.previous_membership_id])).rows[0] : null;
     const start=new Date(); start.setUTCHours(0,0,0,0);
     if(previous?.status==="active" && previous.end_date && new Date(previous.end_date)>=start) start.setTime(new Date(previous.end_date).getTime()+86400000);
+    // Retire stale active rows before inserting a replacement. Authorization
+    // already checks dates, but the database's one-active-row constraint also
+    // requires stale records to be transitioned out of the active state.
+    await db.query("update membership_record set status='expired',updated_at=now() where user_id=$1 and status='active' and end_date is not null and end_date<current_date",[app.user_id]);
+    const currentActive=(await db.query("select * from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) order by end_date desc nulls last limit 1 for update",[app.user_id])).rows[0];
+    if(currentActive && currentActive.id!==app.previous_membership_id && app.application_type!=="renewal"){
+      throw httpError(409,"An active membership already exists. Review the current membership before activating this application.","ACTIVE_MEMBERSHIP");
+    }
     let end=null;
-    if(fee.durationDays!==null && fee.durationDays!==undefined) end=new Date(start.getTime()+Number(fee.durationDays)*86400000-86400000);
+    if(fee.durationDays!==null && fee.durationDays!==undefined) end=membershipEndDate(start,fee);
     const number=`MPA-${start.getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`;
     if(previous?.status==="active") await db.query("update membership_record set status='expired',end_date=coalesce(end_date,$1),updated_at=now() where id=$2",[new Date(start.getTime()-86400000).toISOString().slice(0,10),previous.id]);
     const membership=(await db.query(`insert into membership_record(user_id,membership_product_id,membership_number,status,start_date,end_date,source,application_id)
