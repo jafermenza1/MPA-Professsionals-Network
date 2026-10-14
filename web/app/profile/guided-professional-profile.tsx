@@ -7,6 +7,7 @@ import { useUiStore } from "../../lib/store";
 type RefItem={id:string;dataset_key:string;name:string;domain:string;code:string;label:string;description?:string|null;sort_order:number};
 type ProfileRef={relation_type:string;reference_item_id:string;custom_value:string|null;code:string;label:string};
 type Profile={references?:ProfileRef[];languages?:string[]};
+type AccountProfile={nationality?:string|null};
 type Education={id?:string;education_level_item_id:string;education_level_custom?:string|null;institution_item_id:string|null;institution_name_custom?:string|null;field_of_study_item_id:string|null;field_of_study_custom?:string|null;qualification_item_id:string|null;qualification_custom?:string|null;graduation_year:number|string|null;education_level_label?:string;institution_label?:string;field_of_study_label?:string;qualification_label?:string};
 type EducationDraft={educationLevelItemId:string;educationLevelCustom:string;institutionItemId:string;institutionCustom:string;fieldOfStudyItemId:string;fieldOfStudyCustom:string;qualificationItemId:string;qualificationCustom:string;graduationYear:string};
 type Portfolio={id:string;title:string;item_type:string;description:string|null;external_url:string|null;evidence_file_id:string|null;evidence_label:string|null;visibility:string;evidence_original_name?:string|null};
@@ -37,6 +38,7 @@ export default function GuidedProfessionalProfile(){
    setRefs(r);setProfile(p);setEducation(e);setEducationDrafts(e.map(asDraft));setPortfolio(items);
    const next:Record<string,string>={},custom:Record<string,string>={};
    for(const type of ["nationality","occupation","industry","experience_range"]){const item=selected(p.references,type);next[type]=item?.reference_item_id||"";custom[type]=item?.custom_value||"";}
+   if(!next.nationality&&account.nationality){const match=r.find(item=>item.dataset_key===groups.nationality&&item.label.toLowerCase()===String(account.nationality).toLowerCase());if(match)next.nationality=match.id;else{const other=r.find(item=>item.dataset_key===groups.nationality&&item.code==="OTHER");if(other){next.nationality=other.id;custom.nationality=account.nationality;}}}
    setSelectedRefs(next);setCustomRefs(custom);
    const langLabels=Array.isArray(p.languages)?p.languages:[];
    setLanguageIds(r.filter(x=>x.dataset_key===groups.language&&langLabels.includes(x.label)&&x.code!=="OTHER").map(x=>x.id));
@@ -104,6 +106,11 @@ export default function GuidedProfessionalProfile(){
    setPortfolioDraft(blankPortfolio());const items=await api<Portfolio[]>("/api/v1/me/portfolio",{},token);setPortfolio(items);setNotice("Portfolio item saved. Any attached evidence remains private and is available only to you and authorized review workflows.");
   }catch(e){setError(e instanceof ApiError?e.message:e instanceof Error?e.message:"Portfolio item could not be saved.");}
   finally{setSaving(false);}
+ }
+ async function downloadEvidence(item:Portfolio){
+  if(!token||!item.evidence_file_id)return;setError("");setNotice("");
+  try{const response=await fetch("/api/v1/files/"+encodeURIComponent(item.evidence_file_id),{headers:{Authorization:"Bearer "+token},cache:"no-store"});if(!response.ok)throw new Error("Private evidence could not be downloaded. Your session may have expired or access may have changed.");const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=item.evidence_original_name||item.evidence_label||"private-evidence";a.click();URL.revokeObjectURL(url);setNotice("Private evidence download started.");}
+  catch(e){setError(e instanceof ApiError?e.message:e instanceof Error?e.message:"Private evidence download failed.");}
  }
  async function removePortfolio(id:string){
   if(!token||!confirm("Remove this portfolio item from your profile? The private evidence file remains stored but will no longer be linked to this item."))return;
@@ -174,7 +181,7 @@ export default function GuidedProfessionalProfile(){
     <div className="row" style={{justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}><strong>{item.title}</strong><Badge>{item.visibility}</Badge></div>
     <p className="muted">{item.item_type.replaceAll("_"," ")}{item.description?" · "+item.description:""}</p>
     {item.external_url?<a href={item.external_url} target="_blank" rel="noreferrer">Open portfolio link</a>:null}
-    {item.evidence_file_id?<p role="status"><Badge>Private evidence attached</Badge> {item.evidence_label||item.evidence_original_name||"Evidence file"}</p>:<p className="muted">No evidence attached.</p>}
+    {item.evidence_file_id?<div className="row" style={{gap:8,flexWrap:"wrap"}}><p role="status"><Badge>Private evidence attached</Badge> {item.evidence_label||item.evidence_original_name||"Evidence file"}</p><button type="button" className="btn btn-ghost" onClick={()=>void downloadEvidence(item)}>Download private evidence</button></div>:<p className="muted">No evidence attached.</p>}
     <button type="button" className="btn btn-ghost" onClick={()=>void removePortfolio(item.id)}>Remove item</button>
    </div>)}</div>:<p className="muted">No portfolio items yet.</p>}
    <form onSubmit={savePortfolio} className="grid" style={{gap:12}}>
