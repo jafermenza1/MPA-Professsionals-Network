@@ -51,7 +51,11 @@ export default function GuidedProfessionalProfile(){
   try{
    const references=Object.entries(selectedRefs).filter(([,id])=>id).map(([relationType,referenceItemId])=>({relationType,referenceItemId,customValue:customRefs[relationType]||""}));
    for(const [type,id] of Object.entries(selectedRefs)){if(id&&byId.get(id)?.code==="OTHER"&&!customRefs[type]?.trim())throw new Error("Please enter the custom value for every field set to Other.");}
-   const languages=[...languageIds.map(id=>byId.get(id)?.label).filter(Boolean) as string[],...otherLanguage.split(",").map(v=>v.trim()).filter(Boolean)];
+   const languageOther=options(groups.language).find(item=>item.code==="OTHER");
+   const otherLanguageValues=otherLanguage.split(",").map(v=>v.trim()).filter(Boolean);
+   references.push(...languageIds.map(referenceItemId=>({relationType:"language",referenceItemId,customValue:""})));
+   if(otherLanguageValues.length&&languageOther)references.push({relationType:"language",referenceItemId:languageOther.id,customValue:otherLanguageValues.join(", ")});
+   const languages=[...languageIds.map(id=>byId.get(id)?.label).filter(Boolean) as string[],...otherLanguageValues];
    const saved=await api<Profile>("/api/v1/me/talent-profile",{method:"PATCH",body:JSON.stringify({references,languages})},token);
    setProfile(saved);
    const nationalityId=selectedRefs.nationality;
