@@ -212,7 +212,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/marketplace-demand/") && parts[5]==="review") return ok(res,await marketplaceDemand.reviewDemand(parts[4],identity.sub,await body(req),requestId),requestId);
     if(req.method==="GET" && p==="api/v1/admin/marketplace-listings") return ok(res,await marketplaceDemand.listAdminListings(identity.sub),requestId);
     if(req.method==="POST" && parts.length===7 && p.startsWith("api/v1/admin/marketplace-listings/") && parts[6]==="moderate") return ok(res,await marketplaceDemand.moderateListing(parts[4],parts[5],identity.sub,await body(req),requestId),requestId);
-    if(req.method==="GET" && parts.length===7 && p.startsWith("api/v1/admin/marketplace-demand-topics/") && parts[6]==="summary") return ok(res,await marketplaceDemand.getDemandSummary(identity.sub,parts[5]),requestId);
+    if(req.method==="GET" && parts.length===6 && p.startsWith("api/v1/admin/marketplace-demand-topics/") && parts[5]==="summary") return ok(res,await marketplaceDemand.getDemandSummary(identity.sub,parts[4]),requestId);
     if(req.method==="POST" && p==="api/v1/services") return ok(res,await servicesMentorship.createServiceListing(identity.sub,await body(req),requestId),requestId,201);
     if(req.method==="PATCH" && parts.length===4 && p.startsWith("api/v1/services/")) return ok(res,await servicesMentorship.updateServiceListing(parts[3],identity.sub,await body(req),requestId),requestId);
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/services/") && parts[4]==="status") { const b=await body(req); return ok(res,await servicesMentorship.changeServiceListingStatus(parts[3],identity.sub,b.status,requestId),requestId); }
