@@ -23,13 +23,24 @@ test("Phase 1 completes registration, profile and application identity flow",asy
 
   const me=await membership.getMe(userId);
   assert.equal(me.email,email);
-  const updated=await membership.updateProfile(userId,{firstName:"Phase",lastName:`Member${suffix}`,headline:"Updated Professional"},"phase1-test-profile");
-  assert.equal(updated.headline,"Updated Professional");
+  await assert.rejects(
+    membership.updateProfile(userId,{firstName:"Phase",lastName:`Member${suffix}`,headline:"Updated Professional"},"phase1-test-profile-before-membership"),
+    error=>error.code==="MEMBERSHIP_REQUIRED"
+  );
 
   const app=await membership.createApplication(userId,{productCode:"BASIC"},"phase1-test-application");
   applicationId=app.id;
   assert.equal(app.status,"submitted");
   assert.equal(app.fee_snapshot.amount,1200);
+  const prematurePayment=(await getPool().query(`insert into payment_transaction(provider,idempotency_key,purpose,amount,currency,status,request_payload,channel,submitted_by,purpose_reference,source)
+    values('manual',$1,'membership',1200,'ETB','pending','{}'::jsonb,'bank_transfer',$2,$3,'manual_entry') returning id`,[`phase1-premature:${suffix}`,userId,applicationId])).rows[0];
+  await getPool().query("insert into membership_application_payment(application_id,payment_transaction_id) values($1,$2)",[applicationId,prematurePayment.id]);
+  await assert.rejects(
+    membership.verifyPayment(prematurePayment.id,userId,{decision:"approved",evidenceChecked:[],note:"Must not bypass membership review."},"phase1-premature-payment"),
+    error=>error.code==="APPLICATION_NOT_APPROVED"
+  );
+  await getPool().query("delete from membership_application_payment where payment_transaction_id=$1",[prematurePayment.id]);
+  await getPool().query("delete from payment_transaction where id=$1",[prematurePayment.id]);
 
   const duplicate=membership.createApplication(userId,{productCode:"BASIC"},"phase1-test-duplicate");
   await assert.rejects(duplicate,e=>e.code==="APPLICATION_EXISTS");
@@ -79,6 +90,8 @@ test("Phase 1 manual payment verification controls activation",async()=>{
   membershipId=activated.id;
   assert.equal(activated.status,"active");
   assert.ok(activated.membership_number);
+  const updated=await membership.updateProfile(userId,{firstName:"Phase",lastName:`Member${suffix}`,headline:"Updated Professional"},"phase1-test-profile-after-membership");
+  assert.equal(updated.headline,"Updated Professional");
 
   const history=await membership.history(userId);
   assert.equal(history.memberships.length,1);
