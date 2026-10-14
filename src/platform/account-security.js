@@ -18,14 +18,15 @@ export async function updateOwnCredentials(identity,input,requestId){
  return withTransaction(async tx=>{
   const user=(await tx.query("select id,username,password_hash,status from app_user where id=$1 for update",[userId])).rows[0];
   if(!user||user.status!=="active")throw err(401,"This account cannot be changed right now. Please contact support if you need help.","ACCOUNT_UNAVAILABLE");
-  if(usernameInput!==undefined&&usernameInput!==user.username){await tx.query("select pg_advisory_xact_lock(hashtext($1))",["account_username:"+usernameInput]);if(!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(usernameInput))throw err(400,"Choose a username with 3–40 letters, numbers, dots, underscores or hyphens. It must start with a letter or number.","USERNAME_INVALID");}
+  const usernameChanged=usernameInput!==undefined&&usernameInput!==String(user.username).toLowerCase();
+  if(usernameChanged){await tx.query("select pg_advisory_xact_lock(hashtext($1))",["account_username:"+usernameInput]);if(!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(usernameInput))throw err(400,"Choose a username with 3–40 letters, numbers, dots, underscores or hyphens. It must start with a letter or number.","USERNAME_INVALID");}
   if(!recovery&&!verifyPassword(currentPassword,user.password_hash))throw err(400,"That current password does not match. Please try again.","CURRENT_PASSWORD_INCORRECT");
-  if(usernameInput!==undefined&&usernameInput!==user.username){const duplicate=await tx.query("select id from app_user where lower(username)=lower($1) and id<>$2 limit 1",[usernameInput,userId]);if(duplicate.rowCount)throw err(409,"That username is already in use. Try another one.","USERNAME_TAKEN")}
-  const nextUsername=usernameInput===undefined?user.username:usernameInput;
-  if(usernameInput!==undefined&&usernameInput!==user.username)await tx.query("update app_user set username=$1,updated_at=now() where id=$2",[nextUsername,userId]);
+  if(usernameChanged){const duplicate=await tx.query("select id from app_user where lower(username)=lower($1) and id<>$2 limit 1",[usernameInput,userId]);if(duplicate.rowCount)throw err(409,"That username is already in use. Try another one.","USERNAME_TAKEN")}
+  const nextUsername=usernameChanged?usernameInput:user.username;
+  if(usernameChanged)await tx.query("update app_user set username=$1,updated_at=now() where id=$2",[nextUsername,userId]);
   let revokedOtherSessions=0;
   if(newPassword){await tx.query("update app_user set password_hash=$1,updated_at=now() where id=$2",[hashPassword(newPassword),userId]);const r=await tx.query("update auth_session set revoked_at=now() where user_id=$1 and id<>$2 and revoked_at is null",[userId,sessionId]);revokedOtherSessions=r.rowCount;await tx.query("update auth_session set credential_setup_required=false where id=$1 and user_id=$2",[sessionId,userId])}
-  await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'account.credentials.updated','app_user',$2,$3,'success',$4)",[userId,userId,requestId,JSON.stringify({usernameChanged:usernameInput!==undefined&&usernameInput!==user.username,passwordChanged:Boolean(newPassword),recoverySession:recovery,otherSessionsRevoked:revokedOtherSessions})]);
+  await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'account.credentials.updated','app_user',$2,$3,'success',$4)",[userId,userId,requestId,JSON.stringify({usernameChanged,passwordChanged:Boolean(newPassword),recoverySession:recovery,otherSessionsRevoked:revokedOtherSessions})]);
   return {username:nextUsername,passwordChanged:Boolean(newPassword),otherSessionsRevoked:revokedOtherSessions,credentialSetupRequired:false};
  });
 }
