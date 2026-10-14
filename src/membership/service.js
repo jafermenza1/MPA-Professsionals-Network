@@ -181,6 +181,7 @@ export async function saveMembershipProduct(actorId,productCode,input,requestId)
     const billingModel=String(input.billingModel||"recurring");
     const currency=String(input.currency||"ETB").trim().toUpperCase();
     const amount=Number(input.amount);
+    const taxAmount=Number(input.taxAmount||0),serviceFee=Number(input.serviceFee||0);
     const effectiveFrom=String(input.effectiveFrom||new Date().toISOString().slice(0,10)).slice(0,10);
     const durationDays=input.durationDays===null||input.durationDays===""||input.durationDays===undefined?null:Number(input.durationDays);
     const gracePeriodDays=input.gracePeriodDays===undefined?0:Number(input.gracePeriodDays);
@@ -191,8 +192,10 @@ export async function saveMembershipProduct(actorId,productCode,input,requestId)
     if(!Number.isFinite(amount)||amount<0||!/^([A-Z]{3})$/.test(currency)) throw httpError(400,"Enter a valid non-negative fee and three-letter currency.","VALIDATION_ERROR");
     if(!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)||Number.isNaN(Date.parse(effectiveFrom))) throw httpError(400,"Choose a valid effective date.","VALIDATION_ERROR");
     if(billingModel==="lifetime"&&durationDays!==null) throw httpError(400,"Lifetime plans cannot have an expiry duration.","VALIDATION_ERROR");
-    if(billingModel!=="lifetime"&&(!Number.isInteger(durationDays)||durationDays<1||durationDays>3650)) throw httpError(400,"Choose a validity duration from 1 to 3,650 days for non-lifetime plans.","VALIDATION_ERROR");
+    if(billingModel==="recurring"&&(!Number.isInteger(durationDays)||durationDays<1||durationDays>3650)) throw httpError(400,"Choose a validity duration from 1 to 3,650 days for recurring plans.","VALIDATION_ERROR");
+    if(billingModel==="one_time"&&durationDays!==null&&(!Number.isInteger(durationDays)||durationDays<1||durationDays>3650)) throw httpError(400,"A one-time plan duration must be between 1 and 3,650 days, or left blank for no expiry.","VALIDATION_ERROR");
     if(!Number.isInteger(gracePeriodDays)||gracePeriodDays<0||gracePeriodDays>365) throw httpError(400,"Grace period must be between 0 and 365 days.","VALIDATION_ERROR");
+    if(!Number.isFinite(taxAmount)||taxAmount<0||!Number.isFinite(serviceFee)||serviceFee<0) throw httpError(400,"Tax and service fees must be valid non-negative amounts.","VALIDATION_ERROR");
     const benefits=Array.isArray(input.benefits)?input.benefits.map(x=>String(x).trim()).filter(Boolean).slice(0,40):[];
     const eligibility=input.eligibility&&typeof input.eligibility==="object"&&!Array.isArray(input.eligibility)?input.eligibility:{};
     const existing=(await db.query("select * from membership_product where product_code=$1 for update",[code])).rows[0];
@@ -220,7 +223,7 @@ export async function saveMembershipProduct(actorId,productCode,input,requestId)
     await db.query("update membership_fee_rule set effective_to=case when effective_from=$1::date then $1::date else ($1::date-1) end where membership_product_id=$2 and effective_from<=$1::date and (effective_to is null or effective_to >= $1::date)",[effectiveFrom,product.id]);
     const rule=(await db.query(`insert into membership_fee_rule(membership_product_id,version,base_amount,currency,billing_period,tax_amount,service_fee,eligibility_rules,effective_from,created_by,plan_name,plan_description,billing_model,duration_days,renewal_required,grace_period_days,benefits,eligibility)
       values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb) returning *`,[
-      product.id,nextVersion,amount,currency,billingModel,Number(input.taxAmount||0),Number(input.serviceFee||0),
+      product.id,nextVersion,amount,currency,billingModel,taxAmount,serviceFee,
       JSON.stringify(eligibility),effectiveFrom,actorId,name,String(input.description||"").trim()||null,billingModel,
       durationDays,renewalRequired,gracePeriodDays,JSON.stringify(benefits),JSON.stringify(eligibility)
     ])).rows[0];
