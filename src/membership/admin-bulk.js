@@ -34,7 +34,8 @@ function cleanRow(row){
  if(!startDate)errors.push("start_date must use YYYY-MM-DD.");
  if(x.end_date&&!endDate)errors.push("end_date must use YYYY-MM-DD or be blank.");
  if(startDate&&endDate&&endDate<startDate)errors.push("end_date cannot be before start_date.");
- if(approved!=="yes"&&approved!=="no")errors.push("approved_membership must be yes or no.");\n if(approved!=="yes")errors.push("This import is only for members already approved by MPA; confirm yes or resolve the record separately.");
+ if(approved!=="yes"&&approved!=="no")errors.push("approved_membership must be yes or no.");
+ if(approved!=="yes")errors.push("This import is only for members already approved by MPA; confirm yes or resolve the record separately.");
  if(status==="active"&&approved!=="yes")errors.push("Active membership requires explicit confirmation that MPA already approved the member.");
  if(status==="active"&&endDate&&endDate<new Date().toISOString().slice(0,10))errors.push("An expired end date cannot be imported as active.");
  return {...row,email,phone:normalizePhone(x.phone),fullName,membershipNumber,productCode,status,startDate,endDate,approved:approved==="yes",legacyMemberId:String(x.legacy_member_id||"").trim()||null,approvalReference:String(x.approval_reference||"").trim()||null,notes:String(x.notes||"").trim()||null,errors};
