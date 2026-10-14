@@ -4,6 +4,7 @@ import { signToken, newSessionToken, hashSessionToken, sessionTokenPayload } fro
 import { loadConfig } from "../platform/config.js";
 import { nextTrackingReference } from "../platform/tracking-reference.js";
 import { hashPassword, verifyPassword, normalizeEmail, normalizePhone, normalizeName, validatePersonInput } from "./identity.js";
+import { assertProfessionalProfileCapability } from "../platform/identity-policy.js";
 
 function httpError(status,message,code="BUSINESS_RULE"){
   const e=new Error(message); e.statusCode=status; e.code=code; return e;
@@ -26,13 +27,9 @@ async function roles(db,userId){
   return r.rows.map(x=>x.role_code);
 }
 
-async function assertProfessionalProfileAccess(db,userId,{requireActiveMembership=false}={}){
-  const userRoles=await roles(db,userId);
-  if(!userRoles.some(role=>["member","professional"].includes(role))) throw httpError(403,"This account uses an organization profile. A professional profile is not available for this role.","PROFESSIONAL_PROFILE_FORBIDDEN");
-  if(requireActiveMembership){
-    const active=await db.query("select 1 from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) limit 1",[userId]);
-    if(!active.rowCount) throw httpError(403,"An active, current membership is required to edit a professional profile.","MEMBERSHIP_REQUIRED");
-  }
+async function assertProfessionalProfileAccess(db,userId,options={}){
+  try { await assertProfessionalProfileCapability(db,userId,options); }
+  catch (error) { throw httpError(error.statusCode||403,error.message,error.code||"BUSINESS_RULE"); }
 }
 function amountFromProduct(product){ return Number(product.price); }
 
