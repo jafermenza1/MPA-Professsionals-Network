@@ -1,14 +1,11 @@
 import { getPool, withTransaction } from "../platform/db.js";
+import { assertProfessionalProfileCapability } from "../platform/identity-policy.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
 
-async function assertProfessionalProfileAccess(db,userId,{requireActiveMembership=false}={}){
- const roles=(await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId])).rows.map(row=>row.role_code);
- if(!roles.some(role=>["member","professional"].includes(role))) throw error(403,"This account uses an organization profile. A professional profile is not available for this role.","PROFESSIONAL_PROFILE_FORBIDDEN");
- if(requireActiveMembership){
-  const active=await db.query("select 1 from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) limit 1",[userId]);
-  if(!active.rowCount) throw error(403,"An active, current membership is required to edit a professional profile.","MEMBERSHIP_REQUIRED");
- }
+async function assertProfessionalProfileAccess(db,userId,options={}){
+ try { await assertProfessionalProfileCapability(db,userId,options); }
+ catch (cause) { throw error(cause.statusCode||403,cause.message,cause.code||"BUSINESS_RULE"); }
 }
 function limitValue(v){ return Math.min(Math.max(Number(v)||25,1),100); }
 export const ELIGIBLE_VERIFICATION_CLAIMS=["professional_certification","education","employment","experience","service_capability"];
