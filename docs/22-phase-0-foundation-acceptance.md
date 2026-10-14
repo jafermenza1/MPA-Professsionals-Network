@@ -39,3 +39,6 @@ Provider implementations (object storage, SMS/email, and payment gateway) are de
 
 
 Historical Actions runs do not certify later commits. Record exact SHA, commands, environment and output for each new acceptance decision. See [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md).
+
+
+Historical Actions runs do not certify later commits. Record exact SHA, commands, environment and output for each new acceptance decision. See [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md).
