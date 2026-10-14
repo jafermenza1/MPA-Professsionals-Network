@@ -192,3 +192,12 @@ The next work is **not** broad UX polishing. First manually validate and correct
 - Focused test: test/p2/report-exports.test.js; command npm run test:p2.
 - Execution evidence: NOT RUN — no test command, migration, type check, build, browser journey or real PDF/XLSX client-open test has been executed. No CI workflow was added. Keep PR #3 draft/open.
 - Known risks: report SQL column/enum assumptions; PDF/XLSX interoperability; invitation email outbox template delivery; import idempotency if legacy IDs or identities change between preview and apply; and proof that sensitive endpoints deny unauthorized roles.
+
+
+## P2 live homepage feeds — 2026-10-14 (implementation only)
+
+- Integrated five independently loaded public feeds into `web/app/page.tsx`: services, public jobs, consent-visible professional directory profiles, public mentor profiles, and published service/mentorship demand topics.
+- Added `web/app/live-network-feeds.tsx` and `web/app/live-network-feeds.module.css` with human-centered copy, bounded cards, responsive layouts, light/dark theme tokens, loading skeletons, per-feed empty/error states, retry and contact-support actions, keyboard focus and reduced-motion handling.
+- Added `e2e/homepage-live-feeds.spec.js` covering successful feed rendering, isolated failure/retry, and empty states.
+- Updated `docs/31-workflow-reconciliation-matrix.md`, `docs/30-holistic-reconciliation-roadmap.md` and `docs/37-specific-product-gap-audit.md` to reflect actual code and remaining acceptance work.
+- **Validation not run:** no TypeScript check, web build, Playwright run, mobile/keyboard/screen-reader audit, or production-data privacy check was executed. The added test is not evidence of a passing run. PR #3 remains draft/open; no CI workflow was added and no deploy/merge was performed.
