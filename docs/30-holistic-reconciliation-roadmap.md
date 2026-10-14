@@ -243,3 +243,10 @@ The first guided professional profile increment is committed:
 5. Implement P2 configurable role-scoped reporting and branded PDF/XLSX export, plus live published homepage feeds.
 6. Complete P3 manual E2E, isolation/security, backup/restore rehearsal, monitoring and deployment acceptance.
 7. Keep PR #3 open/draft and do not restore CI until all current gaps are implemented and accepted.
+
+
+### P1 status — marketplace and demand implementation checkpoint (2026-10-14)
+
+**Committed to the working branch; not accepted.** Added private unmet-service/mentorship demand intake, Support Desk review, separately authored public demand topics, unique per-user interest levels and aggregate counts; added service/mentor listing moderation, public discovery gates, organization-owned service listings and organization-scoped service-request actions. New entry points are `/service-demand` and `/admin/marketplace`. Progress and explicit residual gaps are recorded in [39 — P0/P1 Implementation Progress and Roadmap](39-p0-implementation-progress-and-roadmap.md) and [31 — Workflow Reconciliation Matrix](31-workflow-reconciliation-matrix.md).
+
+**Not yet implemented or proven:** organization-owned mentorship offers; durable notifications; full route/UI E2E; privacy-negative tests; migration apply/rerun; TypeScript/build; unit/API suite. No CI workflow was added. Keep PR #3 open/draft and do not merge/deploy until all current gaps are implemented and accepted.
