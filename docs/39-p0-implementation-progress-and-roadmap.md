@@ -182,3 +182,13 @@ The next work is **not** broad UX polishing. First manually validate and correct
 | TypeScript / production build | NOT RUN | New pages and route contracts need compilation. |
 | Browser / role isolation | NOT RUN | Personal, organization owner/manager, non-member requester, reviewer and unrelated-account cases remain. |
 | Merge / deployment / CI | NOT AUTHORIZED | Keep draft PR #3 open; no CI workflow until all current gaps are implemented and accepted. |
+
+
+## P2 implementation checkpoint — 2026-10-14 (not validated)
+
+- Reports: committed a permission-filtered catalogue and /admin/reports UI; six initial reports; date/status/search filters; on-screen preview; PDF and XLSX generation; generation and export audit records.
+- Member administration: committed /admin/members workflow; CSV template and preview/apply; approved-member confirmation; duplicate and identity-conflict detection; reuse of membership import staging tables; one-time account invitation tokens for newly created accounts; member-detail CSV/XLSX export.
+- Migration: 20261014170000_p2_reporting_and_member_import.sql adds invitation storage and report/member-import permissions.
+- Focused test: test/p2/report-exports.test.js; command npm run test:p2.
+- Execution evidence: NOT RUN — no test command, migration, type check, build, browser journey or real PDF/XLSX client-open test has been executed. No CI workflow was added. Keep PR #3 draft/open.
+- Known risks: report SQL column/enum assumptions; PDF/XLSX interoperability; invitation email outbox template delivery; import idempotency if legacy IDs or identities change between preview and apply; and proof that sensitive endpoints deny unauthorized roles.
