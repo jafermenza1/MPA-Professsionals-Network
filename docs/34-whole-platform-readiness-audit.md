@@ -185,3 +185,8 @@ The route inventory also shows only a small subset of the roles defined in the p
 ## Validation process update — 2026-10-14
 
 GitHub Actions CI has been removed by maintainer request. The release criteria remain unchanged: use manual unit, migration, build, API smoke, browser, role-isolation and privacy checks and record results for the exact release SHA. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Keep all unexecuted checks OPEN.
+
+
+## Validation process update — 2026-10-14
+
+GitHub Actions CI has been removed by maintainer request. Release criteria remain unchanged: use manual unit, migration, build, API smoke, browser, role-isolation and privacy checks and record results for the exact release SHA. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Keep all unexecuted checks OPEN.
