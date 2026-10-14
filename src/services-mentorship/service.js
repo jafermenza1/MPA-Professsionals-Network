@@ -159,20 +159,22 @@ export async function requestService(listingId,requesterId,input,requestId){
 
 export async function listMyServiceRequests(userId){
   const db=getPool();
-  return (await db.query("select r.*,s.title service_title,s.service_category,p.display_name requester_name from service_request r join service_listing s on s.id=r.service_listing_id join person p on p.user_id=r.requester_user_id where r.provider_user_id=$1 or r.requester_user_id=$1 order by r.created_at desc",[userId])).rows;
+  const orgRoles=["owner","administrator","recruiter","project_manager"];
+  return (await db.query("select r.*,s.title service_title,s.service_category,p.display_name requester_name,(r.provider_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) is_provider from service_request r join service_listing s on s.id=r.service_listing_id join person p on p.user_id=r.requester_user_id where r.provider_user_id=$1 or r.requester_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])) order by r.created_at desc",[userId,orgRoles])).rows;
 }
 
 export async function changeServiceRequestStatus(requestId,userId,status,note,requestIdHeader){
   return withTransaction(async db=>{
-    const r=(await db.query("select * from service_request where id=$1 for update",[requestId])).rows[0];
+    const r=(await db.query("select sr.*,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1 for update of sr",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.provider_user_id!==userId && r.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
-    if(r.status==="requested" && r.provider_user_id!==userId) throw error(403,"Only the provider can accept or decline a service request.","FORBIDDEN");
-    if(r.status==="accepted" && status==="in_progress" && r.provider_user_id!==userId) throw error(403,"Only the provider can start service delivery.","FORBIDDEN");
-    if(r.status==="in_progress" && status==="completed" && r.provider_user_id!==userId) throw error(403,"Only the provider can mark delivery complete; the requester must accept the outcome separately.","FORBIDDEN");
-    if(r.status==="accepted" && status==="cancelled" && r.provider_user_id!==userId) {
+    const providerActor=r.provider_user_id===userId || Boolean(r.organization_id && (await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[r.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
+    if(!providerActor && r.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+    if(r.status==="requested" && !providerActor) throw error(403,"Only the provider can accept or decline a service request.","FORBIDDEN");
+    if(r.status==="accepted" && status==="in_progress" && !providerActor) throw error(403,"Only the provider can start service delivery.","FORBIDDEN");
+    if(r.status==="in_progress" && status==="completed" && !providerActor) throw error(403,"Only the provider can mark delivery complete; the requester must accept the outcome separately.","FORBIDDEN");
+    if(r.status==="accepted" && status==="cancelled" && !providerActor) {
       // requester cancellation is allowed before delivery starts
-    } else if(r.status==="accepted" && status==="cancelled" && r.provider_user_id===userId) {
+    } else if(r.status==="accepted" && status==="cancelled" && providerActor) {
       throw error(409,"The provider cannot cancel an accepted engagement; use the dispute path if delivery is blocked.","INVALID_STATE");
     }
     if(!allowedServiceRequestTransition(r.status,status)) throw error(409,"Invalid service request transition.","INVALID_STATE");
@@ -184,7 +186,7 @@ export async function changeServiceRequestStatus(requestId,userId,status,note,re
       await audit(db,userId,"service.request_completion_submitted","service_request",requestId,requestIdHeader,{status:r.status});
       return updated;
     }
-    const updated=(await db.query("update service_request set status=$1,provider_note=case when $2::uuid=provider_user_id then $3 else provider_note end,requester_note=case when $2::uuid=requester_user_id then $3 else requester_note end,accepted_at=case when $1='accepted' then now() else accepted_at end,started_at=case when $1='in_progress' then now() else started_at end,cancelled_at=case when $1='cancelled' then now() else cancelled_at end,updated_at=now() where id=$4 returning *",[status,userId,note||null,requestId])).rows[0];
+    const updated=(await db.query("update service_request set status=$1,provider_note=case when $2::uuid<>requester_user_id then $3 else provider_note end,requester_note=case when $2::uuid=requester_user_id then $3 else requester_note end,accepted_at=case when $1='accepted' then now() else accepted_at end,started_at=case when $1='in_progress' then now() else started_at end,cancelled_at=case when $1='cancelled' then now() else cancelled_at end,updated_at=now() where id=$4 returning *",[status,userId,note||null,requestId])).rows[0];
     await db.query("insert into service_request_event(request_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,$4,$5)",[requestId,userId,r.status,status,note||null]);
     await audit(db,userId,"service.request_status_changed","service_request",requestId,requestIdHeader,{from:r.status,to:status});
     return updated;
