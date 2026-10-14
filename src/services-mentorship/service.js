@@ -23,7 +23,8 @@ async function assertServiceListingAccess(db,row,userId){
   if(!membership||!["owner","administrator","recruiter","project_manager"].includes(membership.role_code)) throw error(403,"An active organization owner or authorized manager is required to manage this listing.","ORGANIZATION_FORBIDDEN");
   return membership;
  }
- const organization=await assertServiceListingAccess(db,row,userId);
+ if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
+ if(!(await activeMember(db,userId))) throw error(403,"A current active membership is required to manage a professional service listing.","MEMBERSHIP_REQUIRED");
  return null;
 }
 async function professionalVerified(db,userId){
@@ -113,9 +114,10 @@ export async function changeServiceListingStatus(listingId,userId,status,request
   return withTransaction(async db=>{
     const row=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
-    if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
-    if(status==="published" && !organization && !(await activeMember(db,userId))) throw error(403,"An active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
-    if(status==="published" && organization && organization.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
+    const organization=await assertServiceListingAccess(db,row,userId);
+    if(status==="published" && row.moderation_status!=="approved") throw error(409,"This listing must be approved by MPA Support Desk before it can be published.","MODERATION_REQUIRED");
+    if(status==="published" && row.organization_id && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
+    if(status==="published" && !row.organization_id && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
     if(row.status==="closed" && status!=="closed") throw error(409,"Closed service listings cannot be reopened.","INVALID_STATE");
     const updated=(await db.query("update service_listing set status=$1,updated_at=now() where id=$2 returning *",[status,listingId])).rows[0];
     await audit(db,userId,"service.listing_status_changed","service_listing",listingId,requestId,{from:row.status,to:status});
@@ -403,6 +405,7 @@ export async function changeMentorStatus(profileId,userId,status,requestId){
     const p=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!p) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(p.user_id!==userId) throw error(403,"Only the mentor can manage this profile.","FORBIDDEN");
+    if(status==="active" && p.moderation_status!=="approved") throw error(409,"This mentorship offer must be approved by MPA Support Desk before it can be published.","MODERATION_REQUIRED");
     if(status==="active" && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a mentor profile.","MEMBERSHIP_REQUIRED");
     if(status==="active" && !(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to activate a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
     if(p.status==="closed"&&status!=="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
