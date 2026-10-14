@@ -30,20 +30,20 @@ Authoritative contracts:
 | Runtime | Root ESM Node.js HTTP server, `server.js`; declared Node engine `>=20` | Keep API validation/authentication at server boundary |
 | Web | npm workspace `web/`, package `@mpa/web`, Next.js 14, React 18, TypeScript, Tailwind, TanStack Query, Zustand, Framer Motion, Radix Dialog, Lucide, Playwright | Web build is separate from API server; browser coverage is currently smoke-level rather than complete role-separated acceptance |
 | Persistence | PostgreSQL via `pg`; shared pool/config in `src/platform/db.js` and `src/platform/config.js` | No production DB was inspected as part of this baseline |
-| Migrations | `db/migrations/*.sql`, sorted by filename; runner `scripts/migrate.js`; checksum/history logic in `src/platform/migration-ledger.js` | Current migration chain contains 21 files: numbered migrations 001–020 plus `20261010190000_separate_directory_visibility.sql`. Do not infer production baseline from CI fixtures. Do not infer production baseline from CI fixtures |
+| Migrations | `db/migrations/*.sql`, sorted by filename; runner `scripts/migrate.js`; checksum/history logic in `src/platform/migration-ledger.js` | Current migration chain contains 25 files: numbered migrations 001–024 plus `20261010190000_separate_directory_visibility.sql`. Do not infer production baseline from CI fixtures. Do not infer production baseline from CI fixtures |
 | Auth/session | `src/platform/auth.js`, `src/platform/user-admin.js`; DB-current role resolution and session revocation were added in reconciliation work | Full role/resource scope matrix remains open under G2 |
 | Audit/notifications/payments | `src/platform/audit.js`, `notifications.js`, `payment-workflow.js`, `payments.js` | Each consequential state transition must be checked for audit/idempotency; implementation existence alone is not acceptance |
 | Private files | `src/platform/private-file-storage.js`; upload authorization/content/confirm and authorized read routes in `server.js` | Keep storage outside public web root; test owner/organization/reviewer access and denial |
 | Domain modules | `src/membership/`, `src/verification/`, `src/talent/`, `src/organization-jobs/`, `src/services-mentorship/`, `src/reference-portfolio/`, plus `src/platform/` | See workflow matrix for screen/API/service/persistence mapping and unverified paths |
 | Test suites | `test/identity-password-validation.test.js`; `test/membership/`; `test/platform/`; `test/verification/`; `test/organization-jobs/`; `test/services-mentorship/`; `test/reference-portfolio/`; `scripts/ci-api-smoke.js`; `e2e/gate4.spec.js` | Unit/API/migration/browser checks are different evidence classes and must not be conflated |
-| CI | `.github/workflows/ci.yml`; PostgreSQL 16 service; install, migrations + rerun, isolated legacy-adoption scenario, unit tests, Next build, API smoke, Playwright Chromium/browser workflow | Historical baseline at `dd5eb406e04e4a775711c8f01c8c33bd32ea382a` lacked a lockfile and used `npm install`. Gate 1 subsequently committed `package-lock.json` and changed CI to `npm ci --no-audit --no-fund`; this inventory row is historical, not a current install claim. Current-head CI execution is deferred by the maintainer due to billing. |
+| Automated CI | `.github/workflows/ci.yml` | REMOVED on 2026-10-14 from the currently listed branches. Historical workflow behavior and run links are historical evidence only. Retained test files and scripts must be run manually using `docs/36-manual-test-release-and-deployment-policy.md`. |
 | Operational files | `.env.example`, `Dockerfile`, deployment and migration runbooks | Secrets stay in environment/secret store; no production operation is authorized by this inventory |
 
 ## UI screen → API/service boundary
 
 | Web route | Main API/domain boundary | Known state and required verification |
 |---|---|---|
-| `/`, `/login`, `/register` | Public landing and current route entry points; `POST /api/v1/auth/register`, `POST /api/v1/auth/login` | Landing now presents current membership, job, mentorship, organization and tracking entry points. Visual/build/browser acceptance is still pending on the current head because CI has no assigned runner; auth expiry and role-change browser cases remain open |
+| `/`, `/login`, `/register` | Public landing and current route entry points; `POST /api/v1/auth/register`, `POST /api/v1/auth/login` | Landing now presents current membership, job, mentorship, organization and tracking entry points. Visual/build/browser acceptance must be recorded from manual runs on the exact current head; auth expiry and role-change browser cases remain open |
 | `/profile` | `GET /api/v1/me`, `PATCH /api/v1/me/profile`, `PATCH /api/v1/me/talent-profile`, `GET/PATCH /api/v1/me/talent-visibility` | API contracts exist; field-level persistence and private/public visibility must be tested |
 | `/dashboard`, `/track` | `GET /api/v1/me`, `/api/v1/me/application-tracking`, membership history and notification preferences | Verify loading/empty/error states and role-specific visibility |
 | `/jobs`, `/apply/job` | Jobs list/detail, eligibility, draft/apply/submit, saved jobs, alerts, application progress/notes/interviews | Public inquiry must not be represented as a formal application; ID-specific application and persisted candidate visibility remain open |
@@ -102,17 +102,17 @@ Migration filenames observed at the baseline:
 20. `020_gate4_draft_verification_timestamp.sql`
 21. `20261010190000_separate_directory_visibility.sql`
 
-The CI fixture establishes a known disposable baseline by applying migrations 001–010, then testing adoption and forward application. It does **not** establish that production has any particular prefix applied. Production baseline, backup/restore and rollback rehearsal remain operationally unverified and are explicitly outside G0/G1 sign-off.
+The historical automated fixture established a known disposable baseline by applying migrations 001–010, then testing adoption and forward application. It does **not** establish that production has any particular prefix applied. Production baseline, backup/restore and rollback rehearsal remain operationally unverified and are explicitly outside G0/G1 sign-off.
 
 ## Commands and evidence classes
 
 | Command / mechanism | What it establishes | What it does not establish |
 |---|---|---|
 | `npm test` | Node test suites under `test/**/*.test.js` | Full UI journeys, production DB correctness, all role boundaries |
-| `npm run migrate` twice | Fresh schema migration + no-op rerun in CI DB | Production baseline or restore readiness |
+| `npm run migrate` twice | Fresh schema migration + no-op rerun in isolated test DB | Production baseline or restore readiness |
 | `bash scripts/ci-migration-upgrade.sh` | Disposable legacy-adoption, sentinel preservation, fail-closed baseline, transactional failure rollback and rerun | Real legacy/production schema compatibility |
 | `npm run web:build` | Next.js production compilation/build | Runtime/API correctness in every screen |
-| `node scripts/ci-api-smoke.js` | API smoke including auth/session lifecycle and mentor discovery | Complete role-separated browser E2E |
+| `node scripts/ci-api-smoke.js` | Manually runnable API smoke including auth/session lifecycle and mentor discovery | Complete role-separated browser E2E |
 | `npx playwright test` | Browser workflow(s) included in current Playwright config, including Gate 4 organization verification workflow | All advertised journeys and all negative paths |
 | `GET /healthz`, `GET /readyz` | Basic health/readiness responses | End-to-end service health or DB data integrity |
 
@@ -127,8 +127,13 @@ The CI fixture establishes a known disposable baseline by applying migrations 00
 | G0-05 | Public rate limit uses process-local memory | Document single-process assumptions and assess shared store/retention before production scale |
 | G0-06 | Some advertised modules (events, learning/Moodle, payments/donations/projects) have contract references but full UI/service integration is not evidenced by the current screen inventory | Treat as gaps to verify; do not imply completion from requirements docs |
 | G0-07 | Browser tests cover selected workflows only; role-separated E2E and negative ownership/privacy matrix remain incomplete | G2/G5 |
-| G0-08 | Historical baseline used a broad semver dependency graph and `npm install`; repeat builds could resolve newer compatible versions | Gate 1 addressed this with the committed npm lockfile and `npm ci`; preserve that contract |
+| G0-08 | Historical baseline used a broad semver dependency graph and `npm install`; repeat builds could resolve newer compatible versions | Gate 1 addressed this with the committed npm lockfile and `npm ci`; preserve and manually verify that contract |
 
 ## Gate 0 exit decision
 
 **G0 — PASS (baseline inventory recorded), with explicit follow-on risks.** The repository topology, authoritative contracts, screen/API/service families, migration chain, test commands, evidence limits and unresolved questions are recorded here and in `docs/31-workflow-reconciliation-matrix.md`. This does not mean workflows or production database readiness have passed. Any newly discovered route/screen mismatch reopens G0 for the affected area.
+
+
+## Test inventory status update — 2026-10-14
+
+The GitHub Actions workflow has been removed from the currently listed branches. This does not remove the unit, migration, API-smoke or Playwright test suites. Run them manually in local/staging test environments and record exact commit SHA, commands, test discovery counts and results per [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Historical Actions run URLs elsewhere in this inventory are retained only to describe past executions.
