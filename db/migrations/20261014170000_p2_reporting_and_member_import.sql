@@ -16,6 +16,6 @@ CREATE INDEX IF NOT EXISTS ix_member_invitation_expiry ON member_invitation(expi
 INSERT INTO app_permission(permission_code,area,label,description,sensitive,system_only)
 VALUES
  ('reports.view','reports','View operational reports','View reports permitted for the current staff role.',false,false),
- ('reports.sensitive','reports','View sensitive reports','View restricted personal or financial report data.',true,true),
- ('members.import','membership','Import approved members','Preview and apply approved MPA member imports and export member details.',true,true)
+ ('reports.sensitive','reports','View sensitive reports','View restricted personal or financial report data.',true,false),
+ ('members.import','membership','Import approved members','Preview and apply approved MPA member imports and export member details.',true,false)
 ON CONFLICT (permission_code) DO NOTHING;
