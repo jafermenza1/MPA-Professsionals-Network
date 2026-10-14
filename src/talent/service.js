@@ -1,6 +1,15 @@
 import { getPool, withTransaction } from "../platform/db.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
+
+async function assertProfessionalProfileAccess(db,userId,{requireActiveMembership=false}={}){
+ const roles=(await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId])).rows.map(row=>row.role_code);
+ if(!roles.some(role=>["member","professional"].includes(role))) throw error(403,"This account uses an organization profile. A professional profile is not available for this role.","PROFESSIONAL_PROFILE_FORBIDDEN");
+ if(requireActiveMembership){
+  const active=await db.query("select 1 from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) limit 1",[userId]);
+  if(!active.rowCount) throw error(403,"An active, current membership is required to edit a professional profile.","MEMBERSHIP_REQUIRED");
+ }
+}
 function limitValue(v){ return Math.min(Math.max(Number(v)||25,1),100); }
 export const ELIGIBLE_VERIFICATION_CLAIMS=["professional_certification","education","employment","experience","service_capability"];
 export function isEligibleVerifiedClaim(code){ return ELIGIBLE_VERIFICATION_CLAIMS.includes(String(code||"").toLowerCase()); }
@@ -11,6 +20,7 @@ async function audit(db,actor,action,type,id,requestId,metadata={}){ await db.qu
 
 export async function updateProfessionalProfile(userId,input,requestId){
  return withTransaction(async db=>{
+  await assertProfessionalProfileAccess(db,userId,{requireActiveMembership:true});
   const p=(await db.query("select pp.id from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1 for update",[userId])).rows[0];
   if(!p) throw error(404,"Professional profile not found.","NOT_FOUND");
   const years=input.yearsExperience===null||input.yearsExperience===undefined?null:Number(input.yearsExperience);
@@ -56,6 +66,7 @@ export async function updateProfessionalProfile(userId,input,requestId){
 
 export async function getProfessionalProfile(userId){
  const db=getPool();
+ await assertProfessionalProfileAccess(db,userId);
  const row=(await db.query("select pp.id,pp.professional_title,pp.years_experience,pp.availability_status,pp.location_label,pp.directory_summary,pp.headline,pp.bio,pp.directory_visibility as visibility,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.completion_percent from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1",[userId])).rows[0];
  if(!row) throw error(404,"Professional profile not found.","NOT_FOUND");
  row.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[row.id])).rows;
@@ -64,6 +75,7 @@ export async function getProfessionalProfile(userId){
 
 export async function updateVisibility(userId,input,requestId){
  return withTransaction(async db=>{
+  await assertProfessionalProfileAccess(db,userId,{requireActiveMembership:true});
   const row=(await db.query("insert into verification_visibility(user_id,directory_visible,show_identity_badge,show_professional_badge,show_experience_badge,show_location,show_experience,show_contact) values($1,coalesce($2,false),coalesce($3,false),coalesce($4,false),coalesce($5,false),coalesce($6,false),coalesce($7,false),coalesce($8,false)) on conflict(user_id) do update set directory_visible=coalesce($2,verification_visibility.directory_visible),show_identity_badge=coalesce($3,verification_visibility.show_identity_badge),show_professional_badge=coalesce($4,verification_visibility.show_professional_badge),show_experience_badge=coalesce($5,verification_visibility.show_experience_badge),show_location=coalesce($6,verification_visibility.show_location),show_experience=coalesce($7,verification_visibility.show_experience),show_contact=coalesce($8,verification_visibility.show_contact),updated_at=now() returning *",[userId,input.directoryVisible,input.showIdentityBadge,input.showProfessionalBadge,input.showExperienceBadge,input.showLocation,input.showExperience,input.showContact])).rows[0];
   await audit(db,userId,"talent.visibility_updated","verification_visibility",row.id,requestId,{directoryVisible:row.directory_visible});
   return row;
