@@ -48,6 +48,7 @@ test("P0: non-members cannot edit account or professional profile or publish pro
   assert.ok(product, "BASIC membership product must exist for the provider fixture");
   await db.query("insert into membership_record(user_id,membership_product_id,membership_number,status,start_date,end_date,source) values($1,$2,$3,'active',current_date,current_date+365,'online')", [provider.user.id, product.id, "MPA-P0-" + randomUUID().slice(0,8).toUpperCase()]);
   const listing = await serviceMentorship.createServiceListing(provider.user.id, { title: "Public P0 test service", description: "A public service listing for non-member request coverage.", serviceCategory: "p0-test", visibility: "public" }, "p0-public-service-create");
+  await db.query("update service_listing set moderation_status='approved' where id=$1", [listing.id]);
   await serviceMentorship.changeServiceListingStatus(listing.id, provider.user.id, "published", "p0-public-service-publish");
   const request = await serviceMentorship.requestService(listing.id, userId, { message: "I would like to request this public service." }, "p0-non-member-service-request");
   assert.equal(request.status, "requested", "non-members may request public services without publishing provider offers");
