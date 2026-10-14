@@ -103,6 +103,7 @@ export async function getMe(userId){
     from app_user u left join person p on p.user_id=u.id left join professional_profile pr on pr.person_id=p.id where u.id=$1`,[userId]);
   if(!r.rows[0]) throw httpError(404,"Account not found.","NOT_FOUND");
   const row=r.rows[0];
+  row.gender=row.sex||null;
   const userRoles=Array.isArray(row.roles)?row.roles:[];
   if(!userRoles.some(role=>["member","professional"].includes(role))){
     row.profile_id=null; row.headline=null; row.bio=null; row.visibility=null; row.completion_percent=null;
