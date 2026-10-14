@@ -30,6 +30,13 @@ type Organization = {
   verification_status?: string;
   role_code?: string;
   created_at?: string;
+  verification_case_status?: string;
+  verification_submitted_at?: string | null;
+  verification_reviewed_at?: string | null;
+  verification_decision_reason?: string | null;
+  verification_evidence?: {evidenceType:string;note?:string|null;createdAt?:string}[];
+  required_evidence?: string[];
+  missing_evidence?: string[];
 };
 type OrgReviewCase = {
   organization_id: string;
@@ -488,6 +495,23 @@ export default function Organizations() {
         </Card>
       ) : (
         <>
+          <Card>
+            <div className="h2">Your organization journey</div>
+            <p className="muted">You do not need to learn platform terminology. Follow these steps in order; publishing controls unlock only when the server confirms your organization is verified.</p>
+            <ol className="form-stack" style={{paddingLeft:22}}>
+              <li><b>Establish trust:</b> register the legal identity and authorized contact, then upload the required private documents.</li>
+              <li><b>Resolve blockers:</b> review the missing-evidence checklist and the latest reviewer note shown on each organization below.</li>
+              <li><b>Wait for a decision:</b> submitted organizations remain private for publishing until approval. If corrections are requested, provide them and submit again.</li>
+              <li><b>Publish and hire:</b> after verification, use the organization’s own identity to manage jobs, approved services and mentorship offers.</li>
+              <li><b>Find relevant people:</b> use the professional directory and job-specific eligibility information; only view or contact people within their sharing permissions.</li>
+              <li><b>Manage hiring:</b> open Recruitment to review applicants, move candidates through the hiring stages, schedule interviews, record decisions and track outcomes.</li>
+            </ol>
+            <div className="row" style={{flexWrap:"wrap",gap:8}}>
+              <a className="btn btn-ghost" href="/recruitment">Open recruitment</a>
+              <a className="btn btn-ghost" href="/professionals">Search professionals</a>
+              <a className="btn btn-ghost" href="/jobs">View job opportunities</a>
+            </div>
+          </Card>
           <Card id="org-registration">
             <div className="row">
               <div>
@@ -660,16 +684,28 @@ export default function Organizations() {
                     </Badge>
                   </div>
                   <p className="muted">
-                    Verification evidence is private and must satisfy the active
-                    server-side requirements.
+                    {org.verification_case_status==="correction_required"
+                      ? "Changes are needed before this organization can be verified."
+                      : org.verification_case_status==="submitted"||org.verification_status==="pending"
+                        ? "Your evidence has been submitted. Publishing stays locked until the review is approved."
+                        : org.verification_status==="verified"
+                          ? "This organization is verified. You can manage approved hiring and public offers under this identity."
+                          : "Build trust by completing the required evidence checklist and submitting it for review."}
                   </p>
-                  <button
-                    className="btn btn-ghost"
-                    type="button"
-                    onClick={() => void submitVerification(org)}
-                  >
-                    Submit for verification
-                  </button>
+                  {org.verification_decision_reason&&<p role="status"><b>Latest review note:</b> {org.verification_decision_reason}</p>}
+                  {(org.missing_evidence||[]).length>0&&<div className="form-error" role="status"><b>Still needed:</b> {(org.missing_evidence||[]).map(item=>item.replaceAll("_"," ")).join(", ")}. Upload these documents below, then submit again.</div>}
+                  {(org.required_evidence||[]).length>0&&<p className="muted">Required evidence: {(org.required_evidence||[]).map(item=>item.replaceAll("_"," ")).join(", ")}. Uploaded evidence: {(org.verification_evidence||[]).map(item=>item.evidenceType.replaceAll("_"," ")).filter((item,index,all)=>all.indexOf(item)===index).join(", ")||"none recorded"}.</p>}
+                  <div className="row" style={{flexWrap:"wrap",gap:8}}>
+                    {org.verification_status==="verified" ? <>
+                      <a className="btn btn-primary" href="/recruitment">Manage jobs and hiring</a>
+                      <a className="btn btn-ghost" href="/professionals">Find professionals</a>
+                      <a className="btn btn-ghost" href="/services">Publish services</a>
+                      <a className="btn btn-ghost" href="/mentorship">Mentorship offers</a>
+                    </> : <button className="btn btn-ghost" type="button" onClick={() => {setEvidenceOrg(org.id);document.getElementById("org-evidence")?.scrollIntoView({behavior:"smooth",block:"start"});}}>Complete trust checklist</button>}
+                    <button className="btn btn-ghost" type="button" onClick={() => void submitVerification(org)} disabled={org.verification_status==="verified"||org.verification_case_status==="submitted"||org.verification_case_status==="pending"}>
+                      Submit for verification
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
