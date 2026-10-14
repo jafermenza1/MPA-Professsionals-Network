@@ -13,6 +13,7 @@ import * as talent from "./src/talent/service.js";
 import * as organizationJobs from "./src/organization-jobs/service.js";
 import * as servicesMentorship from "./src/services-mentorship/service.js";
 import * as marketplaceDemand from "./src/services-mentorship/demand.js";
+import * as organizationMentorshipOffers from "./src/services-mentorship/organization-offers.js";
 import * as stakeholderOutcomes from "./src/platform/stakeholder-outcomes.js";
 import * as experience from "./src/platform/experience.js";
 import * as applicationTracking from "./src/platform/application-tracking.js";
@@ -176,6 +177,7 @@ const server=http.createServer(async (req,res)=>{
     }
 
     if(req.method==="GET" && p==="api/v1/marketplace-demand/topics") { const q=query(req.url); return ok(res,await marketplaceDemand.listPublishedTopics({type:q.get("type"),q:q.get("q"),limit:q.get("limit")}),requestId); }
+     if(req.method==="GET" && p==="api/v1/organization-mentorship-offers") { const viewer=req.headers.authorization?.startsWith("Bearer ")?await auth(req):null; return ok(res,await organizationMentorshipOffers.listOrganizationMentorshipOffers(viewer?.sub||null),requestId); }
     const identity=await auth(req);
     if(req.method==="POST" && p==="api/v1/admin/experience/demo-cases") { return ok(res,await experience.createDemoCase(identity.sub,await body(req),requestId),requestId,201); }
     if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/experience/demo-cases/")) { return ok(res,await experience.updateDemoCase(parts[5],identity.sub,await body(req),requestId),requestId); }
@@ -237,6 +239,13 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="PATCH" && parts.length===4 && p.startsWith("api/v1/services/")) return ok(res,await servicesMentorship.updateServiceListing(parts[3],identity.sub,await body(req),requestId),requestId);
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/services/") && parts[4]==="status") { const b=await body(req); return ok(res,await servicesMentorship.changeServiceListingStatus(parts[3],identity.sub,b.status,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/me/service-listings") return ok(res,await servicesMentorship.listMyServiceListings(identity.sub),requestId);
+     if(req.method==="GET" && p==="api/v1/me/organization-mentorship-offers") return ok(res,await organizationMentorshipOffers.listMyOrganizationMentorshipOffers(identity.sub),requestId);
+     if(req.method==="POST" && p==="api/v1/organization-mentorship-offers") return ok(res,await organizationMentorshipOffers.createOrganizationMentorshipOffer(identity.sub,await body(req),requestId),requestId,201);
+     if(req.method==="PATCH" && parts.length===4 && p.startsWith("api/v1/organization-mentorship-offers/")) return ok(res,await organizationMentorshipOffers.updateOrganizationMentorshipOffer(parts[3],identity.sub,await body(req),requestId),requestId);
+     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/organization-mentorship-offers/") && parts[4]==="status") { const b=await body(req); return ok(res,await organizationMentorshipOffers.changeOrganizationMentorshipOfferStatus(parts[3],identity.sub,b.status,requestId),requestId); }
+     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/organization-mentorship-offers/") && parts[4]==="requests") return ok(res,await organizationMentorshipOffers.requestOrganizationMentorship(parts[3],identity.sub,await body(req),requestId),requestId,201);
+     if(req.method==="GET" && p==="api/v1/me/organization-mentorship-requests") return ok(res,await organizationMentorshipOffers.listMyOrganizationMentorshipRequests(identity.sub),requestId);
+     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/organization-mentorship-requests/") && parts[4]==="status") { const b=await body(req); return ok(res,await organizationMentorshipOffers.respondOrganizationMentorshipRequest(parts[3],identity.sub,b.status,b.note,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/me/service-requests") return ok(res,await servicesMentorship.listMyServiceRequests(identity.sub),requestId);
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/services/") && parts[4]==="requests") return ok(res,await servicesMentorship.requestService(parts[3],identity.sub,await body(req),requestId),requestId,201);
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/service-requests/") && parts[4]==="status") { const b=await body(req); return ok(res,await servicesMentorship.changeServiceRequestStatus(parts[3],identity.sub,b.status,b.note,requestId),requestId); }
