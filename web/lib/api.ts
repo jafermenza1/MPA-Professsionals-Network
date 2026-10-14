@@ -99,7 +99,7 @@ export async function api<T>(path:string,init:RequestInit={},token?:string):Prom
     const message = FRIENDLY_ERRORS[code || ""] ||
       (code === "VALIDATION_ERROR" || code === "BUSINESS_RULE" ? safeServerMessage(error?.message) : undefined) ||
       statusMessage(response.status);
-    throw new ApiError(message,response.status,code,requestId);
+    throw new ApiError(requestId ? `${message} Reference: ${requestId}` : message,response.status,code,requestId);
   }
 
   if (body === null) {

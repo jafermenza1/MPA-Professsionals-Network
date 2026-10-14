@@ -1,4 +1,5 @@
 "use client";
+import { FormFeedback } from "../../../components/form-feedback";
 import { FormEvent, useState } from "react";
 import { api, ApiError } from "../../../lib/api";
 import { Card, Badge } from "../../../components/ui";
@@ -162,7 +163,7 @@ export default function JobInterestPage() {
       <label>Private continuation token<input readOnly value={inquiry.continuationToken} aria-label="Private continuation token" /></label>
       <p className="muted">Save this token somewhere private. It lets you manage employer-sharing consent and view which organizations received your request. Anyone who obtains it may be able to access this request, so do not post or forward it.</p>
       <p>{notice || inquiry.nextStep || "MPA Support Desk will review your request and determine an appropriate next step."}</p>
-      {error ? <p role="alert" style={{ color: "var(--danger, #b91c1c)" }}>{error}</p> : null}
+      {error ? <FormFeedback kind="error" message={error}/> : null}
       {!consentSaved ? <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><input type="checkbox" checked={shareWithEmployers} onChange={e => setShareWithEmployers(e.target.checked)} />I explicitly opt in to named-employer sharing now. This is optional and separate from submitting my request.</label>
         {shareWithEmployers ? <div style={{ display: "grid", gap: 8 }}>{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}<button className="btn btn-primary" type="button" disabled={processingConsent || !shareFields.length} onClick={() => void retryConsent()}>{processingConsent ? "Saving consent…" : "Save explicit sharing consent"}</button></div> : <p className="muted">Your request remains private. No employer can access it.</p>}
@@ -196,7 +197,7 @@ export default function JobInterestPage() {
           {shareWithEmployers ? <div style={{ display: "grid", gap: 8, marginTop: 10 }}>{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}</div> : null}
         </Card>
         {error ? <p role="alert" style={{ color: "var(--danger, #b91c1c)" }}>{error}</p> : null}
-        {notice ? <p role="status">{notice}</p> : null}
+        {notice ? <FormFeedback kind="success" message={notice}>{inquiry?.public_reference ? <p>Keep this reference to check your request later: <strong>{inquiry.public_reference}</strong></p> : null}</FormFeedback> : null}
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
           <button className="btn btn-primary" type="submit" disabled={busy || processingConsent}>{busy ? "Submitting…" : "Submit job-interest request"}</button>
           <a className="btn btn-ghost" href="/jobs">Return to listed jobs</a>

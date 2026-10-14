@@ -1,4 +1,5 @@
 "use client";
+import { FormFeedback } from "../../../components/form-feedback";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Card, Badge } from "../../../components/ui";
 import { api, ApiError } from "../../../lib/api";
@@ -27,6 +28,6 @@ export default function ReferencePortfolioAdmin(){
   </Card>
   <Card><h2 className="h2">Import reference CSV</h2><p className="muted">Required columns: code,label. Optional: description,sort_order,active. Import validates the complete file before writing. Matching codes are updated; new codes are added; omitted codes are not deleted.</p><form onSubmit={importCsv} className="grid" style={{gap:10}}><label>CSV file<input type="file" accept=".csv,text/csv" required onChange={e=>setCsvFile(e.target.files?.[0]||null)}/></label><button className="btn btn-ghost" disabled={saving||!csvFile}>{saving?"Importing…":"Validate and import CSV"}</button></form></Card>
   <Card><div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}><h2 className="h2">Items in selected dataset</h2><Badge>{items.length} items</Badge></div>{loading?<p role="status">Loading items…</p>:null}<div className="grid" style={{gap:8}}>{items.map(item=><div key={item.id} className="row" style={{justifyContent:"space-between",gap:12,padding:10,border:"1px solid var(--border)",borderRadius:10}}><div style={{minWidth:0}}><strong>{item.label}</strong><p className="muted">{item.code}{item.description?" · "+item.description:""}</p></div><div className="row" style={{gap:8,alignItems:"center"}}><Badge>{item.active?"Active":"Inactive"}</Badge><button className="btn btn-ghost" type="button" onClick={()=>setDraft({id:item.id,code:item.code,label:item.label,description:item.description||"",sortOrder:String(item.sort_order),active:item.active})}>Edit</button></div></div>)}</div></Card>
-  {error?<Card><p role="alert">{error}</p></Card>:null}{notice?<p role="status" aria-live="polite">{notice}</p>:null}
+  {error?<FormFeedback kind="error" message={error} onRetry={()=>{void loadDatasets();if(selected)void loadItems();}}/>:null}{notice?<FormFeedback kind="success" message={notice}/>:null}
  </div>;
 }

@@ -201,3 +201,12 @@ The next work is **not** broad UX polishing. First manually validate and correct
 - Added `e2e/homepage-live-feeds.spec.js` covering successful feed rendering, isolated failure/retry, and empty states.
 - Updated `docs/31-workflow-reconciliation-matrix.md`, `docs/30-holistic-reconciliation-roadmap.md` and `docs/37-specific-product-gap-audit.md` to reflect actual code and remaining acceptance work.
 - **Validation not run:** no TypeScript check, web build, Playwright run, mobile/keyboard/screen-reader audit, or production-data privacy check was executed. The added test is not evidence of a passing run. PR #3 remains draft/open; no CI workflow was added and no deploy/merge was performed.
+
+
+## P1 actionable form feedback — code committed, not validated
+
+- Added a shared feedback pattern for errors, successful saves, accessible announcements, retry buttons where safe, and relevant next-step links.
+- Added human-readable labels for common workflow states in service, demand and moderation journeys.
+- Added request references to friendly API error messages when the server supplies a request ID.
+- Integrated shared feedback into services, mentorship, service demand, admin member import, reports, reference data, job-interest intake, invitation claim, guided profile and marketplace review.
+- Added responsive, theme-token-based styling. **No TypeScript check, build, automated test or browser/accessibility test has been run.** The whole UI still needs a route-by-route feedback audit and state-specific references/next steps where available.

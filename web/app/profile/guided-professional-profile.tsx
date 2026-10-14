@@ -1,4 +1,5 @@
 "use client";
+import { FormFeedback } from "../../components/form-feedback";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Card, Badge } from "../../components/ui";
 import { api, ApiError } from "../../lib/api";
@@ -210,7 +211,7 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
     <button className="btn btn-primary" disabled={saving||uploading}>{saving?"Saving…":"Save portfolio item"}</button>
    </form>
   </Card>
-  {error?<Card><p role="alert">{error}</p><button className="btn btn-ghost" type="button" onClick={()=>void refresh()}>Retry loading saved data</button></Card>:null}
-  {notice?<p role="status" aria-live="polite">{notice}</p>:null}
+  {error?<FormFeedback kind="error" message={error} onRetry={()=>void refresh()} retryLabel="Reload saved information"/>:null}
+  {notice?<FormFeedback kind="success" message={notice}/>:null}
  </div>;
 }

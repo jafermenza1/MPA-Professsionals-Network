@@ -176,3 +176,10 @@ Update this table as implementation changes land. Replace “required/partial/ga
 All rows remain open for acceptance until exact-commit test evidence is recorded. See [39 — P0 Implementation Progress and Roadmap](39-p0-implementation-progress-and-roadmap.md). Do not restore CI yet; retain test code and use the documented manual process until the full gap inventory is complete.
 
 | Bulk approved-member import/export | Membership import/match staging schema already exists; new admin UI, preview/apply API, template, CSV/XLSX export and one-time account invitation are committed | Required-column CSV template, approved-only validation, email/phone match, duplicate/ambiguity review, explicit apply reason, preserved provenance, no synthetic payment confirmation, invitation claim, export filters and audit | **CODE COMMITTED — NOT TESTED**; validate invitation outbox delivery, import transaction rollback/retry, duplicate races, role-negative access and actual export opening |
+
+
+## P1 — actionable feedback and shared status language (2026-10-14)
+
+A shared feedback component gives members and reviewers a consistent, plain-language pattern for errors and successful saves, announces changes accessibly, offers retry actions where the page can safely reload, and preserves next steps such as signing in. API errors display the server-provided request reference when available, without exposing internal technical details. Common workflow states are translated into human-readable labels (for example, “Awaiting response”, “In progress”, “Changes requested”, and “Needs review”) rather than raw underscore-separated values. Integrated into services, mentorship, shared demand, member import, reports, reference lists, job-interest intake, invitation claim, guided profile and marketplace review.
+
+**Validation:** code committed, not yet typechecked or browser-tested. Review all remaining screens for feedback patterns and state-specific next steps before accepting the “all UI” scope; this increment covers principal P1/P2 forms above and does not claim every route has been audited.

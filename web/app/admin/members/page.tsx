@@ -1,4 +1,5 @@
 "use client";
+import { FormFeedback } from "../../../components/form-feedback";
 import { useEffect,useState,type ChangeEvent } from "react";
 import { ArrowDownToLine,CheckCircle2,FileSpreadsheet,FileText,ShieldCheck,UploadCloud,Users,AlertTriangle } from "lucide-react";
 import { Card,Badge } from "../../../components/ui";
@@ -20,7 +21,7 @@ export default function AdminMembersPage(){
  if(!token)return <div className="grid" style={{gap:16}}><h1 className="h1">Member administration</h1><Card><p>Sign in with an authorized MPA administrator account to import or export membership records.</p><a className="btn btn-primary" href="/login?next=/admin/members">Sign in</a></Card></div>;
  return <div className="grid" style={{gap:18,minWidth:0}}>
   <header className="grid" style={{gap:8}}><div className="eyebrow">Administration · Membership</div><h1 className="h1">Bulk member administration</h1><p className="muted">Bring the approved MPA register into one auditable workflow. Download the template, validate and resolve conflicts, then explicitly apply the batch. Existing accounts are matched instead of duplicated.</p><div className="row" style={{gap:8,flexWrap:"wrap"}}><a className="btn btn-ghost" href="/admin">Admin home</a><a className="btn btn-ghost" href="/admin/reports">Reports catalogue</a></div></header>
-  {error&&<Card><p role="alert" className="error-text">{error}</p></Card>}{notice&&<Card><p role="status">{notice}</p></Card>}
+  {error&&<FormFeedback kind="error" message={error}/>}{notice&&<FormFeedback kind="success" message={notice}/>}
   <div className="grid grid-2" style={{gap:16}}>
    <Card><div className="row" style={{gap:10,alignItems:"flex-start"}}><div className="icon-tile"><UploadCloud size={22}/></div><div><h2 className="h2">Import approved members</h2><p className="muted">CSV import · preview first · no silent merges</p></div></div>
     <ol style={{paddingLeft:22,lineHeight:1.8}}><li>Download the required-column template.</li><li>Fill one approved member per row; use ISO dates (YYYY-MM-DD).</li><li>Upload the CSV and review every conflict.</li><li>Apply with an audit reason only after review.</li></ol>

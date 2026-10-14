@@ -1,4 +1,5 @@
 "use client";
+import { FormFeedback } from "../../components/form-feedback";
 import {FormEvent,useCallback,useEffect,useRef,useState} from "react";
 import {Clock3,HeartHandshake,Languages,RefreshCw,Target} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
@@ -108,8 +109,8 @@ export default function Mentorship(){
      <button className="btn btn-ghost" type="button" onClick={()=>{setQuery("");setTopic("");void load("","")}}>Clear</button>
    </form></Card>
    <div style={{marginTop:14}}><button className="btn btn-ghost" type="button" onClick={()=>{setSelected(null);setShowRequestForm(true);setCreated(null);setNotice("");setError("");}}>Request mentorship without a preferred mentor</button><p className="muted">You can submit your goal now; the platform will not invent a match or confirm a mentor until one is eligible and accepts.</p></div>
-   {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" type="button" onClick={()=>void load()}>Retry</button></div>}
-   {notice&&<p className="muted" role="status">{notice}{!token&&<a href="/login?next=/mentorship"> Sign in</a>}</p>}
+   {error&&<FormFeedback kind="error" message={error} onRetry={()=>void load()}/>}
+   {notice&&<FormFeedback kind="success" message={notice} actionHref={!token?"/login?next=/mentorship":undefined} actionLabel={!token?"Sign in":undefined}/>}
    {created&&<Card><Badge tone="green">Request recorded</Badge><h2 className="h2" style={{marginTop:10}}>Your request is in the system</h2><p className="muted">Request reference: {created.id}</p><p className="muted">Status: {created.status}. The platform does not create a mentorship until the matching and acceptance steps are completed.</p><button className="btn btn-ghost" type="button" onClick={()=>setCreated(null)}>Dismiss</button></Card>}
    {loading?<Card><div className="row"><RefreshCw size={18}/><p className="muted">Loading active mentor profiles…</p></div></Card>:mentors.length===0&&!error?<Card><h2 className="h2">No active mentor profiles found</h2><p className="muted">Try a different topic or return later. We do not display placeholder mentors.</p></Card>:<div className="grid grid-3" style={{marginTop:18}}>{mentors.map(mentor=><Card key={mentor.user_id}>
      <div className="row"><div className="avatar">{mentor.display_name.split(" ").map(x=>x[0]).join("").slice(0,3)}</div><Badge>Active profile</Badge></div>
