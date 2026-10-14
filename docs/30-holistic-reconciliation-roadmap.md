@@ -194,3 +194,18 @@ Still open beyond the scoped workflow UI: project/task linkage and sync conflict
 ## Validation policy update — 2026-10-14
 
 The GitHub Actions workflow `.github/workflows/ci.yml` has been removed from the currently listed branches by maintainer decision. References above to CI runs, run IDs and green historical commits describe evidence that was produced at those earlier commits only; they are not a current automated gate and must not be presented as validation of the current head. Retain the committed test suites and run them manually as described in [the Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). The current G4 status must be based on newly recorded execution output, not on historical Actions links.
+
+
+## 10. Product UX and business-workflow remediation (added 2026-10-14)
+
+The detailed requirements are now recorded in [37 — Specific Product Gap Audit](37-specific-product-gap-audit.md) and [38 — Required Product Rules and Functional Requirements Addendum](38-product-functional-requirements-addendum.md). These are product requirements and must be incorporated into implementation planning; they are not a claim that the work is complete.
+
+Required sequencing:
+1. **P0 — enforce role and membership invariants:** Organization accounts cannot access professional profile routes/APIs; non-members cannot edit member profiles or publish services/mentor offers; membership activation requires confirmed fee payment plus authorized approval; regular membership validity is one year; plan and fee rules are admin-configurable.
+2. **P0 — job-seeker demand with consent:** members and non-members can request consideration without a listed vacancy; Support Desk review precedes any employer sharing; explicit, revocable consent controls what is shared.
+3. **P1 — guided professional profile and reference portfolio:** structured education; admin-managed nationality, occupation, industry, field of study, experience ranges, languages, qualifications, education levels and institutions; CSV import/export; “Other” reveals custom input; Gender label with Male/Female options; multiple traceable portfolio items and optional private evidence.
+4. **P1 — service and mentorship marketplace:** complete listing/request/delivery/outcome lifecycles; private unmet-need intake; admin publication of privacy-safe demand topics; join/interest levels and need assessment; organization provider and demand workflows.
+5. **P1 — truthful notifications and low-effort forms:** carded sections, responsive two-column layout, progressive disclosure, structured selectors, retained inputs, explicit success/error/pending/correction messages and next actions.
+6. **P2 — reporting and homepage:** role-scoped configurable reports with branded PDF/XLSX output; live published homepage feeds for services, jobs, professional discovery, mentorship and demand topics.
+
+For each increment, update the screen → API → service → persistence row in [31 — Workflow Reconciliation Matrix](31-workflow-reconciliation-matrix.md), add role-positive and role-negative tests, and record actual manual validation against the exact commit. Do not mark an increment accepted merely because the documentation or a UI shell exists.
