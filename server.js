@@ -18,6 +18,7 @@ import * as experience from "./src/platform/experience.js";
 import * as applicationTracking from "./src/platform/application-tracking.js";
 import * as publicOpportunity from "./src/platform/public-opportunity.js";
 import * as userAdmin from "./src/platform/user-admin.js";
+import * as accountSecurity from "./src/platform/account-security.js";
 import * as referencePortfolio from "./src/platform/reference-portfolio.js";
 import { resolveAllowedOrigin } from "./src/platform/config.js";
 
@@ -53,7 +54,7 @@ async function auth(req){
     const identity=verifyToken(header.slice(7),config.jwtSecret);
     if(!identity.sid) throw Object.assign(new Error("Session-bound authentication required."),{statusCode:401});
     const db=getPool();
-    const r=await db.query(`select s.user_id,u.status,
+    const r=await db.query(`select s.user_id,u.status,s.credential_setup_required,
       coalesce(json_agg(distinct role.role_code) filter(where role.role_code is not null),'[]'::json) as roles
       from auth_session s join app_user u on u.id=s.user_id
       left join app_user_role ur on ur.user_id=u.id left join app_role role on role.id=ur.role_id
@@ -63,6 +64,7 @@ async function auth(req){
     // Authorization must use current database roles, never stale role claims from a signed token.
     identity.roles=withCurrentRoles(identity,Array.isArray(r.rows[0].roles)?r.rows[0].roles:JSON.parse(r.rows[0].roles||"[]")).roles;
     identity.permissions=(await db.query("select permission_code from app_user_permission where user_id=$1",[identity.sub])).rows.map(row=>row.permission_code);
+    identity.credential_setup_required=Boolean(r.rows[0].credential_setup_required);
     await db.query("update auth_session set last_seen_at=now() where id=$1",[identity.sid]);
     return identity;
   } catch(e){ throw Object.assign(new Error(e.message),{statusCode:e.statusCode===403?403:401,code:"UNAUTHENTICATED"}); }
@@ -126,6 +128,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && p==="api/v1/auth/member-invitation/claim") return ok(res,await membershipAdminBulk.claimMemberInvitation(await body(req)),requestId);
     if(req.method==="POST" && p==="api/v1/auth/register") { publicRateLimit(req,"register",5,60000); return ok(res,await membership.register(await body(req),requestId),requestId,201); }
     if(req.method==="GET" && p==="api/v1/membership/products") return ok(res,await membership.listMembershipProducts(),requestId);
+    if(req.method==="POST" && p==="api/v1/auth/one-time-session/redeem") { publicRateLimit(req,"one-time-session-redeem",12,60000); const b=await body(req); return ok(res,await accountSecurity.redeemOneTimeSessionLink(b.token,requestId,{ip:clientIp(req),userAgent:req.headers["user-agent"]||null}),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/login") {
       const b=await body(req); publicRateLimit(req,"login:"+String(b.email||"").trim().toLowerCase(),20,60000); return ok(res,await membership.login(b.email,b.password,requestId,{ip:clientIp(req),userAgent:req.headers["user-agent"]||null}),requestId);
     }
@@ -151,6 +154,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/admin/users/")) { const identity=await auth(req); return ok(res,await userAdmin.updateUser(identity,parts[4],await body(req),requestId),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="revoke-sessions") { const identity=await auth(req); const b=await body(req); return ok(res,await userAdmin.revokeSessions(identity,parts[4],requestId,b.reason),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="reset-password") { const identity=await auth(req); const b=await body(req); return ok(res,await userAdmin.resetPassword(identity,parts[4],b.password,requestId,b.reason),requestId); }
+    if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/users/") && parts[5]==="one-time-session-link") { const identity=await auth(req); const b=await body(req); const origin=resolveAllowedOrigin(req.headers.origin,config.corsOrigin); return ok(res,await accountSecurity.createOneTimeSessionLink(identity,parts[4],requestId,b.reason,origin),requestId); }
     if(req.method==="GET" && p==="api/v1/experience/demo-cases") return ok(res,await experience.listDemoCases(),requestId);
     if(req.method==="GET" && parts.length===5 && p.startsWith("api/v1/experience/demo-cases/")) return ok(res,await experience.getDemoCase(parts[4]),requestId);
     if(req.method==="GET" && p==="api/v1/experience/guides") { const q=query(req.url); return ok(res,await experience.listGuides(q.get("route")),requestId); }
@@ -269,7 +273,8 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && p==="api/v1/opportunity-inquiries") { const identity=await auth(req); return ok(res,await publicOpportunity.listInquiries(identity.sub,{type:query(req.url).get("type"),status:query(req.url).get("status")}),requestId); }
     if(req.method==="PATCH" && parts.length===4 && p.startsWith("api/v1/opportunity-inquiries/")) { const identity=await auth(req); const b=await body(req); return ok(res,await publicOpportunity.decideInquiry(parts[3],identity.sub,b,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/me/application-tracking") { const q=query(req.url); return ok(res,await applicationTracking.getApplicationTracking(identity.sub,{limit:q.get("limit")||undefined,offset:q.get("offset")||undefined,reference:q.get("reference")||undefined}),requestId); }
-    if(req.method==="GET" && p==="api/v1/me") return ok(res,{...(await membership.getMe(identity.sub)),permissions:identity.permissions||[]},requestId);
+    if(req.method==="GET" && p==="api/v1/me") return ok(res,{...(await membership.getMe(identity.sub)),permissions:identity.permissions||[],credential_setup_required:identity.credential_setup_required===true},requestId);
+    if(req.method==="PATCH" && p==="api/v1/me/account") return ok(res,await accountSecurity.updateOwnCredentials(identity,await body(req),requestId),requestId);
     if(req.method==="PATCH" && p==="api/v1/me/profile") return ok(res,await membership.updateProfile(identity.sub,await body(req),requestId),requestId);
     if(req.method==="GET" && p==="api/v1/membership/history") return ok(res,await membership.history(identity.sub),requestId);
     if(req.method==="GET" && p==="api/v1/membership/applications/me") return ok(res,await membership.listMyApplications(identity.sub),requestId);
