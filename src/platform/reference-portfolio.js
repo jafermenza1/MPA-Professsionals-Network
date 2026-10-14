@@ -85,7 +85,13 @@ export async function previewReferenceCsv(identity,key,filename,csv){
  const headers=[];let cell="",quoted=false;for(let i=0;i<headerLine.length;i++){const ch=headerLine[i];if(ch==="\""&&quoted&&headerLine[i+1]==="\""){cell+="\"";i++;}else if(ch==="\"")quoted=!quoted;else if(ch===","&&!quoted){headers.push(cell.trim());cell="";}else cell+=ch;}headers.push(cell.trim());
  const mapping={};for(const target of ["code","label","description","sort_order","active","parent_code","aliases"]){const found=headers.find(h=>h.toLowerCase()===target);if(found)mapping[target]=found;}
  const rows=parseCsv(csv,mapping);
- return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row)};
+ const db=getPool();const dataset=(await db.query("select id from reference_dataset where dataset_key=$1 and status='active'",[key])).rows[0];if(!dataset)throw fail(404,"Reference dataset was not found.","NOT_FOUND");
+ const version=(await db.query("select id from reference_dataset_version where dataset_id=$1 and status in ('draft','validated','submitted','approved','published') order by case when status in ('draft','validated','submitted','approved') then 0 else 1 end,created_at desc limit 1",[dataset.id])).rows[0];
+ const existing=new Set(version?(await db.query("select code from reference_item where dataset_version_id=$1",[version.id])).rows.map(x=>x.code):[]);
+ const seen=new Set(),errors=[],parents=new Map();
+ for(const row of rows){const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and Label are required; Code must use letters, numbers, dot, underscore or hyphen."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code in this file."});seen.add(code);if(parent){if(parent===code)errors.push({row:row.__row,message:"An item cannot be its own parent."});else if(!existing.has(parent)&&!rows.some(candidate=>clean(candidate.code,80).toUpperCase()===parent))errors.push({row:row.__row,message:"Parent code "+parent+" is not in the file or current working copy."});parents.set(code,parent);}}
+ for(const [code,parent] of parents){const visited=new Set([code]);let cursor=parent;while(cursor&&parents.has(cursor)){if(visited.has(cursor)){errors.push({row:rows.find(x=>clean(x.code,80).toUpperCase()===code)?.__row||0,message:"Parent relationships contain a cycle involving "+code+"."});break;}visited.add(cursor);cursor=parents.get(cursor);}}
+ return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row),errors,canImport:errors.length===0};
 }
 export async function importReferenceCsv(identity,key,filename,csv,mapping={}){
  assertReferenceAdmin(identity);
