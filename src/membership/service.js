@@ -445,12 +445,13 @@ export async function reverseMembershipPayment(paymentId,actorId,input,requestId
   return withTransaction(async db=>{
     const reason=String(input.reason||"").trim();
     if(reason.length<8) throw httpError(400,"Provide a clear reason of at least 8 characters for the refund or reversal.","REVERSAL_REASON_REQUIRED");
-    const row=(await db.query(`select pt.*,ap.application_id,a.user_id,a.status as application_status
-      from payment_transaction pt
-      join membership_application_payment ap on ap.payment_transaction_id=pt.id
-      join membership_application a on a.id=ap.application_id
-      where pt.id=$1 for update of pt,a`,[paymentId])).rows[0];
-    if(!row) throw httpError(404,"Membership payment not found.","NOT_FOUND");
+    const link=(await db.query("select application_id from membership_application_payment where payment_transaction_id=$1",[paymentId])).rows[0];
+    if(!link) throw httpError(404,"Membership payment not found.","NOT_FOUND");
+    // Keep lock order consistent with activation: application first, then payment.
+    const app=(await db.query("select id,user_id,status from membership_application where id=$1 for update",[link.application_id])).rows[0];
+    const payment=(await db.query("select * from payment_transaction where id=$1 for update",[paymentId])).rows[0];
+    if(!app||!payment) throw httpError(404,"Membership payment not found.","NOT_FOUND");
+    const row={...payment,application_id:link.application_id,user_id:app.user_id,application_status:app.status};
     const prior=(await db.query("select * from membership_payment_reversal where payment_transaction_id=$1",[paymentId])).rows[0];
     if(prior) return prior;
     if(row.status!=="succeeded") throw httpError(409,"Only a successfully verified membership payment can be refunded or reversed.","PAYMENT_NOT_REVERSIBLE");
