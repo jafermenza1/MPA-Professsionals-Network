@@ -79,11 +79,11 @@ export async function saveReferenceItem(identity,key,input,itemId=null){
   return row;
  });
 }
-export async function previewReferenceCsv(identity,key,filename,csv){
+export async function previewReferenceCsv(identity,key,filename,csv,providedMapping={}){
  assertReferenceAdmin(identity);
  const headerLine=String(csv||"").replace(/^\uFEFF/,"").split(/\r?\n/,1)[0]||"";
  const headers=[];let cell="",quoted=false;for(let i=0;i<headerLine.length;i++){const ch=headerLine[i];if(ch==="\""&&quoted&&headerLine[i+1]==="\""){cell+="\"";i++;}else if(ch==="\"")quoted=!quoted;else if(ch===","&&!quoted){headers.push(cell.trim());cell="";}else cell+=ch;}headers.push(cell.trim());
- const mapping={};for(const target of ["code","label","description","sort_order","active","parent_code","aliases"]){const found=headers.find(h=>h.toLowerCase()===target);if(found)mapping[target]=found;}
+ const suggested={};for(const target of ["code","label","description","sort_order","active","parent_code","aliases"]){const found=headers.find(h=>h.toLowerCase()===target);if(found)suggested[target]=found;}const mapping=Object.keys(providedMapping||{}).length?providedMapping:suggested;
  const complete=Boolean(mapping.code&&mapping.label);
  const rows=parseCsv(csv,mapping,!complete);
  if(!complete)return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row),errors:[],canImport:false};
