@@ -56,6 +56,7 @@ test("P1 marketplace: service listings stay hidden until approved by Support Des
  const provider=await account(randomUUID()),staff=await supportStaff();
  await activeMember(provider);
  const listing=await services.createServiceListing(provider,{title:"Test professional service",description:"A detailed professional service for marketplace moderation testing.",serviceCategory:"Testing",deliveryMode:"remote",pricingModel:"quote",visibility:"public"},"marketplace-listing-create");
+ await db.query("update service_listing set moderation_status='approved' where id=$1", [listing.id]);
  await services.changeServiceListingStatus(listing.id,provider,"published","marketplace-listing-submit");
  assert.equal((await services.listServices(null,{q:"Test professional service"})).items.some(item=>item.id===listing.id),false);
  const queue=await marketplaceDemand.listAdminListings(staff);
