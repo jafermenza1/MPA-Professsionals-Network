@@ -10,6 +10,15 @@ async function audit(db,actor,action,type,id,requestId,metadata={}) {
 async function activeMember(db,userId){
   return (await db.query("select 1 where "+ACTIVE_MEMBER_SQL,[userId])).rowCount>0;
 }
+async function assertServiceListingAccess(db,row,userId){
+ if(row.organization_id){
+  const membership=(await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[row.organization_id,userId])).rows[0];
+  if(!membership||!["owner","administrator","recruiter","project_manager"].includes(membership.role_code)) throw error(403,"An active organization owner or authorized manager is required to manage this listing.","ORGANIZATION_FORBIDDEN");
+  return membership;
+ }
+ const organization=await assertServiceListingAccess(db,row,userId);
+ return null;
+}
 async function professionalVerified(db,userId){
   return (await db.query("select 1 from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=$1 and vc.status='verified' and lower(vc.claim_code_snapshot)=any($2::text[]) limit 1",[userId,PROFESSIONAL_CLAIMS])).rowCount>0;
 }
@@ -65,11 +74,16 @@ export function allowedSessionTransition(from,to){ return (SESSION_TRANSITIONS[f
 
 export async function createServiceListing(userId,input,requestId){
   return withTransaction(async db=>{
-    if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to offer a service.","MEMBERSHIP_REQUIRED");
+    const organizationId=input.organizationId||null;
+    if(organizationId){
+      const membership=(await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[organizationId,userId])).rows[0];
+      if(!membership||!["owner","administrator","recruiter","project_manager"].includes(membership.role_code)) throw error(403,"An active organization owner or authorized manager is required to create this listing.","ORGANIZATION_FORBIDDEN");
+      if(membership.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
+    } else if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to offer a service.","MEMBERSHIP_REQUIRED");
     if(!input.title||!input.description||!input.serviceCategory) throw error(400,"title, description and serviceCategory are required.","VALIDATION_ERROR");
     const pricing=input.pricingModel||"quote";
     if(!["free","fixed","hourly","quote"].includes(pricing)) throw error(400,"Unsupported pricing model.","VALIDATION_ERROR");
-    const row=(await db.query("insert into service_listing(provider_user_id,title,description,service_category,delivery_mode,location_label,pricing_model,price_amount,currency,visibility,max_active_requests) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *",[userId,input.title,input.description,input.serviceCategory,input.deliveryMode||"remote",input.locationLabel||null,pricing,input.priceAmount??null,input.currency||null,input.visibility||"members",input.maxActiveRequests??null])).rows[0];
+    const row=(await db.query("insert into service_listing(provider_user_id,organization_id,title,description,service_category,delivery_mode,location_label,pricing_model,price_amount,currency,visibility,max_active_requests) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *",[userId,organizationId,input.title,input.description,input.serviceCategory,input.deliveryMode||"remote",input.locationLabel||null,pricing,input.priceAmount??null,input.currency||null,input.visibility||"members",input.maxActiveRequests??null])).rows[0];
     await audit(db,userId,"service.listing_created","service_listing",row.id,requestId);
     return row;
   });
@@ -79,7 +93,7 @@ export async function updateServiceListing(listingId,userId,input,requestId){
   return withTransaction(async db=>{
     const row=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
-    if(row.provider_user_id!==userId) throw error(403,"Only the service provider can edit this listing.","FORBIDDEN");
+    await assertServiceListingAccess(db,row,userId);
     if(row.status==="closed") throw error(409,"Closed service listings cannot be edited.","INVALID_STATE");
     const updated=(await db.query("update service_listing set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,title=coalesce($1,title),description=coalesce($2,description),service_category=coalesce($3,service_category),delivery_mode=coalesce($4,delivery_mode),location_label=coalesce($5,location_label),pricing_model=coalesce($6,pricing_model),price_amount=coalesce($7,price_amount),currency=coalesce($8,currency),visibility=coalesce($9,visibility),max_active_requests=coalesce($10,max_active_requests),updated_at=now() where id=$11 returning *",[input.title||null,input.description||null,input.serviceCategory||null,input.deliveryMode||null,input.locationLabel||null,input.pricingModel||null,input.priceAmount??null,input.currency||null,input.visibility||null,input.maxActiveRequests??null,listingId])).rows[0];
     await audit(db,userId,"service.listing_updated","service_listing",listingId,requestId);
@@ -93,7 +107,8 @@ export async function changeServiceListingStatus(listingId,userId,status,request
     const row=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
     if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
-    if(status==="published" && !(await activeMember(db,userId))) throw error(403,"An active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
+    if(status==="published" && !organization && !(await activeMember(db,userId))) throw error(403,"An active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
+    if(status==="published" && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
     if(row.status==="closed" && status!=="closed") throw error(409,"Closed service listings cannot be reopened.","INVALID_STATE");
     const updated=(await db.query("update service_listing set status=$1,updated_at=now() where id=$2 returning *",[status,listingId])).rows[0];
     await audit(db,userId,"service.listing_status_changed","service_listing",listingId,requestId,{from:row.status,to:status});
@@ -102,19 +117,19 @@ export async function changeServiceListingStatus(listingId,userId,status,request
 }
 
 export async function listServices(viewerId=null,filters={}){
-  const db=getPool(); const args=[]; const where=["s.status='published'","s.moderation_status='approved'","exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))"];
+  const db=getPool(); const args=[]; const where=["s.status='published'","s.moderation_status='approved'","((s.organization_id is not null and exists (select 1 from organization o where o.id=s.organization_id and o.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))))"];
   if(viewerId){ where.push("(s.visibility='public' or s.visibility='members')"); }
   else where.push("s.visibility='public'");
   if(filters.category){ args.push(String(filters.category)); where.push("s.service_category=$"+args.length); }
   if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(s.title ilike $"+args.length+" or s.description ilike $"+args.length+" or s.service_category ilike $"+args.length+")"); }
   const limit=Math.min(Math.max(Number(filters.limit)||25,1),100),offset=Math.max(Number(filters.offset)||0,0);
-  const rows=(await db.query("select s.id,s.provider_user_id,s.title,s.description,s.service_category,s.delivery_mode,s.location_label,s.pricing_model,s.price_amount,s.currency,s.visibility,s.created_at,p.display_name from service_listing s join person p on p.user_id=s.provider_user_id where "+where.join(" and ")+" order by s.created_at desc limit "+limit+" offset "+offset,args)).rows;
+  const rows=(await db.query("select s.id,s.provider_user_id,s.organization_id,s.title,s.description,s.service_category,s.delivery_mode,s.location_label,s.pricing_model,s.price_amount,s.currency,s.visibility,s.created_at,coalesce(o.display_name,p.display_name) display_name from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where "+where.join(" and ")+" order by s.created_at desc limit "+limit+" offset "+offset,args)).rows;
   return {items:rows,limit,offset};
 }
 
 export async function getServiceListing(listingId,viewerId=null){
   const db=getPool();
-  const row=(await db.query("select s.*,p.display_name provider_name from service_listing s join person p on p.user_id=s.provider_user_id where s.id=$1 and s.status='published' and s.moderation_status='approved' and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
+  const row=(await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.id=$1 and s.status='published' and s.moderation_status='approved' and ((s.organization_id is not null and exists (select 1 from organization org where org.id=s.organization_id and org.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)))) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
   if(!row) throw error(404,"Service listing not found or not visible.","NOT_FOUND");
   return row;
 }
@@ -122,7 +137,9 @@ export async function getServiceListing(listingId,viewerId=null){
 export async function requestService(listingId,requesterId,input,requestId){
   return withTransaction(async db=>{
     const listing=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
-    if(!listing||listing.status!=="published"||listing.visibility==="private"||!(await activeMember(db,listing.provider_user_id))) throw error(404,"Service listing is not available.","NOT_FOUND");
+    if(!listing||listing.status!=="published"||listing.moderation_status!=="approved"||listing.visibility==="private") throw error(404,"Service listing is not available.","NOT_FOUND");
+    if(listing.organization_id){const org=(await db.query("select verification_status from organization where id=$1",[listing.organization_id])).rows[0];if(!org||org.verification_status!=="verified")throw error(404,"Service listing is not available.","NOT_FOUND");}
+    else if(!(await activeMember(db,listing.provider_user_id))) throw error(404,"Service listing is not available.","NOT_FOUND");
     if(listing.visibility!=="public"&&!(await activeMember(db,requesterId))) throw error(403,"An active membership is required to request a member-only service.","MEMBERSHIP_REQUIRED");
     if(listing.provider_user_id===requesterId) throw error(409,"You cannot request your own service.","SELF_REQUEST");
     if(listing.max_active_requests){
