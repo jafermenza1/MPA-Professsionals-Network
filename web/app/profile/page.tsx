@@ -31,6 +31,7 @@ type Profile = {
   bio: string | null;
   visibility: string | null;
   completion_percent: number;
+  roles?: string[];
 };
 type Preferences = {
   email_enabled: boolean;
@@ -99,6 +100,7 @@ export default function Profile() {
   const [profile, setProfile] = useState<Profile | null>(null),
     [form, setForm] = useState(blank),
     [tokenDraft, setTokenDraft] = useState("");
+  const [organizationOnly, setOrganizationOnly] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>({
     email_enabled: true,
     sms_enabled: true,
@@ -143,8 +145,17 @@ export default function Profile() {
     setError("");
     setNotice("");
     try {
-      const [me, prefs, tp, tv] = await Promise.all([
-        api<Profile>("/api/v1/me", {}, token),
+      const me = await api<Profile>("/api/v1/me", {}, token);
+      const roles = Array.isArray(me.roles) ? me.roles : [];
+      if (!roles.some(role => ["member", "professional"].includes(role))) {
+        setProfile(me);
+        setOrganizationOnly(true);
+        setNotice("");
+        setError("");
+        return;
+      }
+      setOrganizationOnly(false);
+      const [prefs, tp, tv] = await Promise.all([
         api<Preferences>("/api/v1/notifications/preferences", {}, token),
         api<TalentProfile>("/api/v1/me/talent-profile", {}, token),
         api<TalentVisibility>("/api/v1/me/talent-visibility", {}, token),
@@ -354,6 +365,16 @@ export default function Profile() {
   }
   const update = (key: keyof typeof blank, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+  if (organizationOnly) return (
+    <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
+      <Card>
+        <div className="eyebrow">Organization workspace</div>
+        <h1 className="h1">This account uses an organization profile.</h1>
+        <p className="muted">Professional directory profiles are separate from organization profiles. This account cannot access or edit a professional profile. Open the organization workspace to manage organizations you are authorized to access.</p>
+        <p><a className="btn btn-primary" href="/organizations">Open organization workspace</a></p>
+      </Card>
+    </div>
+  );
   return (
     <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
       <div>
