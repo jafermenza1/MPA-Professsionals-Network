@@ -121,10 +121,17 @@ export async function changeServiceListingStatus(listingId,userId,status,request
     const row=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
     const organization=await assertServiceListingAccess(db,row,userId);
-    if(status==="published" && row.moderation_status!=="approved") throw error(409,"This listing must be approved by MPA Support Desk before it can be published.","MODERATION_REQUIRED");
+    if(row.status==="closed" && status!=="closed") throw error(409,"Closed service listings cannot be reopened.","INVALID_STATE");
+    if(status==="published" && row.moderation_status!=="approved"){
+      if(row.moderation_status==="rejected") throw error(409,"This listing was rejected and cannot be resubmitted. Create a new listing if the offer has materially changed.","LISTING_REJECTED");
+      if(row.organization_id && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can submit a service listing.","ORGANIZATION_NOT_VERIFIED");
+      if(!row.organization_id && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to submit a service listing.","MEMBERSHIP_REQUIRED");
+      const submitted=(await db.query("update service_listing set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,updated_at=now() where id=$1 returning *",[listingId])).rows[0];
+      await audit(db,userId,"service.listing_submitted_for_review","service_listing",listingId,requestId,{from:row.status,to:"draft"});
+      return submitted;
+    }
     if(status==="published" && row.organization_id && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
     if(status==="published" && !row.organization_id && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
-    if(row.status==="closed" && status!=="closed") throw error(409,"Closed service listings cannot be reopened.","INVALID_STATE");
     const updated=(await db.query("update service_listing set status=$1,updated_at=now() where id=$2 returning *",[status,listingId])).rows[0];
     await audit(db,userId,"service.listing_status_changed","service_listing",listingId,requestId,{from:row.status,to:status});
     return updated;
@@ -413,10 +420,17 @@ export async function changeMentorStatus(profileId,userId,status,requestId){
     const p=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!p) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(p.user_id!==userId) throw error(403,"Only the mentor can manage this profile.","FORBIDDEN");
-    if(status==="active" && p.moderation_status!=="approved") throw error(409,"This mentorship offer must be approved by MPA Support Desk before it can be published.","MODERATION_REQUIRED");
+    if(p.status==="closed"&&status!=="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
+    if(status==="active" && p.moderation_status!=="approved"){
+      if(p.moderation_status==="rejected") throw error(409,"This mentorship offer was rejected and cannot be resubmitted. Update the offer through a new profile if the opportunity has materially changed.","LISTING_REJECTED");
+      if(!(await activeMember(db,userId))) throw error(403,"A current active membership is required to submit a mentor profile.","MEMBERSHIP_REQUIRED");
+      if(!(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to submit a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
+      const submitted=(await db.query("update mentor_profile set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,updated_at=now() where id=$1 returning *",[profileId])).rows[0];
+      await audit(db,userId,"mentorship.offer_submitted_for_review","mentor_profile",profileId,requestId,{from:p.status,to:"draft"});
+      return submitted;
+    }
     if(status==="active" && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a mentor profile.","MEMBERSHIP_REQUIRED");
     if(status==="active" && !(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to activate a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
-    if(p.status==="closed"&&status!=="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
     const row=(await db.query("update mentor_profile set status=$1,updated_at=now() where id=$2 returning *",[status,profileId])).rows[0];
     await audit(db,userId,"mentorship.profile_status_changed","mentor_profile",profileId,requestId,{from:p.status,to:status});
     return row;
