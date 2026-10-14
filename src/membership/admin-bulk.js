@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getPool, withTransaction } from "../platform/db.js";
 import { hashPassword, normalizeEmail, normalizePhone } from "./identity.js";
+import { makeXlsx } from "../platform/reports.js";
 
 function problem(status,message,code="BUSINESS_RULE"){const e=new Error(message);e.statusCode=status;e.code=code;return e}
 const IMPORT_ROLES=["system_admin","admin","membership_reviewer","finance_officer"];
@@ -127,8 +128,10 @@ export async function exportMembers(identity,{q="",status="",format="csv"}={},re
  const headers=["legacy_member_id","email","phone","full_name","membership_number","product_code","product_name","status","start_date","end_date","source","created_at"];
  const esc=v=>{let s=v==null?"":v instanceof Date?v.toISOString().slice(0,10):String(v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
  const csv=[headers.join(","),...rows.map(row=>headers.map(h=>esc(row[h])).join(","))].join("\r\n")+"\r\n";
+ const filename="mpa-members-"+new Date().toISOString().slice(0,10)+(format==="xlsx"?".xlsx":".csv");
+ const buffer=format==="xlsx"?makeXlsx({report:{title:"MPA member directory",scope:"Restricted platform PII",definition:"Member contact and membership details. Treat this export as confidential.",columns:headers},filters:{q,status},generatedAt:new Date().toISOString(),rows:rows.map(row=>Object.fromEntries(headers.map(h=>[h,row[h] instanceof Date?row[h].toISOString():row[h]??""))),totals:{rows:rows.length}}):Buffer.from(csv,"utf8");
  await getPool().query("insert into audit_log(actor_user_id,action,resource_type,request_id,outcome,metadata) values($1,'membership.exported','membership_record',$2,'success',$3)",[identity.sub,requestId,JSON.stringify({format,rowCount:rows.length,filters:{q,status}})]);
- return {csv,rowCount:rows.length,filename:"mpa-members-"+new Date().toISOString().slice(0,10)+".csv"};
+ return {buffer,rowCount:rows.length,filename,contentType:format==="xlsx"?"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":"text/csv; charset=utf-8"};
 }
 export async function claimMemberInvitation({token,password}){
  if(typeof token!=="string"||token.length<32)throw problem(400,"A valid member invitation token is required.","INVALID_INVITATION");
