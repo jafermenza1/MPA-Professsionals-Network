@@ -34,16 +34,21 @@ export async function updateProfessionalProfile(userId,input,requestId){
   if(portfolioUrl){let parsed;try{parsed=new URL(portfolioUrl)}catch{throw error(400,"portfolioUrl must be a valid HTTPS URL.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"portfolioUrl must use HTTPS.","VALIDATION_ERROR")}
   await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),education_summary=coalesce($9,education_summary),qualifications=coalesce($10,qualifications),skills=coalesce($11::jsonb,skills),languages=coalesce($12::jsonb,languages),certifications=coalesce($13::jsonb,certifications),portfolio_url=coalesce($14,portfolio_url),updated_at=now() where id=$15",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,input.educationSummary===undefined?null:String(input.educationSummary||"").trim(),input.qualifications===undefined?null:String(input.qualifications||"").trim(),skills===null?null:JSON.stringify(skills),languages===null?null:JSON.stringify(languages),certifications===null?null:JSON.stringify(certifications),portfolioUrl,p.id]);
   if(Array.isArray(input.references)){
+   const allowed=["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range"];
+   for(const relationType of allowed) await db.query("delete from professional_profile_reference where profile_id=$1 and relation_type=$2",[p.id,relationType]);
+   const seenReferences=new Set();
    for(const ref of input.references){
-    const allowed=["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range"];
+    if(!allowed.includes(ref.relationType)) throw error(400,"Unsupported professional reference relation.","INVALID_REFERENCE");
+    const referenceKey=ref.relationType+":"+ref.referenceItemId;
+    if(seenReferences.has(referenceKey)) continue;
+    seenReferences.add(referenceKey);
     if(!allowed.includes(ref.relationType)) throw error(400,"Unsupported professional reference relation.","INVALID_REFERENCE");
     const item=(await db.query("select ri.id,ri.code from reference_item ri join reference_dataset_version rv on rv.id=ri.dataset_version_id join reference_dataset rd on rd.id=rv.dataset_id where ri.id=$1 and rv.status='published' and rd.domain=$2 and ri.active=true",[ref.referenceItemId,ref.relationType])).rows[0];
     if(!item) throw error(400,"Reference item is not from a published dataset for the requested relation.","INVALID_REFERENCE");
     const customValue=String(ref.customValue||"").trim();
     if(item.code==="OTHER"&&!customValue) throw error(400,"Enter a value after selecting Other.","OTHER_VALUE_REQUIRED");
     if(item.code!=="OTHER"&&customValue) throw error(400,"Custom values are accepted only when Other is selected.","UNEXPECTED_CUSTOM_VALUE");
-    await db.query("delete from professional_profile_reference where profile_id=$1 and relation_type=$2",[p.id,ref.relationType]);
-    await db.query("insert into professional_profile_reference(profile_id,reference_item_id,relation_type,is_primary,custom_value) values($1,$2,$3,true,$4)",[p.id,ref.referenceItemId,ref.relationType,customValue||null]);
+    await db.query("insert into professional_profile_reference(profile_id,reference_item_id,relation_type,is_primary,custom_value) values($1,$2,$3,$4,$5)",[p.id,ref.referenceItemId,ref.relationType,ref.relationType==="language"?false:true,customValue||null]);
    }
   }
   if(Array.isArray(input.experience)){
