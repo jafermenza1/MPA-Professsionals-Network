@@ -8,12 +8,13 @@ import * as serviceMentorship from "../../src/services-mentorship/service.js";
 import * as publicOpportunity from "../../src/platform/public-opportunity.js";
 
 function identity(suffix) {
+  const digits = suffix.replace(/\\D/g, "").slice(0, 8).padEnd(8, "7");
   return {
     email: `p0-${suffix}@example.test`,
     password: "P0BusinessInvariantPassword!2026",
     firstName: "P0",
     lastName: `Invariant${suffix.slice(0, 8)}`,
-    phone: "09" + String(Date.now()).slice(-8) + String(Math.floor(Math.random() * 9))
+    phone: "09" + digits
   };
 }
 async function register(suffix) {
