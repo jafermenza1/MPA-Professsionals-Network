@@ -55,6 +55,8 @@ export default function Membership(){
  async function verifyPayment(app:Application,decision:string){if(!app.payment?.id)return;setBusy("payment:"+app.id);setError("");setNotice("");try{await api("/api/v1/payments/"+encodeURIComponent(app.payment.id)+"/verify",{method:"POST",body:JSON.stringify({decision,note:"Payment evidence reviewed in the membership workspace.",evidenceChecked:["amount","channel","reference"]})},token);setNotice("Payment verification decision recorded. Activate the membership only after the payment is confirmed.");await load();}catch(e){setError(e instanceof ApiError?e.message:"Payment verification failed.");}finally{setBusy("");}}
  function editPlan(plan:AdminPlan){
   const latest=plan.fee_rule_history?.[0];
+  const eligibility=(latest?.eligibility||plan.eligibility||{}) as Record<string,unknown>;
+  const eligibilityRequirements=Array.isArray(eligibility.requirements)?(eligibility.requirements as string[]).join("\n"):"";
   setEditingPlanCode(plan.product_code);
   setPlanDraft({
    productCode:plan.product_code,name:latest?.plan_name||plan.name,description:latest?.plan_description||plan.description||"",
@@ -65,7 +67,7 @@ export default function Membership(){
    gracePeriodDays:String(latest?.gracePeriodDays??plan.grace_period_days??0),
    effectiveFrom:new Date().toISOString().slice(0,10),active:plan.active,
    benefits:(Array.isArray(latest?.benefits)?latest!.benefits!:Array.isArray(plan.benefits)?plan.benefits as string[]:[]).join("\n"),
-   eligibility:(latest?.eligibility||plan.eligibility||{}) as Record<string,unknown>,eligibilityText:Array.isArray((latest?.eligibility||plan.eligibility||{} as Record<string,unknown>).requirements)?((latest?.eligibility||plan.eligibility as Record<string,unknown>).requirements as string[]).join("\n"):""
+   eligibility,eligibilityText:eligibilityRequirements
   });
  }
  async function savePlan(e:FormEvent){
