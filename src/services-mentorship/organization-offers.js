@@ -82,13 +82,15 @@ export async function listMyOrganizationMentorshipRequests(userId){
 }
 export async function respondOrganizationMentorshipRequest(requestId,userId,status,note,requestIdHeader){
  if(!["accepted","declined","completed"].includes(status))throw fail(400,"Choose accept, decline or complete for this request.","VALIDATION_ERROR");
+ const responseNote=clean(note,2000);
+ if(["declined","completed"].includes(status)&&!responseNote)throw fail(400,status==="declined"?"Explain why the request is being declined.":"Record the outcome before marking the mentorship request complete.",status==="declined"?"RESPONSE_NOTE_REQUIRED":"OUTCOME_NOTE_REQUIRED");
  return withTransaction(async db=>{
   const row=(await db.query("select r.*,x.organization_id from organization_mentorship_request r join organization_mentorship_offer x on x.id=r.offer_id where r.id=$1 for update of r",[requestId])).rows[0];
   if(!row)throw fail(404,"Organization mentorship request was not found.","NOT_FOUND");
   await organizationAccess(db,row.organization_id,userId);
   if(status==="completed"&&row.status!=="accepted")throw fail(409,"Only an accepted mentorship request can be marked completed.","INVALID_STATE");
   if(["accepted","declined"].includes(status)&&row.status!=="requested")throw fail(409,"This request has already been answered.","INVALID_STATE");
-  const updated=(await db.query("update organization_mentorship_request set status=$1,response_note=$2,responded_by=$3,responded_at=now(),updated_at=now() where id=$4 returning *",[status,clean(note,2000)||null,userId,requestId])).rows[0];
+  const updated=(await db.query("update organization_mentorship_request set status=$1,response_note=$2,responded_by=$3,responded_at=now(),updated_at=now() where id=$4 returning *",[status,responseNote||null,userId,requestId])).rows[0];
   await audit(db,userId,"organization.mentorship_request_responded","organization_mentorship_request",requestId,requestIdHeader,{status});
   return updated;
  });
