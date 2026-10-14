@@ -1,7 +1,7 @@
 {
   "name":"et-professionals-network","private":true,"version":"0.1.0","description":"Ethiopian Muslim Professionals Association platform foundation","type":"module",
   "workspaces":["web"],
-  "scripts":{"test":"node --test test/**/*.test.js","test:reference-portfolio":"node --test test/reference-portfolio/*.test.js test/p0/guided-profile.test.js","start":"node server.js","migrate":"node scripts/migrate.js","web:build":"npm run build --workspace @mpa/web","web:dev":"npm run dev --workspace @mpa/web","test:e2e":"playwright test"},
+  "scripts":{"test":"node --test test/**/*.test.js","test:reference-portfolio":"node --test test/reference-portfolio/*.test.js test/p0/guided-profile.test.js","test:marketplace":"node --test test/p0/marketplace-demand.test.js","start":"node server.js","migrate":"node scripts/migrate.js","web:build":"npm run build --workspace @mpa/web","web:dev":"npm run dev --workspace @mpa/web","test:e2e":"playwright test"},
   "engines":{"node":">=20"},
   "dependencies":{"pg":"^8.16.3"}
 }
