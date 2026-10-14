@@ -68,9 +68,9 @@ Gates are sequential for acceptance. A later gate may reveal work for an earlier
 | ID | Area | Initial observation / risk | Required proof or action |
 |---|---|---|---|
 | R-01 | Build/CI | Historical baseline lacked a lockfile and used `npm install`; Gate 1 later committed `package-lock.json` and switched CI to `npm ci`. | Preserve the committed lockfile and clean-install contract; current-head execution is deferred by maintainer billing instruction. |
-| R-02 | API contract | Two `GET /api/v1/me` handlers existed; the first returned only account/role data and shadowed the later profile response consumed by the dashboard. | **Fix committed on this branch:** removed the shadowing handler; CI passed on the resulting server change. Add a focused authenticated route contract test during G5. |
+| R-02 | API contract | Two `GET /api/v1/me` handlers existed; the first returned only account/role data and shadowed the later profile response consumed by the dashboard. | **Fix committed on this branch:** removed the shadowing handler; a historical automated test run passed on the resulting server change. Add a focused authenticated route contract test during G5. |
 | R-03 | Authorization | Tokens contain role claims while account sessions are checked against the database. A role change may leave old role claims active until expiry unless sessions are revoked or roles are reloaded. | Trace every privileged route and role mutation; test role grant/removal and session revocation. |
-| R-04 | Migrations | The original runner had no history ledger and reran every SQL file on every invocation. | **Fix under CI validation:** migration runner now records filename + SHA-256 checksum, refuses edits to already-applied migration files, and applies each new migration and ledger entry in one transaction. CI now runs the migration command twice. A fresh-DB rerun is not a substitute for validating an existing-schema upgrade. |
+| R-04 | Migrations | The original runner had no history ledger and reran every SQL file on every invocation. | **Fix covered by historical automated test validation; rerun manually on the current head:** migration runner now records filename + SHA-256 checksum, refuses edits to already-applied migration files, and applies each new migration and ledger entry in one transaction. The historical automated workflow ran the migration command twice; repeat this manually for current acceptance. A fresh-DB rerun is not a substitute for validating an existing-schema upgrade. |
 | R-05 | Rate limiting | Public request limits are held in an in-process map. | Assess process restarts, multiple instances and key retention; document the actual deployment assumptions and suitable bounded/shared alternative if needed. |
 | R-06 | End-to-end coverage | Configured CI commands do not by themselves prove every product workflow is connected. | Build an inventory from UI screens to routes, services, tables, state changes, audit and user-visible follow-up. |
 | R-07 | Branch feedback | The CI push filter initially excluded `reconciliation/**`, preventing immediate push validation on the agreed working branch. | Fixed in this branch by adding `reconciliation/**` to the push branches. Confirm the resulting workflow run. |
@@ -139,7 +139,7 @@ This roadmap is evidence-driven: green CI is tied to a specific commit and is no
 
 ## Gate 4 scoped-workflow execution update — 2026-10-10
 
-The authoritative workflow-by-workflow status, assertion coverage, current-head CI record and remaining UI/integration gaps are maintained in [the Workflow Reconciliation Matrix](31-workflow-reconciliation-matrix.md). The matrix is the acceptance detail; this roadmap remains the gate-level authority.
+The authoritative workflow-by-workflow status, assertion coverage, current-head manual test evidence and remaining UI/integration gaps are maintained in [the Workflow Reconciliation Matrix](31-workflow-reconciliation-matrix.md). The matrix is the acceptance detail; this roadmap remains the gate-level authority.
 
 Changes made on `reconciliation/holistic-gates` without merging or deploying:
 
