@@ -35,11 +35,11 @@ async function rawBody(req,limit=MAX_PRIVATE_UPLOAD_BYTES){
   for await (const chunk of req) { size+=chunk.length; if(size>limit) throw Object.assign(new Error("Uploaded file is too large."),{statusCode:413,code:"PAYLOAD_TOO_LARGE"}); chunks.push(chunk); }
   return Buffer.concat(chunks,size);
 }
-async function body(req){
+async function body(req,limit=1024*1024){
   let raw="";
   for await (const chunk of req) {
     raw+=chunk;
-    if(Buffer.byteLength(raw)>1024*1024) throw Object.assign(new Error("Request body too large."),{statusCode:413,code:"PAYLOAD_TOO_LARGE"});
+    if(Buffer.byteLength(raw)>limit) throw Object.assign(new Error("Request body too large."),{statusCode:413,code:"PAYLOAD_TOO_LARGE"});
   }
   if(!raw) return {};
   try { return JSON.parse(raw); } catch { throw Object.assign(new Error("Request body must be valid JSON."),{statusCode:400,code:"INVALID_JSON"}); }
@@ -138,7 +138,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/reference-portfolio/") && parts[5]==="import") { const identity=await auth(req); const b=await body(req); return ok(res,await referencePortfolio.importReferenceCsv(identity,parts[4],b.filename||"reference.csv",b.csv||""),requestId,201); }
     if(req.method==="GET" && parts.length===6 && p.startsWith("api/v1/admin/reference-portfolio/") && parts[5]==="export") { const identity=await auth(req); return ok(res,await referencePortfolio.exportReferenceCsv(identity,parts[4]),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/members/import-template") { const identity=await auth(req); const csv=membershipAdminBulk.memberImportTemplate(); res.writeHead(200,{"content-type":"text/csv; charset=utf-8","content-disposition":"attachment; filename=mpa-approved-members-template.csv","cache-control":"no-store","x-request-id":requestId}); return res.end(csv); }
-    if(req.method==="POST" && p==="api/v1/admin/members/import/preview") { const identity=await auth(req); return ok(res,await membershipAdminBulk.previewMemberImport(identity,await body(req),requestId),requestId,201); }
+    if(req.method==="POST" && p==="api/v1/admin/members/import/preview") { const identity=await auth(req); return ok(res,await membershipAdminBulk.previewMemberImport(identity,await body(req,6*1024*1024),requestId),requestId,201); }
     if(req.method==="POST" && parts.length===7 && p.startsWith("api/v1/admin/members/import/") && parts[6]==="apply") { const identity=await auth(req); return ok(res,await membershipAdminBulk.applyMemberImport(identity,parts[5],await body(req),requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/members/export") { const identity=await auth(req),q=query(req.url),out=await membershipAdminBulk.exportMembers(identity,{q:q.get("q"),status:q.get("status"),format:q.get("format")||"csv"},requestId); res.writeHead(200,{"content-type":out.contentType,"content-disposition":"attachment; filename="+out.filename,"content-length":String(out.buffer.length),"cache-control":"private, no-store","x-content-type-options":"nosniff","x-request-id":requestId}); return res.end(out.buffer); }
     if(req.method==="GET" && p==="api/v1/admin/reports") { const identity=await auth(req); return ok(res,reports.listReportCatalogue(identity),requestId); }
