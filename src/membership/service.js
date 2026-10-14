@@ -521,13 +521,14 @@ export async function history(userId){
 
 export async function listApplicationsForReview(){
   const db=getPool();
-  const r=await db.query(`select a.id,a.user_id,a.application_type,a.status,a.submitted_at,a.created_at,a.updated_at,a.data_snapshot,a.fee_snapshot,p.product_code,p.name,
+  const r=await db.query(`select a.id,a.user_id,a.tracking_reference,a.application_type,a.status,a.submitted_at,a.created_at,a.updated_at,a.data_snapshot,a.fee_snapshot,p.product_code,p.name,u.email,pe.display_name,
       (select mr.end_date from membership_record mr where mr.id=a.previous_membership_id) previous_membership_end_date,
-      (select jsonb_build_object('id',pt.id,'status',pt.status,'amount',pt.amount,'currency',pt.currency,'channel',pt.channel,'created_at',pt.created_at)
-       from membership_application_payment ap join payment_transaction pt on pt.id=ap.payment_transaction_id
+      (select jsonb_build_object('id',pt.id,'status',pt.status,'amount',pt.amount,'currency',pt.currency,'channel',pt.channel,'reference',pt.reference,'created_at',pt.created_at,'verified_at',pt.verified_at,'verification_note',pt.verification_note,'reconciliation_status',pr.reconciliation_status,'reconciliation_note',pr.note,'reversal',(select jsonb_build_object('type',rev.reversal_type,'reason',rev.reason,'evidence_reference',rev.evidence_reference,'created_at',rev.created_at) from membership_payment_reversal rev where rev.payment_transaction_id=pt.id))
+       from membership_application_payment ap join payment_transaction pt on pt.id=ap.payment_transaction_id left join payment_reconciliation pr on pr.payment_transaction_id=pt.id
        where ap.application_id=a.id order by pt.created_at desc limit 1) payment,
-      coalesce((select jsonb_agg(jsonb_build_object('decision',rv.decision,'note',rv.note,'createdAt',rv.created_at) order by rv.created_at desc) from membership_application_review rv where rv.application_id=a.id),'[]'::jsonb) review_history
-    from membership_application a join membership_product p on p.id=a.membership_product_id
+      coalesce((select jsonb_agg(jsonb_build_object('decision',rv.decision,'note',rv.note,'createdAt',rv.created_at,'reviewerId',rv.reviewer_id) order by rv.created_at desc) from membership_application_review rv where rv.application_id=a.id),'[]'::jsonb) review_history,
+      coalesce((select jsonb_agg(jsonb_build_object('id',aa.id,'fileObjectId',f.id,'fileName',f.original_name,'attachmentType',aa.attachment_type,'createdAt',aa.created_at) order by aa.created_at desc) from membership_application_attachment aa join file_object f on f.id=aa.file_object_id where aa.application_id=a.id),'[]'::jsonb) attachments
+    from membership_application a join membership_product p on p.id=a.membership_product_id join app_user u on u.id=a.user_id left join person pe on pe.user_id=a.user_id
     where a.status in ('submitted','in_review','correction_required','payment_pending','paid')
       or (a.status='activated' and exists(select 1 from membership_application_payment apx join payment_transaction ptx on ptx.id=apx.payment_transaction_id where apx.application_id=a.id and ptx.status='succeeded' and not exists(select 1 from membership_payment_reversal rtx where rtx.payment_transaction_id=ptx.id)))
     order by a.created_at asc`);
