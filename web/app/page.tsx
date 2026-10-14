@@ -8,6 +8,7 @@ import {
   HeartHandshake, Network, ClipboardCheck, LockKeyhole, UsersRound
 } from "lucide-react";
 import styles from "./landing-redesign.module.css";
+import LiveNetworkFeeds from "./live-network-feeds";
 
 const journeys = [
   { title: "Join as a professional", text: "Apply for membership, build your profile and discover ways to contribute.", href: "/apply", action: "Start application", icon: UserCheck },
@@ -133,6 +134,8 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <LiveNetworkFeeds />
 
       <section className={styles.section} aria-labelledby="capabilities-title">
         <div className={styles.capabilityPanel}>
