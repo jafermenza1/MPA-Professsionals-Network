@@ -236,3 +236,5 @@ The next work is **not** broad UX polishing. First manually validate and correct
 - Validate migrations and rollback/forward behavior on a disposable PostgreSQL database; test plan effective-date boundaries, unchanged historical application snapshots, fee mismatches, lifetime terms, leap-day and year-end validity, and expiry authorization.
 - Validate the membership plan admin experience with system-admin/member-management permissions and verify finance-only users cannot edit plans. Confirm that the refund record is not represented to users as a provider-side money movement.
 - Validation remains deferred: no tests, TypeScript checks, build, migrations, browser journeys, accessibility review or CI were run for this increment. PR #3 remains draft/open; do not merge or deploy.
+
+- Navigation follow-through: web/lib/identity-capabilities.ts is shared by the profile page and shell. Organization-only accounts no longer see the personal Profile navigation entry; accounts with an authorized organization workspace get an Organizations entry in desktop and mobile navigation. This is code-only and awaits the final browser/accessibility gate.
