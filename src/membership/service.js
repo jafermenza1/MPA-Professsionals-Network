@@ -216,7 +216,7 @@ export async function saveMembershipProduct(actorId,productCode,input,requestId)
     }
     const nextVersion=Number((await db.query("select coalesce(max(version),0)+1 version from membership_fee_rule where membership_product_id=$1",[product.id])).rows[0].version);
     // Close the previously open rule at the day before the new rule takes effect.
-    await db.query("update membership_fee_rule set effective_to=($1::date-1) where membership_product_id=$2 and effective_from<$1::date and (effective_to is null or effective_to >= $1::date)",[effectiveFrom,product.id]);
+    await db.query("update membership_fee_rule set effective_to=case when effective_from=$1::date then $1::date else ($1::date-1) end where membership_product_id=$2 and effective_from<=$1::date and (effective_to is null or effective_to >= $1::date)",[effectiveFrom,product.id]);
     const rule=(await db.query(`insert into membership_fee_rule(membership_product_id,version,base_amount,currency,billing_period,tax_amount,service_fee,eligibility_rules,effective_from,created_by,plan_name,plan_description,billing_model,duration_days,renewal_required,grace_period_days,benefits,eligibility)
       values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb) returning *`,[
       product.id,nextVersion,amount,currency,billingModel,Number(input.taxAmount||0),Number(input.serviceFee||0),
@@ -243,20 +243,22 @@ export async function createApplication(userId,input,requestId){
     const account=(await db.query("select id from app_user where id=$1 for update",[userId])).rows[0];
     if(!account) throw httpError(404,"Account not found.","NOT_FOUND");
     const prod=await product(db,input.productCode);
-    const active=await db.query("select * from membership_record where user_id=$1 and status='active' order by end_date desc nulls last limit 1",[userId]);
+    const activeFeeRule=(await db.query(`select * from membership_fee_rule
+      where membership_product_id=$1 and effective_from<=current_date and (effective_to is null or effective_to>=current_date)
+      order by effective_from desc,version desc limit 1`,[prod.id])).rows[0]||null;
+    const planBillingModel=activeFeeRule?.billing_model||prod.billing_model;
+    const planRenewalRequired=activeFeeRule?.renewal_required??prod.renewal_required;
+    const active=await db.query("select * from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) order by end_date desc nulls last limit 1",[userId]);
     const type=input.applicationType||"new";
     if(type==="new" && active.rows[0]) throw httpError(409,"An active membership already exists. Use renewal.","ACTIVE_MEMBERSHIP");
     if(type==="renewal"){
       if(!active.rows[0]) throw httpError(400,"Renewal requires an existing active membership.","RENEWAL_NOT_ELIGIBLE");
-      if(prod.billing_model==="lifetime" || !prod.renewal_required) throw httpError(400,"This membership product does not support renewal.","RENEWAL_NOT_SUPPORTED");
+      if(planBillingModel==="lifetime" || !planRenewalRequired) throw httpError(400,"This membership product does not support renewal.","RENEWAL_NOT_SUPPORTED");
     }
     const pending=await db.query("select id from membership_application where user_id=$1 and status in ('submitted','in_review','correction_required','approved','payment_pending','paid') limit 1",[userId]);
     if(pending.rows[0]) throw httpError(409,"You already have an active membership application.","APPLICATION_EXISTS");
     const me=await getMe(userId);
     const snapshot={person:{firstName:me.first_name,middleName:me.middle_name,lastName:me.last_name,displayName:me.display_name,phone:me.phone,dateOfBirth:me.date_of_birth,sex:me.sex,nationality:me.nationality},profile:{headline:me.headline,bio:me.bio}};
-    const activeFeeRule=(await db.query(`select * from membership_fee_rule
-      where membership_product_id=$1 and effective_from<=current_date and (effective_to is null or effective_to>=current_date)
-      order by version desc limit 1`,[prod.id])).rows[0]||null;
     const feeAmount=activeFeeRule
       ? Number(activeFeeRule.base_amount)+Number(activeFeeRule.tax_amount||0)+Number(activeFeeRule.service_fee||0)
       : amountFromProduct(prod);
