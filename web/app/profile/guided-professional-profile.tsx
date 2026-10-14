@@ -42,8 +42,10 @@ export default function GuidedProfessionalProfile(){
    if(!next.nationality&&account.nationality){const match=r.find(item=>item.dataset_key===groups.nationality&&item.label.toLowerCase()===String(account.nationality).toLowerCase());if(match)next.nationality=match.id;else{const other=r.find(item=>item.dataset_key===groups.nationality&&item.code==="OTHER");if(other){next.nationality=other.id;custom.nationality=account.nationality;}}}
    setSelectedRefs(next);setCustomRefs(custom);
    const langLabels=Array.isArray(p.languages)?p.languages:[];
-   setLanguageIds(r.filter(x=>x.dataset_key===groups.language&&langLabels.includes(x.label)&&x.code!=="OTHER").map(x=>x.id));
+   const selectedLanguageIds=r.filter(x=>x.dataset_key===groups.language&&langLabels.includes(x.label)&&x.code!=="OTHER").map(x=>x.id);
    const other=langLabels.filter(x=>!r.some(ref=>ref.dataset_key===groups.language&&ref.label===x));setOtherLanguage(other.join(", "));
+   const otherLanguageOption=r.find(x=>x.dataset_key===groups.language&&x.code==="OTHER");
+   setLanguageIds(other.length&&otherLanguageOption?[...selectedLanguageIds,otherLanguageOption.id]:selectedLanguageIds);
   }catch(e){setError(e instanceof ApiError?e.message:"Guided profile data could not be loaded. Retry without losing your entries.");}
   finally{setLoading(false);}
  },[token]);
@@ -56,9 +58,11 @@ export default function GuidedProfessionalProfile(){
    for(const [type,id] of Object.entries(selectedRefs)){if(id&&byId.get(id)?.code==="OTHER"&&!customRefs[type]?.trim())throw new Error("Please enter the custom value for every field set to Other.");}
    const languageOther=options(groups.language).find(item=>item.code==="OTHER");
    const otherLanguageValues=otherLanguage.split(",").map(v=>v.trim()).filter(Boolean);
-   references.push(...languageIds.map(referenceItemId=>({relationType:"language",referenceItemId,customValue:""})));
-   if(otherLanguageValues.length&&languageOther)references.push({relationType:"language",referenceItemId:languageOther.id,customValue:otherLanguageValues.join(", ")});
-   const selectedLanguageLabels=languageIds.map(id=>byId.get(id)?.label).filter((label):label is string=>Boolean(label));
+   const standardLanguageIds=languageIds.filter(id=>byId.get(id)?.code!=="OTHER");
+   references.push(...standardLanguageIds.map(referenceItemId=>({relationType:"language",referenceItemId,customValue:""})));
+   if(languageIds.includes(languageOther?.id||"")&&otherLanguageValues.length&&languageOther)references.push({relationType:"language",referenceItemId:languageOther.id,customValue:otherLanguageValues.join(", ")});
+   if(languageIds.includes(languageOther?.id||"")&&!otherLanguageValues.length)throw new Error("You selected Other under Languages. Enter at least one custom language.");
+   const selectedLanguageLabels=standardLanguageIds.map(id=>byId.get(id)?.label).filter((label):label is string=>Boolean(label));
    const languages=[...selectedLanguageLabels,...otherLanguageValues];
    const saved=await api<Profile>("/api/v1/me/talent-profile",{method:"PATCH",body:JSON.stringify({references,languages})},token);
    setProfile(saved);
@@ -152,9 +156,9 @@ export default function GuidedProfessionalProfile(){
      {renderReferenceField("experience_range","Years of experience",groups.experience_range)}
     </div>
     <div className="grid" style={{gap:6}}><label htmlFor="p1-languages">Languages</label>
-     <select id="p1-languages" multiple value={languageIds} onChange={e=>setLanguageIds(Array.from(e.target.selectedOptions).map(o=>o.value))} size={Math.min(6,Math.max(3,options(groups.language).length))} aria-describedby="p1-language-help">{options(groups.language).filter(x=>x.code!=="OTHER").map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select>
-     <p id="p1-language-help" className="muted">Use Ctrl (Windows) or Command (Mac) to choose more than one language.</p>
-     <label>Other languages (optional; separate multiple values with commas)<input value={otherLanguage} onChange={e=>setOtherLanguage(e.target.value)} maxLength={500} placeholder="For example, Somali, Tigrinya"/></label>
+     <select id="p1-languages" multiple value={languageIds} onChange={e=>setLanguageIds(Array.from(e.target.selectedOptions).map(o=>o.value))} size={Math.min(6,Math.max(3,options(groups.language).length))} aria-describedby="p1-language-help">{options(groups.language).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select>
+     <p id="p1-language-help" className="muted">Use Ctrl (Windows) or Command (Mac) to choose more than one language. Select Other to enter a language not listed.</p>
+     {languageIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Enter other languages (separate multiple values with commas)<input required value={otherLanguage} onChange={e=>setOtherLanguage(e.target.value)} maxLength={500} placeholder="For example, Somali, Tigrinya"/></label>:null}
     </div>
     <button className="btn btn-primary" disabled={saving||loading}>{saving?"Saving…":"Save classifications and languages"}</button>
    </form>
