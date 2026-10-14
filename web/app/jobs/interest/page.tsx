@@ -130,6 +130,8 @@ export default function JobInterestPage() {
     {inquiry ? <Card>
       <Badge>{consentSaved ? "Request submitted · consent recorded" : "Request submitted · private by default"}</Badge>
       <h2 className="h2" style={{ marginTop: 12 }}>Your reference: {inquiry.public_reference}</h2>
+      <label>Private continuation token<input readOnly value={inquiry.continuationToken} aria-label="Private continuation token" /></label>
+      <p className="muted">Save this token somewhere private. It lets you manage employer-sharing consent and view which organizations received your request. Anyone who obtains it may be able to access this request, so do not post or forward it.</p>
       <p>{notice || inquiry.nextStep || "MPA Support Desk will review your request and determine an appropriate next step."}</p>
       {error ? <p role="alert" style={{ color: "var(--danger, #b91c1c)" }}>{error}</p> : null}
       {!consentSaved ? <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
