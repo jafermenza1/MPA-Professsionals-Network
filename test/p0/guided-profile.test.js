@@ -61,6 +61,11 @@ test("P1: reference CSV import is staged, exportable and only changes public for
  assert.equal(invalid.status,"rejected");assert.ok(invalid.errors.length);
  const before=await referencePortfolio.listPublicReferenceSets();
  assert.equal(before.some(row=>row.code===analystCode),false);
+  const originalVersion=await referencePortfolio.listReferenceItems(identity,key);
+  const originalItem=originalVersion.items.find(item=>item.active);
+  assert.ok(originalItem,"a published reference item should be available to edit");
+  const edited=await referencePortfolio.saveReferenceItem(identity,key,{code:originalItem.code,label:originalItem.label,description:originalItem.description||"",sortOrder:originalItem.sort_order,active:originalItem.active},originalItem.id);
+  assert.equal(edited.code,originalItem.code);
  const csv='code,label,description,sort_order,active\n'+analystCode+',"Analyst, business","Business analysis",5,true\n'+otherCode+',Other,"Custom value",999,true';
  const imported=await referencePortfolio.importReferenceCsv(identity,key,"valid.csv",csv);
  assert.equal(imported.status,"imported");assert.equal(imported.inserted+imported.updated,2);
