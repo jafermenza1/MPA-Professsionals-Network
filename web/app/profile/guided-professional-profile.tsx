@@ -29,11 +29,12 @@ export default function GuidedProfessionalProfile(){
  const refresh=useCallback(async()=>{
   if(!token)return;setLoading(true);setError("");
   try{
-   const [r,p,e,items]=await Promise.all([
+   const [r,p,e,items,account]=await Promise.all([
     api<RefItem[]>("/api/v1/professional-reference-data",{},token),
     api<Profile>("/api/v1/me/talent-profile",{},token),
     api<Education[]>("/api/v1/me/education",{},token),
-    api<Portfolio[]>("/api/v1/me/portfolio",{},token)
+    api<Portfolio[]>("/api/v1/me/portfolio",{},token),
+    api<AccountProfile>("/api/v1/me",{},token)
    ]);
    setRefs(r);setProfile(p);setEducation(e);setEducationDrafts(e.map(asDraft));setPortfolio(items);
    const next:Record<string,string>={},custom:Record<string,string>={};
