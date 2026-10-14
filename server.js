@@ -134,6 +134,18 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && p==="api/v1/auth/member-invitation/claim") return ok(res,await membershipAdminBulk.claimMemberInvitation(await body(req)),requestId);
     if(req.method==="POST" && p==="api/v1/auth/register") { publicRateLimit(req,"register",5,60000); return ok(res,await membership.register(await body(req),requestId),requestId,201); }
     if(req.method==="GET" && p==="api/v1/membership/products") return ok(res,await membership.listMembershipProducts(),requestId);
+    if(req.method==="GET" && p==="api/v1/admin/membership/products") {
+      anyRoleOrPermission(identity,["system_admin","reviewer"],["members.view","members.manage"]);
+      return ok(res,await membership.listMembershipProductsForAdmin(),requestId);
+    }
+    if(req.method==="POST" && p==="api/v1/admin/membership/products") {
+      anyRoleOrPermission(identity,["system_admin"],["members.manage"]);
+      return ok(res,await membership.saveMembershipProduct(identity.sub,null,await body(req),requestId),requestId,201);
+    }
+    if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/membership/products/")) {
+      anyRoleOrPermission(identity,["system_admin"],["members.manage"]);
+      return ok(res,await membership.saveMembershipProduct(identity.sub,parts[5],await body(req),requestId),requestId);
+    }
     if(req.method==="POST" && p==="api/v1/auth/one-time-session/redeem") { publicRateLimit(req,"one-time-session-redeem",12,60000); const b=await body(req); return ok(res,await accountSecurity.redeemOneTimeSessionLink(b.token,requestId,{ip:clientIp(req),userAgent:req.headers["user-agent"]||null}),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/login") {
       const b=await body(req); publicRateLimit(req,"login:"+String(b.email||"").trim().toLowerCase(),20,60000); return ok(res,await membership.login(b.email,b.password,requestId,{ip:clientIp(req),userAgent:req.headers["user-agent"]||null}),requestId);
@@ -322,6 +334,10 @@ const server=http.createServer(async (req,res)=>{
     }
     if(req.method==="POST" && parts.length===5 && parts[0]==="api" && parts[1]==="v1" && parts[2]==="payments" && parts[4]==="verify") {
       anyRoleOrPermission(identity,["reviewer","finance_officer","system_admin"],["finance.manage"]); return ok(res,await membership.verifyPayment(parts[3],identity.sub,await body(req),requestId),requestId);
+    }
+    if(req.method==="POST" && parts.length===5 && parts[0]==="api" && parts[1]==="v1" && parts[2]==="payments" && parts[4]==="reverse") {
+      anyRoleOrPermission(identity,["finance_officer","system_admin"],["finance.manage"]);
+      return ok(res,await membership.reverseMembershipPayment(parts[3],identity.sub,await body(req),requestId),requestId);
     }
     if(req.method==="GET" && p==="api/v1/review/membership/applications") {
       const roles=Array.isArray(identity.roles)?identity.roles:[]; const permissions=Array.isArray(identity.permissions)?identity.permissions:[];
