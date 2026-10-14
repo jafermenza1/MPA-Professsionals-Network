@@ -278,6 +278,8 @@ export async function createApplication(userId,input,requestId){
     const planBillingModel=feeTermsComplete?activeFeeRule.billing_model:prod.billing_model;
     const planRenewalRequired=feeTermsComplete?activeFeeRule.renewal_required:prod.renewal_required;
     const planDurationDays=feeTermsComplete?activeFeeRule.duration_days:prod.duration_days;
+    if(planBillingModel==="recurring"&&(!Number.isInteger(Number(planDurationDays))||Number(planDurationDays)<1||Number(planDurationDays)>3650)) throw httpError(409,"This membership plan has no valid expiry duration configured. Contact membership support before applying.","PLAN_DURATION_INVALID");
+    if(planBillingModel==="lifetime"&&planDurationDays!==null) throw httpError(409,"This lifetime plan has conflicting expiry settings. Contact membership support before applying.","PLAN_DURATION_INVALID");
     const active=await db.query("select mr.*,mp.billing_model current_billing_model,mp.renewal_required current_renewal_required from membership_record mr left join membership_product mp on mp.id=mr.membership_product_id where mr.user_id=$1 and mr.status='active' and mr.start_date<=current_date and (mr.end_date is null or mr.end_date>=current_date) order by mr.end_date desc nulls last limit 1",[userId]);
     const type=input.applicationType||"new";
     if(type==="new" && active.rows[0]) throw httpError(409,"An active membership already exists. Use renewal.","ACTIVE_MEMBERSHIP");
@@ -431,7 +433,7 @@ export async function activateApplication(applicationId,actorId,requestId){
         and not exists (select 1 from membership_payment_reversal mr where mr.payment_transaction_id=pt.id)
       order by pt.created_at desc limit 1 for update of pt`,[applicationId])).rows[0];
     if(!pay) throw httpError(409,"No unreversed successful payment is linked to this application.","PAYMENT_NOT_CONFIRMED");
-    if(!fee||!Number.isFinite(Number(fee.amount))||!fee.currency||fee.durationDays===undefined||Number(pay.amount)!==Number(fee.amount)||String(pay.currency||"").trim().toUpperCase()!==String(fee.currency||"").trim().toUpperCase()){
+    if(!fee||!Number.isFinite(Number(fee.amount))||!fee.currency||fee.durationDays===undefined||(fee.billingModel==="recurring"&&(!Number.isInteger(Number(fee.durationDays))||Number(fee.durationDays)<1||Number(fee.durationDays)>3650))||(fee.billingModel==="lifetime"&&fee.durationDays!==null)||Number(pay.amount)!==Number(fee.amount)||String(pay.currency||"").trim().toUpperCase()!==String(fee.currency||"").trim().toUpperCase()){
       throw httpError(409,"The payment no longer matches the application’s saved fee terms. Membership has not been activated.","PAYMENT_AMOUNT_MISMATCH");
     }
     const previous=app.previous_membership_id ? (await db.query("select * from membership_record where id=$1 for update",[app.previous_membership_id])).rows[0] : null;
