@@ -210,3 +210,11 @@ The next work is **not** broad UX polishing. First manually validate and correct
 - Added request references to friendly API error messages when the server supplies a request ID.
 - Integrated shared feedback into services, mentorship, service demand, admin member import, reports, reference data, job-interest intake, invitation claim, guided profile and marketplace review.
 - Added responsive, theme-token-based styling. **No TypeScript check, build, automated test or browser/accessibility test has been run.** The whole UI still needs a route-by-route feedback audit and state-specific references/next steps where available.
+
+
+## Account & Security — code committed, not validated
+
+- Added a common account settings page for members and non-members to change username and password after confirming their current password.
+- Added administrator-triggered one-time sign-in email queueing, 20-minute expiry, one-time redemption, session revocation, required password setup, audit logging, and a migration storing only token hashes.
+- Added Account & Security navigation and a per-user admin action requiring an audit reason.
+- Email queueing is not proof of delivery. **No migration, TypeScript check, build, automated test, or browser test has run.**
