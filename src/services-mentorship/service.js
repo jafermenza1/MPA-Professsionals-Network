@@ -164,6 +164,12 @@ export async function requestService(listingId,requesterId,input,requestId){
   });
 }
 
+export async function listMyServiceListings(userId){
+ const db=getPool();
+ const roles=["owner","administrator","recruiter","project_manager"];
+ return (await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name,o.verification_status organization_verification_status from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.provider_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])) order by s.updated_at desc",[userId,roles])).rows;
+}
+
 export async function listMyServiceRequests(userId){
   const db=getPool();
   const orgRoles=["owner","administrator","recruiter","project_manager"];
