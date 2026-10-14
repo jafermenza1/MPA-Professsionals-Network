@@ -20,7 +20,8 @@
 
 - `test/p0/guided-profile.test.js`: education and profile fields survive reload; portfolio evidence remains optional/private; CSV import/export is staged and publication switches the public reference set.
 - `test/p0/marketplace-demand.test.js`: provider listing submission is checked through the actual moderation queue.
-- `test/p1/complete-user-journeys.test.js`: service request through accepted delivery, outcome acceptance and feedback; verified-organization service fulfillment; individual mentorship moderation/matching/session/completion/feedback; organization mentorship offer moderation/request/acceptance/completion; Support Desk demand-to-provider matching with provider acceptance and requester-visible follow-up.
+- `test/p1/complete-user-journeys.test.js`: service request through accepted delivery, outcome acceptance and feedback; verified-organization service fulfillment; individual mentorship moderation/matching/session/completion/feedback; organization mentorship offer moderation/request/acceptance/completion; Support Desk demand-to-provider matching with provider acceptance and requester-visible follow-up; organization verification blocker/evidence checklist visibility.
+- `test/membership/phase1.test.js`: administrator membership review queue includes a review-history collection.
 
 ## Deferred validation
 
