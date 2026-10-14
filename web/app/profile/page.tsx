@@ -15,6 +15,7 @@ import { Card, Badge } from "../../components/ui";
 import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
 import styles from "./profile.module.css";
+import GuidedProfessionalProfile from "./guided-professional-profile";
 type Profile = {
   user_id: string;
   email: string;
@@ -471,8 +472,7 @@ export default function Profile() {
                     ["displayName", "Display name (optional)"],
                     ["phone", "Phone (optional)"],
                     ["dateOfBirth", "Date of birth (optional)"],
-                    ["sex", "Sex (optional)"],
-                    ["nationality", "Nationality (optional)"],
+                    ["sex", "Gender (optional)"],
                   ] as const
                 ).map(([key, label]) => (
                   <div key={key}>
@@ -483,10 +483,9 @@ export default function Profile() {
                         value={form[key]}
                         onChange={(e) => update(key, e.target.value)}
                       >
-                        <option value="">Prefer not to say</option>
-                        <option value="female">Female</option>
+                        <option value="">Choose gender</option>
                         <option value="male">Male</option>
-                        <option value="other">Other</option>
+                        <option value="female">Female</option>
                       </select>
                     ) : (
                       <input
@@ -662,14 +661,9 @@ export default function Profile() {
                   }
                 />
               </label>
-              <div className="grid" style={{ gap: 12, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-                <div><h3 className="h2">Education and professional credentials</h3><p className="muted">Add a concise education summary, qualifications, skills, languages, and certifications. These details help employers and service requesters assess relevant experience. Do not list a credential as verified unless it has been verified by the platform.</p></div>
-                <label>Education summary<textarea rows={3} value={talentForm.educationSummary} onChange={(e) => setTalentForm((f) => ({ ...f, educationSummary: e.target.value }))} maxLength={3000} placeholder="Institutions, degrees, fields of study, and graduation years"/></label>
-                <label>Qualifications and licenses<textarea rows={3} value={talentForm.qualifications} onChange={(e) => setTalentForm((f) => ({ ...f, qualifications: e.target.value }))} maxLength={3000} placeholder="Professional qualifications, licenses, and issuing bodies"/></label>
-                <label>Skills (comma-separated)<input value={talentForm.skills} onChange={(e) => setTalentForm((f) => ({ ...f, skills: e.target.value }))} maxLength={2000} placeholder="Project management, accounting, data analysis"/></label>
-                <label>Languages (comma-separated)<input value={talentForm.languages} onChange={(e) => setTalentForm((f) => ({ ...f, languages: e.target.value }))} maxLength={1000} placeholder="Afaan Oromoo, Amharic, English"/></label>
-                <label>Certifications (one per line)<textarea rows={3} value={talentForm.certifications} onChange={(e) => setTalentForm((f) => ({ ...f, certifications: e.target.value }))} maxLength={3000} placeholder="Credential — issuer — year"/></label>
-                <label>Portfolio or professional website (HTTPS)<input type="url" value={talentForm.portfolioUrl} onChange={(e) => setTalentForm((f) => ({ ...f, portfolioUrl: e.target.value }))} placeholder="https://example.com"/></label>
+              <div className="grid" style={{ gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <h3 className="h2">Guided education, classifications and portfolio</h3>
+                <p className="muted">Structured education records, managed classifications, languages, and traceable portfolio items are edited in the guided section below. This replaces the previous comma-separated and free-text credential fields.</p>
               </div>
               <div className="grid" style={{ gap: 12, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                 <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><div><h3 className="h2">Work experience</h3><p className="muted">Describe relevant roles, dates, responsibilities, and outcomes. You can keep entries member-only or make them part of your public-safe profile.</p></div><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => [...rows, { employerName: "", roleTitle: "", startDate: "", endDate: "", currentRole: false, description: "", visibility: "members" }])}>Add experience</button></div>
@@ -704,6 +698,7 @@ export default function Profile() {
               </button>
             </form>
           </Card>
+          <GuidedProfessionalProfile />
           <Card>
             <div className="row">
               <div>
