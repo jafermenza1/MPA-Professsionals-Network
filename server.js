@@ -368,6 +368,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/talent/inquiries/") && parts[5]==="close") return ok(res,await talent.closeTalentInquiry(parts[4],identity.sub,requestId),requestId);
 
     if(req.method==="GET" && p==="api/v1/verification/programs") return ok(res,await verification.listPrograms(),requestId);
+    if(req.method==="GET" && p==="api/v1/verification/claim-types") return ok(res,await verification.listClaimTypes(),requestId);
     if(req.method==="GET" && p==="api/v1/me/verification/cases") return ok(res,await verification.listCases({subjectUserId:identity.sub}),requestId);
     if(req.method==="POST" && p==="api/v1/verification/cases"){
       const b=await body(req);
