@@ -24,14 +24,14 @@ export async function updateProfessionalProfile(userId,input,requestId){
   if(years!==null&&(!Number.isInteger(years)||years<0)) throw error(400,"yearsExperience must be a non-negative integer.","VALIDATION_ERROR");
   if(input.availabilityStatus!==undefined&&input.availabilityStatus!==null&&input.availabilityStatus!==""&&!["not_specified","available","limited","unavailable"].includes(input.availabilityStatus)) throw error(400,"availabilityStatus must be not_specified, available, limited or unavailable.","VALIDATION_ERROR");
   if(input.visibility!==undefined&&input.visibility!==null&&!["private","members","public"].includes(input.visibility)) throw error(400,"visibility must be private, members or public.","VALIDATION_ERROR");
-  const skills=Array.isArray(input.skills)?input.skills.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
-  const languages=Array.isArray(input.languages)?input.languages.map(x=>String(x).trim()).filter(Boolean).slice(0,20):null;
+  const skills=Array.isArray(input.skills)?Array.from(new Map(input.skills.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\\s+/g," ").trim(),value])).values()).slice(0,40):null;
+  const languages=Array.isArray(input.languages)?Array.from(new Map(input.languages.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\\s+/g," ").trim(),value])).values()).slice(0,20):null;
   const certifications=Array.isArray(input.certifications)?input.certifications.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
   const portfolioUrl=input.portfolioUrl===undefined?null:String(input.portfolioUrl||"").trim();
   if(portfolioUrl){let parsed;try{parsed=new URL(portfolioUrl)}catch{throw error(400,"portfolioUrl must be a valid HTTPS URL.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"portfolioUrl must use HTTPS.","VALIDATION_ERROR")}
   await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),education_summary=coalesce($9,education_summary),qualifications=coalesce($10,qualifications),skills=coalesce($11::jsonb,skills),languages=coalesce($12::jsonb,languages),certifications=coalesce($13::jsonb,certifications),portfolio_url=coalesce($14,portfolio_url),updated_at=now() where id=$15",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,input.educationSummary===undefined?null:String(input.educationSummary||"").trim(),input.qualifications===undefined?null:String(input.qualifications||"").trim(),skills===null?null:JSON.stringify(skills),languages===null?null:JSON.stringify(languages),certifications===null?null:JSON.stringify(certifications),portfolioUrl,p.id]);
   if(Array.isArray(input.references)){
-   const allowed=["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range"];
+   const allowed=["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range","skill"];
    for(const relationType of allowed) await db.query("delete from professional_profile_reference where profile_id=$1 and relation_type=$2",[p.id,relationType]);
    const seenReferences=new Set();
    for(const ref of input.references){
@@ -44,7 +44,13 @@ export async function updateProfessionalProfile(userId,input,requestId){
     const customValue=String(ref.customValue||"").trim();
     if(item.code==="OTHER"&&!customValue) throw error(400,"Enter a value after selecting Other.","OTHER_VALUE_REQUIRED");
     if(item.code!=="OTHER"&&customValue) throw error(400,"Custom values are accepted only when Other is selected.","UNEXPECTED_CUSTOM_VALUE");
-    await db.query("insert into professional_profile_reference(profile_id,reference_item_id,relation_type,is_primary,custom_value) values($1,$2,$3,$4,$5)",[p.id,ref.referenceItemId,ref.relationType,ref.relationType==="language"?false:true,customValue||null]);
+    await db.query("insert into professional_profile_reference(profile_id,reference_item_id,relation_type,is_primary,custom_value) values($1,$2,$3,$4,$5)",[p.id,ref.referenceItemId,ref.relationType,["language","skill"].includes(ref.relationType)?false:true,customValue||null]);
+   }
+   for(const relationType of ["skill","language"]){
+    const rows=(await db.query("select pr.custom_value,ri.label,ri.code,ri.aliases from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id join reference_dataset_version rv on rv.id=ri.dataset_version_id where pr.profile_id=$1 and pr.relation_type=$2 and rv.status='published' order by ri.label",[p.id,relationType])).rows;
+    const values=rows.flatMap(row=>row.code==="OTHER"?String(row.custom_value||"").split(","): [row.label]).map(value=>String(value||"").trim()).filter(Boolean);
+    const deduped=Array.from(new Map(values.map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\\s+/g," ").trim(),value])).values()).slice(0,relationType==="skill"?40:20);
+    await db.query("update professional_profile set "+(relationType==="skill"?"skills":"languages")+"=$1::jsonb,updated_at=now() where id=$2",[JSON.stringify(deduped),p.id]);
    }
   }
   if(Array.isArray(input.experience)){
@@ -64,7 +70,7 @@ export async function updateProfessionalProfile(userId,input,requestId){
   await audit(db,userId,"talent.profile_updated","professional_profile",p.id,requestId,{referenceCount:Array.isArray(input.references)?input.references.length:0,experienceCount:Array.isArray(input.experience)?input.experience.length:0});
   const saved=(await db.query("select id,professional_title,headline,bio,years_experience,availability_status,location_label,directory_summary,directory_visibility as visibility,education_summary,qualifications,skills,languages,certifications,portfolio_url,completion_percent from professional_profile where id=$1",[p.id])).rows[0];
   saved.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[p.id])).rows;
-  saved.references=(await db.query("select pr.relation_type,pr.reference_item_id,pr.custom_value,ri.code,ri.label from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.profile_id=$1 order by pr.relation_type",[p.id])).rows;
+  saved.references=(await db.query("select pr.relation_type,pr.reference_item_id,pr.custom_value,ri.code,ri.label,ri.aliases from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.profile_id=$1 order by pr.relation_type",[p.id])).rows;
   return saved;
  });
 }
