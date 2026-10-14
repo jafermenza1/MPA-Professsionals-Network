@@ -8,7 +8,7 @@
 
 The product requirements define a coherent professional ecosystem, but the current web app must not be described as fully ready or fully connected. Several routes are convincing prototypes or static demonstrations rather than complete business transactions. A route existing is not proof that its controls persist data, that its API exists, or that a user has the correct role and scope.
 
-A working release must pass every journey and role acceptance test in this document. Do not resolve gaps by hiding errors, making protected APIs public, fabricating activity, or presenting sample data as live data.
+A working release must pass every journey and role acceptance test in this document, with current evidence recorded from manual execution on the exact release SHA. Do not resolve gaps by hiding errors, making protected APIs public, fabricating activity, or presenting sample data as live data.
 
 ## Gate 6 checkpoint — 2026-10-11
 
@@ -32,7 +32,7 @@ These modules are explicitly removed from the current production release scope a
 The current release scope explicitly excludes provider-backed payment and delivery evidence, as well as notification delivery proof. Those are not part of the current release and must not be treated as ready simply because the UI persists preferences.
 
 ### Mandatory release gates before sign-off
-- A final branch SHA must execute in a real GitHub Actions run with a runner assigned; no workflow created without a runner counts as a pass.
+- A final branch SHA must have recorded manual test evidence from the retained unit, migration, API smoke, build and browser suites. The GitHub Actions workflow was removed on 2026-10-14; historical runs do not validate the current head.
 - Production-like smoke validation against the real runtime and PostgreSQL remains outstanding and must be completed before deployment.
 - Cross-role browser E2E and negative-path acceptance for G5 remain incomplete and therefore do not count as production evidence.
 - Backup/restore, rollback rehearsal, and operational release-readiness checks are still open and must be completed before any production deployment decision.
@@ -180,3 +180,8 @@ The route inventory also shows only a small subset of the roles defined in the p
 - Registration now supports a safe same-origin `next` destination, checks for a session token, uses in-app navigation, and provides success/error feedback and a home link.
 - Logout now attempts the API's session-revocation endpoint before clearing local session state and returning to login. If the API is unavailable, local credentials are still cleared; server revocation cannot be claimed in that failure case.
 - The bootstrap bind-parameter fix is included in the branch. Database verification and deployed runtime verification remain required.
+
+
+## Validation mechanism update — 2026-10-14
+
+The GitHub Actions CI workflow has been removed by maintainer request. Release acceptance is therefore based on manual execution of the retained test suites and documented live/staging smoke tests. This changes the validation mechanism, not the release criteria: cross-role negative paths, privacy boundaries, migration safety, backup restoration, and business workflows remain required. Follow [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md); keep every unexecuted or failed check explicitly OPEN.
