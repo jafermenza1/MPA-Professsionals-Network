@@ -1,7 +1,7 @@
 -- Add skills to the existing governed reference-data domain and seed a starter vocabulary.
 alter table reference_dataset drop constraint if exists reference_dataset_domain_check;
 alter table reference_dataset add constraint reference_dataset_domain_check
-  check (domain in ('geography','occupation','industry','education_level','qualification_type','field_of_study','membership','verification','skill'));
+  check (domain in ('geography','occupation','industry','education_level','qualification_type','field_of_study','membership','verification','nationality','experience_range','language','institution','skill'));
 
 insert into reference_dataset(dataset_key,name,description,domain,source_type,source_name,status)
 values('professional_skills','Professional skills','Admin-managed skills used by professional profiles, talent search and portfolio relationships.','skill','mpa_governed','MPA professional reference portfolio','active')
