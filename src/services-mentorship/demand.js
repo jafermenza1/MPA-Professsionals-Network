@@ -18,6 +18,10 @@ async function audit(db,actor,action,type,id,requestId,metadata={}){
 function clean(value,max){return String(value??"").trim().slice(0,max);}
 function required(value,label,max){const v=clean(value,max);if(!v)throw fail(400,label+" is required.","VALIDATION_ERROR");return v;}
 function allowedType(type){if(!["service","mentorship"].includes(type))throw fail(400,"Demand type must be service or mentorship.","VALIDATION_ERROR");return type;}
+function assertPublicCopy(...values){
+ const text=values.map(v=>String(v??"")).join(" ");
+ if(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)||/(?:\+?\d[\d\s().-]{7,}\d)/.test(text))throw fail(400,"Public topic text cannot contain email addresses or phone numbers. Rewrite the summary without contact details.","PUBLIC_CONTACT_DETAILS");
+}
 function allowedMode(mode){const v=mode||"flexible";if(!["remote","onsite","hybrid","flexible"].includes(v))throw fail(400,"Unsupported delivery mode.","VALIDATION_ERROR");return v;}
 
 export async function createDemand(userId,input,requestId){
@@ -90,6 +94,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   if(input.publishTopic){
    if(!["service","mentorship"].includes(demand.demand_type))throw fail(400,"Unsupported demand topic type.","VALIDATION_ERROR");
    const title=required(input.publicTitle,"Public title",180),summary=required(input.publicSummary,"Public summary",1000),category=required(input.publicCategory||demand.category,"Public category",120);
+   assertPublicCopy(title,summary,input.publicLocationLabel);
    if(title.length<4||summary.length<10)throw fail(400,"Public title and summary are too short.","VALIDATION_ERROR");
    topic=(await db.query("select id,title,status,published_at from marketplace_demand_topic where source_demand_id=$1 for update",[demand.id])).rows[0];
    if(topic){
@@ -109,7 +114,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
 export async function listAdminListings(userId){
  const db=getPool();await staff(db,userId);
  const [services,mentors]=await Promise.all([
-  db.query("select s.id,'service' listing_type,s.title,s.description,s.service_category category,s.status,s.moderation_status,s.moderation_note,s.provider_user_id,p.display_name owner_name,s.created_at from service_listing s join person p on p.user_id=s.provider_user_id where s.moderation_status in ('pending','needs_correction') and s.status<>'closed' order by s.created_at asc limit 200"),
+  db.query("select s.id,'service' listing_type,s.title,s.description,s.service_category category,s.status,s.moderation_status,s.moderation_note,s.provider_user_id,coalesce(o.display_name,p.display_name) owner_name,s.created_at from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.moderation_status in ('pending','needs_correction') and s.status<>'closed' order by s.created_at asc limit 200"),
   db.query("select m.id,'mentorship' listing_type,m.headline title,coalesce(m.bio,'') description,'mentorship' category,m.status,m.moderation_status,m.moderation_note,m.user_id provider_user_id,p.display_name owner_name,m.created_at from mentor_profile m join person p on p.user_id=m.user_id where m.moderation_status in ('pending','needs_correction') and m.status<>'closed' order by m.created_at asc limit 200")
  ]);
  return [...services.rows,...mentors.rows].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
