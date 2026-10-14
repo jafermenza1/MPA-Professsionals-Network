@@ -187,7 +187,7 @@ A shared feedback component gives members and reviewers a consistent, plain-lang
 
 ## Account & Security — members and non-members
 
-- Authenticated users can change their account username and password from `/account/security`; a current password confirms ordinary changes. Email remains the sign-in identifier, and account changes do not alter membership status or role permissions.
+- Authenticated users can change their account username and password from `/account/security`; a current password confirms ordinary changes. Users can sign in with either their email or username, and account changes do not alter membership status or role permissions.
 - A one-time administrator-issued sign-in link expires after 20 minutes, can be redeemed once, revokes previous sessions at redemption, and requires the user to choose a new password. Only the token hash is stored in the recovery table; the email is queued through the existing notification outbox.
 - Only administrators with user-management authority can issue links. Privileged-account links require a system administrator; an administrator cannot issue a recovery link for their own account. Reasons are required and actions are audited.
 - **Validation not run:** migration, typecheck/build, rate-limit and one-time-use tests, email delivery, role-negative authorization, and browser/accessibility checks remain required.
