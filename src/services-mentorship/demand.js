@@ -92,8 +92,8 @@ export async function reviewDemand(demandId,actorId,input,requestId){
    if(title.length<4||summary.length<10)throw fail(400,"Public title and summary are too short.","VALIDATION_ERROR");
    topic=(await db.query("select id,title,status,published_at from marketplace_demand_topic where source_demand_id=$1 for update",[demand.id])).rows[0];
    if(topic){
-    if(topic.status==="closed")throw fail(409,"A previously closed demand topic cannot be reopened from the same request.","INVALID_STATE");
-    topic=(await db.query("update marketplace_demand_topic set title=$1,summary=$2,category=$3,delivery_mode=$4,location_label=$5,interest_goal=$6,closes_at=$7,status='published',updated_at=now() where id=$8 returning id,title,status,published_at",[title,summary,category,allowedMode(input.deliveryMode||demand.delivery_mode),clean(input.publicLocationLabel,180)||null,input.interestGoal?Math.max(1,Number(input.interestGoal)):null,input.closesAt||null,topic.id])).rows[0];
+    if(topic.status!=="published")throw fail(409,"A previously paused or closed demand topic cannot be republished through a retry.","INVALID_STATE");
+    topic=(await db.query("update marketplace_demand_topic set title=$1,summary=$2,category=$3,delivery_mode=$4,location_label=$5,interest_goal=$6,closes_at=$7,updated_at=now() where id=$8 returning id,title,status,published_at",[title,summary,category,allowedMode(input.deliveryMode||demand.delivery_mode),clean(input.publicLocationLabel,180)||null,input.interestGoal?Math.max(1,Number(input.interestGoal)):null,input.closesAt||null,topic.id])).rows[0];
    } else {
     topic=(await db.query("insert into marketplace_demand_topic(demand_type,title,summary,category,delivery_mode,location_label,interest_goal,published_by,source_demand_id,closes_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id,title,status,published_at",[demand.demand_type,title,summary,category,allowedMode(input.deliveryMode||demand.delivery_mode),clean(input.publicLocationLabel,180)||null,input.interestGoal?Math.max(1,Number(input.interestGoal)):null,actorId,demand.id,input.closesAt||null])).rows[0];
    }
@@ -108,8 +108,8 @@ export async function reviewDemand(demandId,actorId,input,requestId){
 export async function listAdminListings(userId){
  const db=getPool();await staff(db,userId);
  const [services,mentors]=await Promise.all([
-  db.query("select s.id,'service' listing_type,s.title,s.description,s.service_category category,s.status,s.moderation_status,s.moderation_note,s.provider_user_id,p.display_name owner_name,s.created_at from service_listing s join person p on p.user_id=s.provider_user_id where s.moderation_status in ('pending','needs_correction') order by s.created_at asc limit 200"),
-  db.query("select m.id,'mentorship' listing_type,m.headline title,coalesce(m.bio,'') description,'mentorship' category,m.status,m.moderation_status,m.moderation_note,m.user_id provider_user_id,p.display_name owner_name,m.created_at from mentor_profile m join person p on p.user_id=m.user_id where m.moderation_status in ('pending','needs_correction') order by m.created_at asc limit 200")
+  db.query("select s.id,'service' listing_type,s.title,s.description,s.service_category category,s.status,s.moderation_status,s.moderation_note,s.provider_user_id,p.display_name owner_name,s.created_at from service_listing s join person p on p.user_id=s.provider_user_id where s.moderation_status in ('pending','needs_correction') and s.status<>'closed' order by s.created_at asc limit 200"),
+  db.query("select m.id,'mentorship' listing_type,m.headline title,coalesce(m.bio,'') description,'mentorship' category,m.status,m.moderation_status,m.moderation_note,m.user_id provider_user_id,p.display_name owner_name,m.created_at from mentor_profile m join person p on p.user_id=m.user_id where m.moderation_status in ('pending','needs_correction') and m.status<>'closed' order by m.created_at asc limit 200")
  ]);
  return [...services.rows,...mentors.rows].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
 }
@@ -117,6 +117,7 @@ export async function moderateListing(listingType,listingId,actorId,input,reques
  await staff(getPool(),actorId);
  const decision=input.decision,note=clean(input.note,3000)||null;
  if(!["approved","needs_correction","rejected"].includes(decision))throw fail(400,"Choose approve, needs correction or reject.","VALIDATION_ERROR");
+ if(decision!=="approved"&&!note)throw fail(400,"A reviewer note is required for correction or rejection decisions.","REVIEW_NOTE_REQUIRED");
  return withTransaction(async db=>{
   const table=listingType==="service"?"service_listing":listingType==="mentorship"?"mentor_profile":null;
   if(!table)throw fail(400,"Unsupported listing type.","VALIDATION_ERROR");
