@@ -76,7 +76,7 @@ export async function confirmPrivateUpload(userId,id){
     return file;
   });
 }
-export async function readAuthorizedPrivateFile(userId,fileId,roles=[],requestId=null){
+export async function readAuthorizedPrivateFile(userId,fileId,roles=[],requestId=null,permissions=[]){
   const db=getPool();
   const r=await db.query(`select f.*,s.object_key from file_object f join private_upload_session s on s.file_object_id=f.id where f.id=$1 and f.visibility='private' and s.status='confirmed'`,[fileId]);
   const f=r.rows[0]; if(!f) throw fail(404,"Private file not found.","NOT_FOUND");
@@ -85,12 +85,12 @@ export async function readAuthorizedPrivateFile(userId,fileId,roles=[],requestId
     const membership=await db.query(`select 1 from organization_verification_evidence e join organization_verification_case c on c.id=e.case_id join organization_membership om on om.organization_id=c.organization_id and om.user_id=$1 and om.status='active' and om.role_code in ('owner','administrator') where e.file_object_id=$2 limit 1`,[userId,fileId]);
     allowed=membership.rowCount>0;
   }
-  if(!allowed && roles.some(role=>["reviewer","finance_officer","verification_reviewer","ethics_reviewer","appeal_reviewer","system_admin"].includes(role))){
+  if(!allowed && (roles.some(role=>["reviewer","finance_officer","verification_reviewer","ethics_reviewer","appeal_reviewer","system_admin"].includes(role))||permissions.some(permission=>["finance.view","finance.manage","members.view","members.manage","verification.manage"].includes(permission)))){
     const linked=await db.query("select 1 from organization_verification_evidence where file_object_id=$1 limit 1",[fileId]);
-    const reviewerRole=roles.some(role=>["verification_reviewer","ethics_reviewer","appeal_reviewer"].includes(role));
+    const reviewerRole=roles.some(role=>["verification_reviewer","ethics_reviewer","appeal_reviewer"].includes(role))||permissions.includes("verification.manage");
     const professionalEvidence=await db.query(`select 1 from professional_portfolio_item pi join professional_profile pp on pp.id=pi.profile_id join person p on p.id=pp.person_id join verification_case vc on vc.subject_user_id=p.user_id where pi.evidence_file_id=$1 and p.user_id=$2 and (vc.assigned_reviewer_id=$3 or $4=true or $5=true) limit 1`,[fileId,f.created_by,userId,roles.includes("system_admin"),reviewerRole]);
     const caseEvidence=await db.query(`select 1 from verification_evidence e join verification_case vc on vc.id=e.case_id where e.file_object_id=$1 and vc.subject_user_id=$2 and (vc.assigned_reviewer_id=$3 or $4=true or $5=true) limit 1`,[fileId,f.created_by,userId,roles.includes("system_admin"),reviewerRole]);
-    const membershipEvidence=await db.query("select 1 from membership_application_attachment aa join membership_application a on a.id=aa.application_id where aa.file_object_id=$1 and a.user_id=$2 limit 1",[fileId,f.created_by]);
+    const canReviewMembership=roles.some(role=>["reviewer","finance_officer","system_admin"].includes(role))||permissions.some(permission=>["finance.view","finance.manage","members.view","members.manage"].includes(permission));const membershipEvidence=canReviewMembership?await db.query("select 1 from membership_application_attachment aa join membership_application a on a.id=aa.application_id where aa.file_object_id=$1 and a.user_id=$2 limit 1",[fileId,f.created_by]):{rowCount:0};
     allowed=linked.rowCount>0||professionalEvidence.rowCount>0||caseEvidence.rowCount>0||membershipEvidence.rowCount>0;
   }
   if(!allowed) throw fail(403,"You do not have permission to read this private file.","FORBIDDEN");
