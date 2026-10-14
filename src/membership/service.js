@@ -291,7 +291,7 @@ export async function createApplication(userId,input,requestId){
     const pending=await db.query("select id from membership_application where user_id=$1 and status in ('submitted','in_review','correction_required','approved','payment_pending','paid') limit 1",[userId]);
     if(pending.rows[0]) throw httpError(409,"You already have an active membership application.","APPLICATION_EXISTS");
     const me=await getMe(userId);
-    const snapshot={person:{firstName:me.first_name,middleName:me.middle_name,lastName:me.last_name,displayName:me.display_name,phone:me.phone,dateOfBirth:me.date_of_birth,sex:me.sex,nationality:me.nationality},profile:{headline:me.headline,bio:me.bio}};
+    const snapshot={person:{firstName:me.first_name,middleName:me.middle_name,lastName:me.last_name,displayName:me.display_name,phone:me.phone,dateOfBirth:me.date_of_birth,sex:me.sex,gender:me.sex,nationality:me.nationality},profile:{headline:me.headline,bio:me.bio}};
     const feeAmount=activeFeeRule
       ? Number(activeFeeRule.base_amount)+Number(activeFeeRule.tax_amount||0)+Number(activeFeeRule.service_fee||0)
       : amountFromProduct(prod);
