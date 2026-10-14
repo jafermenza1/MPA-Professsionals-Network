@@ -214,7 +214,7 @@ The next work is **not** broad UX polishing. First manually validate and correct
 
 ## Account & Security — code committed, not validated
 
-- Added a common account settings page for members and non-members to change username and password after confirming their current password.
+- Added a common account settings page for members and non-members to change username and password after confirming their current password; both email and username can be used to sign in.
 - Added administrator-triggered one-time sign-in email queueing, 20-minute expiry, one-time redemption, session revocation, required password setup, audit logging, and a migration storing only token hashes.
 - Added Account & Security navigation and a per-user admin action requiring an audit reason.
 - Email queueing is not proof of delivery. **No migration, TypeScript check, build, automated test, or browser test has run.**
