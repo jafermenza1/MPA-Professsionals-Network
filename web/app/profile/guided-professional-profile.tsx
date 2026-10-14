@@ -6,8 +6,8 @@ import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
 
 type RefItem={id:string;dataset_key:string;name:string;domain:string;code:string;label:string;aliases?:string[]|null;description?:string|null;sort_order:number};
-type ProfileRef={relation_type:string;reference_item_id:string;custom_value:string|null;code:string;label:string};
-type Profile={references?:ProfileRef[];languages?:string[]};
+type ProfileRef={relation_type:string;reference_item_id:string;custom_value:string|null;code:string;label:string;aliases?:string[]|null};
+type Profile={references?:ProfileRef[];languages?:string[];skills?:string[]};
 type AccountProfile={first_name?:string;middle_name?:string|null;last_name?:string;display_name?:string;phone?:string|null;date_of_birth?:string|null;sex?:string|null;nationality?:string|null;headline?:string|null;bio?:string|null;visibility?:string|null};
 type Education={id?:string;education_level_item_id:string;education_level_custom?:string|null;institution_item_id:string|null;institution_name_custom?:string|null;field_of_study_item_id:string|null;field_of_study_custom?:string|null;qualification_item_id:string|null;qualification_custom?:string|null;graduation_year:number|string|null;start_year?:number|string|null;completion_year?:number|string|null;currently_studying?:boolean;explanation?:string|null;visibility?:string;education_level_label?:string;institution_label?:string;field_of_study_label?:string;qualification_label?:string};
 type EducationDraft={educationLevelItemId:string;educationLevelCustom:string;institutionItemId:string;institutionCustom:string;fieldOfStudyItemId:string;fieldOfStudyCustom:string;qualificationItemId:string;qualificationCustom:string;graduationYear:string;startYear:string;completionYear:string;currentlyStudying:boolean;explanation:string;visibility:string};
@@ -16,13 +16,13 @@ type PortfolioDraft={title:string;itemType:string;description:string;externalUrl
 type UploadAuthorization={uploadId:string;uploadToken:string;uploadUrl:string;maxBytes:number};
 const blankEducation=():EducationDraft=>({educationLevelItemId:"",educationLevelCustom:"",institutionItemId:"",institutionCustom:"",fieldOfStudyItemId:"",fieldOfStudyCustom:"",qualificationItemId:"",qualificationCustom:"",graduationYear:"",startYear:"",completionYear:"",currentlyStudying:false,explanation:"",visibility:"private"});
 const blankPortfolio=():PortfolioDraft=>({title:"",itemType:"project",description:"",externalUrl:"",visibility:"private",evidenceFileId:"",evidenceLabel:""});
-const groups={nationality:"professional_nationalities",occupation:"professional_occupations",industry:"professional_industries",experience_range:"professional_experience_ranges",language:"professional_languages",qualification_type:"professional_qualifications",education_level:"professional_education_levels",institution:"professional_institutions",field_of_study:"professional_fields_of_study"} as const;
+const groups={nationality:"professional_nationalities",occupation:"professional_occupations",industry:"professional_industries",experience_range:"professional_experience_ranges",language:"professional_languages",skill:"professional_skills",qualification_type:"professional_qualifications",education_level:"professional_education_levels",institution:"professional_institutions",field_of_study:"professional_fields_of_study"} as const;
 function selected(refs:ProfileRef[]|undefined,type:string){return refs?.find(r=>r.relation_type===type);}
 function asDraft(e:Education):EducationDraft{return {educationLevelItemId:e.education_level_item_id||"",educationLevelCustom:e.education_level_custom||"",institutionItemId:e.institution_item_id||"",institutionCustom:e.institution_name_custom||"",fieldOfStudyItemId:e.field_of_study_item_id||"",fieldOfStudyCustom:e.field_of_study_custom||"",qualificationItemId:e.qualification_item_id||"",qualificationCustom:e.qualification_custom||"",graduationYear:e.graduation_year==null?"":String(e.graduation_year),startYear:e.start_year==null?"":String(e.start_year),completionYear:e.completion_year==null?"":String(e.completion_year),currentlyStudying:Boolean(e.currently_studying),explanation:e.explanation||"",visibility:e.visibility||"private"};}
 export default function GuidedProfessionalProfile({onNationalitySaved}:{onNationalitySaved:(value:string)=>void}){
  const token=useUiStore(s=>s.token);
  const [refs,setRefs]=useState<RefItem[]>([]),[profile,setProfile]=useState<Profile>({}),[education,setEducation]=useState<EducationDraft[]>([]),[portfolio,setPortfolio]=useState<Portfolio[]>([]);
- const [selectedRefs,setSelectedRefs]=useState<Record<string,string>>({}),[customRefs,setCustomRefs]=useState<Record<string,string>>({}),[languageIds,setLanguageIds]=useState<string[]>([]),[otherLanguage,setOtherLanguage]=useState(""),[referenceSearch,setReferenceSearch]=useState<Record<string,string>>({}),[languageSearch,setLanguageSearch]=useState(""),[educationSearch,setEducationSearch]=useState<Record<string,string>>({});
+ const [selectedRefs,setSelectedRefs]=useState<Record<string,string>>({}),[customRefs,setCustomRefs]=useState<Record<string,string>>({}),[languageIds,setLanguageIds]=useState<string[]>([]),[otherLanguage,setOtherLanguage]=useState(""),[skillIds,setSkillIds]=useState<string[]>([]),[otherSkills,setOtherSkills]=useState(""),[referenceSearch,setReferenceSearch]=useState<Record<string,string>>({}),[languageSearch,setLanguageSearch]=useState(""),[educationSearch,setEducationSearch]=useState<Record<string,string>>({});
  const [educationDrafts,setEducationDrafts]=useState<EducationDraft[]>([]),[portfolioDraft,setPortfolioDraft]=useState<PortfolioDraft>(blankPortfolio());
  const [loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const options=(group:string)=>refs.filter(r=>r.dataset_key===group);\n const searchOptions=(group:string,query:string)=>{const needle=query.trim().toLocaleLowerCase();return options(group).filter(item=>!needle||[item.label,item.code,...(Array.isArray(item.aliases)?item.aliases:[])].some(value=>String(value||"").toLocaleLowerCase().includes(needle)));};
@@ -43,10 +43,15 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
    if(!next.nationality&&accountInfo.nationality){const match=r.find(item=>item.dataset_key===groups.nationality&&item.label.toLowerCase()===String(accountInfo.nationality).toLowerCase());if(match)next.nationality=match.id;else{const other=r.find(item=>item.dataset_key===groups.nationality&&item.code==="OTHER");if(other){next.nationality=other.id;custom.nationality=accountInfo.nationality;}}}
    setSelectedRefs(next);setCustomRefs(custom);
    const langLabels=Array.isArray(p.languages)?p.languages:[];
-   const selectedLanguageIds=r.filter(x=>x.dataset_key===groups.language&&langLabels.includes(x.label)&&x.code!=="OTHER").map(x=>x.id);
-   const other=langLabels.filter(x=>!r.some(ref=>ref.dataset_key===groups.language&&ref.label===x));setOtherLanguage(other.join(", "));
+   const selectedLanguageIds=r.filter(x=>x.dataset_key===groups.language&&langLabels.some(label=>label.toLocaleLowerCase()===x.label.toLocaleLowerCase()||(x.aliases||[]).some(alias=>String(alias).toLocaleLowerCase()===label.toLocaleLowerCase()))&&x.code!=="OTHER").map(x=>x.id);
+   const other=langLabels.filter(x=>!r.some(ref=>ref.dataset_key===groups.language&&(ref.label.toLocaleLowerCase()===x.toLocaleLowerCase()||(ref.aliases||[]).some(alias=>String(alias).toLocaleLowerCase()===x.toLocaleLowerCase()))));setOtherLanguage(other.join(", "));
    const otherLanguageOption=r.find(x=>x.dataset_key===groups.language&&x.code==="OTHER");
    setLanguageIds(other.length&&otherLanguageOption?[...selectedLanguageIds,otherLanguageOption.id]:selectedLanguageIds);
+   const skillLabels=Array.isArray(p.skills)?p.skills:[];
+   const selectedSkillIds=r.filter(x=>x.dataset_key===groups.skill&&skillLabels.some(label=>label.toLocaleLowerCase()===x.label.toLocaleLowerCase()||(x.aliases||[]).some(alias=>String(alias).toLocaleLowerCase()===label.toLocaleLowerCase()))&&x.code!=="OTHER").map(x=>x.id);
+   const customSkillValues=skillLabels.filter(x=>!r.some(ref=>ref.dataset_key===groups.skill&&(ref.label.toLocaleLowerCase()===x.toLocaleLowerCase()||(ref.aliases||[]).some(alias=>String(alias).toLocaleLowerCase()===x.toLocaleLowerCase()))));
+   const otherSkillOption=r.find(x=>x.dataset_key===groups.skill&&x.code==="OTHER");
+   setSkillIds(customSkillValues.length&&otherSkillOption?[...selectedSkillIds,otherSkillOption.id]:selectedSkillIds);setOtherSkills(customSkillValues.join(", "));
   }catch(e){setError(e instanceof ApiError?e.message:"Guided profile data could not be loaded. Retry without losing your entries.");}
   finally{setLoading(false);}
  },[token]);
@@ -60,7 +65,7 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
    const languageOther=options(groups.language).find(item=>item.code==="OTHER");
    const otherLanguageValues=otherLanguage.split(",").map(v=>v.trim()).filter(Boolean);
    const standardLanguageIds=languageIds.filter(id=>byId.get(id)?.code!=="OTHER");
-   references.push(...standardLanguageIds.map(referenceItemId=>({relationType:"language",referenceItemId,customValue:""})));
+   references.push(...standardLanguageIds.map(referenceItemId=>({relationType:"language",referenceItemId,customValue:""})));\n   const skillOther=options(groups.skill).find(item=>item.code==="OTHER");const standardSkillIds=skillIds.filter(id=>byId.get(id)?.code!=="OTHER");references.push(...standardSkillIds.map(referenceItemId=>({relationType:"skill",referenceItemId,customValue:""})));const otherSkillValues=otherSkills.split(",").map(v=>v.trim()).filter(Boolean);if(skillIds.includes(skillOther?.id||"")&&otherSkillValues.length&&skillOther)references.push({relationType:"skill",referenceItemId:skillOther.id,customValue:otherSkillValues.join(", ")});if(skillIds.includes(skillOther?.id||"")&&!otherSkillValues.length)throw new Error("You selected Other under Skills. Enter at least one custom skill.");
    if(languageIds.includes(languageOther?.id||"")&&otherLanguageValues.length&&languageOther)references.push({relationType:"language",referenceItemId:languageOther.id,customValue:otherLanguageValues.join(", ")});
    if(languageIds.includes(languageOther?.id||"")&&!otherLanguageValues.length)throw new Error("You selected Other under Languages. Enter at least one custom language.");
    const selectedLanguageLabels=standardLanguageIds.map(id=>byId.get(id)?.label).filter((label):label is string=>Boolean(label));
@@ -164,7 +169,13 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
      <p className="muted">Selected languages</p><div className="row" style={{gap:6,flexWrap:"wrap"}}>{languageIds.map(id=>{const item=byId.get(id);return item?<span key={id} className="row" style={{gap:6,alignItems:"center",border:"1px solid var(--border)",borderRadius:999,padding:"4px 10px"}}>{item.label}<button type="button" className="btn btn-ghost" onClick={()=>setLanguageIds(ids=>ids.filter(value=>value!==id))} aria-label={"Remove "+item.label}>×</button></span>:null;})}</div>
      {languageIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Other language(s), separated by commas<input required value={otherLanguage} onChange={e=>setOtherLanguage(e.target.value)} maxLength={500} placeholder="For example, Somali, Tigrinya"/></label>:null}
     </div>
-    <button className="btn btn-primary" disabled={saving||loading}>{saving?"Saving…":"Save classifications and languages"}</button>
+    <div className="grid" style={{gap:8}}><label htmlFor="p1-skill-search">Professional skills</label>
+     <input id="p1-skill-search" value={referenceSearch.skill||""} onChange={e=>setReferenceSearch(v=>({...v,skill:e.target.value}))} placeholder="Search skills or aliases"/>
+     <div className="grid grid-2" style={{gap:6}}>{searchOptions(groups.skill,referenceSearch.skill||"").slice(0,100).map(item=><label key={item.id} className="row" style={{alignItems:"center",gap:8,padding:"6px 8px",border:"1px solid var(--border)",borderRadius:8}}><input type="checkbox" checked={skillIds.includes(item.id)} onChange={e=>setSkillIds(ids=>e.target.checked?[...new Set([...ids,item.id])]:ids.filter(id=>id!==item.id))}/><span>{item.label}</span></label>)}</div>
+     <p className="muted">Selected skills</p><div className="row" style={{gap:6,flexWrap:"wrap"}}>{skillIds.map(id=>{const item=byId.get(id);return item?<span key={id} className="row" style={{gap:6,alignItems:"center",border:"1px solid var(--border)",borderRadius:999,padding:"4px 10px"}}>{item.label}<button type="button" className="btn btn-ghost" onClick={()=>setSkillIds(ids=>ids.filter(value=>value!==id))} aria-label={"Remove "+item.label}>×</button></span>:null;})}</div>
+     {skillIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Other skill(s), separated by commas<input required value={otherSkills} onChange={e=>setOtherSkills(e.target.value)} maxLength={1000} placeholder="For example, a specialist skill not listed"/></label>:null}
+    </div>
+    <button className="btn btn-primary" disabled={saving||loading}>{saving?"Saving…":"Save classifications, skills and languages"}</button>
    </form>
   </Card>
   <Card>
