@@ -57,7 +57,8 @@ export async function previewMemberImport(identity,{filename="mpa-members.csv",c
   if(!products.includes(row.productCode))row.errors.push("Unknown or inactive membership product code.");
   const ek=row.email.toLowerCase(),mk=row.membershipNumber.toLowerCase();
   if(seenEmail.has(ek))row.errors.push("Email is repeated in this file.");seenEmail.add(ek);
-  if(seenMembership.has(mk))row.errors.push("Membership number is repeated in this file.");seenMembership.add(mk);\n  if(row.legacyMemberId&&seenLegacyId.has(row.legacyMemberId.toLowerCase()))row.errors.push("Legacy member ID is repeated in this file.");if(row.legacyMemberId)seenLegacyId.add(row.legacyMemberId.toLowerCase());
+  if(seenMembership.has(mk))row.errors.push("Membership number is repeated in this file.");seenMembership.add(mk);
+  if(row.legacyMemberId&&seenLegacyId.has(row.legacyMemberId.toLowerCase()))row.errors.push("Legacy member ID is repeated in this file.");if(row.legacyMemberId)seenLegacyId.add(row.legacyMemberId.toLowerCase());
   const matches=await db.query(`select u.id user_id,p.display_name,p.phone from app_user u left join person p on p.user_id=u.id where lower(u.email)=lower($1) or ($2::text is not null and p.phone=$2) order by u.created_at limit 3`,[row.email,row.phone]);
   if(matches.rows.length>1)row.errors.push("Email/phone matches multiple accounts; resolve this identity before importing.");
   else if(matches.rows.length===1)row.match={userId:matches.rows[0].user_id,displayName:matches.rows[0].display_name,matchReason:"existing email or phone"};
