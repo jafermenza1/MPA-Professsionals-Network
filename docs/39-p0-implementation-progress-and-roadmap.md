@@ -82,6 +82,43 @@ Implementation now committed on `reconciliation/holistic-gates`:
 - **Job-seeker demand:** a new no-vacancy intake page is linked from `/jobs`; intake consent is distinct from employer-sharing consent. Sharing is off by default, field-scoped, named-employer only, versioned, revocable, and audit-recorded. A Support Desk page lists consented no-vacancy requests and shares selected fields only with verified organizations; employers can read only their own active shared summaries; applicants can recover requests using a private continuation token, inspect which organizations received a share and when, and revoke future sharing. Non-members may request public services, while member-only/private service listings remain restricted.
 - **Schema/tests/docs:** migration `20261014120000_p0_job_seeker_consent_and_membership_guards.sql`; focused regression tests in `test/p0/business-invariants.test.js`; existing membership lifecycle test updated to prove pre-membership profile edits and pre-approval payment verification are rejected without removing prior assertions.
 
+
+## P1 — guided professional profile and reference portfolio (implementation in progress)
+
+**Current implementation commit set:** migration, API/service layer, profile UI, admin reference-list UI and focused tests are committed on `reconciliation/holistic-gates`. **No P1 tests, migration, TypeScript check or build have been run yet.**
+
+### Implemented in code (not yet validated)
+
+- Added `20261014150000_p1_guided_professional_profile_and_portfolio.sql` and `20261014151000_p1_custom_reference_values.sql`:
+  - repeatable structured education rows for education level, institution, field of study, qualification type and completion year;
+  - multiple portfolio items with title, type, description, HTTPS URL, visibility and optional private file reference;
+  - additional governed reference domains for nationality, language, institution and experience ranges;
+  - custom-value storage for values selected as `OTHER`;
+  - baseline options including Male/Female only for the Gender UI.
+- Added `src/platform/reference-portfolio.js` and authenticated endpoints:
+  - `GET /api/v1/professional-reference-data`
+  - `GET /api/v1/admin/reference-portfolio`
+  - `GET /api/v1/admin/reference-portfolio/{datasetKey}/items`
+  - `POST/PATCH /api/v1/admin/reference-portfolio/{datasetKey}/items`
+  - `POST /api/v1/admin/reference-portfolio/{datasetKey}/import`
+  - `GET /api/v1/admin/reference-portfolio/{datasetKey}/export`
+- Added guided UI at `/profile` for admin-managed nationality, occupation, industry, experience range, languages, repeatable education and multiple portfolio items.
+- The admin Reference Portfolio screen supports adding/editing/deactivating selectable items and CSV import/export. CSV requires `code,label`; optional columns are `description,sort_order,active`. Imports validate required columns and duplicate codes, update matching codes, add new codes and do not delete omitted items.
+- Private proof uploads use the existing one-time upload authorization, byte/type validation, upload and confirm flow. Supported types are PDF, JPEG, PNG and plain text up to 10 MiB. Mobile file input requests camera capture where supported. The user sees upload status, confirmation, private label and a private-evidence download action.
+- Portfolio evidence is stored privately and is excluded from public profile projections. Public/member portfolio items and structured education are returned only according to the profile audience; evidence metadata and file identifiers are not included in that public projection.
+- Added `test/p0/guided-profile.test.js` for structured education, `OTHER` validation, multiple portfolio items, HTTPS-only links and CSV import/export.
+
+### P1 validation and acceptance still required
+
+1. Apply both migrations to a disposable PostgreSQL database and rerun them to verify idempotency.
+2. Run `npm run test:reference-portfolio`, the new guided-profile test, and the complete unit suite manually; retain all existing assertions.
+3. Run the web TypeScript check and production build. Review any compile or route errors before declaring the UI usable.
+4. Test the full file lifecycle with PDF, JPEG and PNG: authorize, upload, confirm, attach to portfolio, download as owner, deny another account, and confirm the file never appears in public API output.
+5. Test CSV import with duplicate/invalid rows, quoted commas/newlines, inactive items, empty files, duplicate existing codes, and export round-trip.
+6. Test all `OTHER` fields, legacy nationality mapping, multiple languages, role/member guard behavior, and responsive keyboard/mobile interaction.
+7. Review reference-list change/versioning behavior before production. The initial admin editor updates items in the currently published version; the documented draft/approve/publish reference-version workflow is not fully implemented by this increment.
+8. Only after the above, update the matrix with exact passing evidence. No deployment or merge is authorized by these commits.
+
 ### Validation status (must not be mistaken for acceptance)
 
 | Check | Result | Notes |
