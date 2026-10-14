@@ -201,3 +201,13 @@ Mentorship, services, events, learning and projects follow after the membership 
 ## 8. Success metrics
 
 Track membership conversion, active membership, renewal, verified profiles, job applications, successful hiring where measurable, service requests, mentorship matches/completion, event attendance, learning completion, project participation, volunteer participation, donor repeat rate and stakeholder retention.
+
+
+## 9. Binding product requirements addendum (2026-10-14)
+
+The following requirements extend this PRD and are part of the product contract:
+
+- [Specific Product Gap Audit](37-specific-product-gap-audit.md) records concrete observed gaps, expected behavior, role restrictions, acceptance criteria, and delivery order. It must be used as the implementation gap register, not treated as proof that requirements are already implemented.
+- [Required Product Rules and Functional Requirements Addendum](38-product-functional-requirements-addendum.md) defines FR-017 through FR-032, covering strict Organization/Professional profile separation, non-member capability restrictions, membership payment/approval and one-year validity, configurable membership products and reference data, structured education, gender field values, traceable portfolio, end-to-end service/mentorship marketplace, private unmet-demand intake and interest assessment, organization service/mentorship workflows, consent-based job-seeker demand, configurable PDF/XLSX reports, live homepage feeds, and accessible form feedback.
+
+If existing code, older screen behavior, or an earlier generalized statement conflicts with these explicit requirements, record the implementation gap and plan a reviewed correction. Do not claim completion based on documentation, route existence, or build success alone. Update the workflow reconciliation matrix and attach test evidence for the exact commit before closing each gap.
