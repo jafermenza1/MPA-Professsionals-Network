@@ -102,7 +102,7 @@ export async function changeServiceListingStatus(listingId,userId,status,request
 }
 
 export async function listServices(viewerId=null,filters={}){
-  const db=getPool(); const args=[]; const where=["s.status='published'"];
+  const db=getPool(); const args=[]; const where=["s.status='published'","exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))"];
   if(viewerId){ where.push("(s.visibility='public' or s.visibility='members')"); }
   else where.push("s.visibility='public'");
   if(filters.category){ args.push(String(filters.category)); where.push("s.service_category=$"+args.length); }
@@ -421,7 +421,7 @@ export async function listMentors(viewerId,filters={}){
   // The public endpoint must not disclose member-only mentor profiles. $1 is
   // always bound so the query is valid with or without optional filters.
   const args=[viewerId||null];
-  const where=["mp.status='active'","m.status='active'","(mp.visibility='public' or ($1::uuid is not null and mp.visibility='members'))"];
+  const where=["mp.status='active'","m.status='active'","m.start_date<=current_date","(m.end_date is null or m.end_date>=current_date)","(mp.visibility='public' or ($1::uuid is not null and mp.visibility='members'))"];
   if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(mp.headline ilike $"+args.length+" or mp.bio ilike $"+args.length+")"); }
   if(filters.topic){ args.push("%"+String(filters.topic).trim().toLowerCase()+"%"); where.push("mp.expertise::text ilike $"+args.length); }
   const rows=(await db.query("select mp.id,mp.user_id,p.display_name,mp.headline,mp.bio,mp.expertise,mp.languages,mp.mentoring_modes,mp.max_active_mentees from mentor_profile mp join app_user u on u.id=mp.user_id join person p on p.user_id=u.id join membership_record m on m.user_id=u.id where "+where.join(" and ")+" order by p.display_name",args)).rows;
