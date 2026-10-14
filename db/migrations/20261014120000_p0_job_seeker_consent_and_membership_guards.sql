@@ -4,6 +4,7 @@ alter table public_opportunity_inquiry
   add column if not exists employer_sharing_consent boolean not null default false,
   add column if not exists employer_sharing_scope text not null default 'support_desk_only',
   add column if not exists employer_sharing_fields jsonb not null default '[]'::jsonb,
+  add column if not exists employer_sharing_consent_version text,
   add column if not exists employer_sharing_consented_at timestamptz,
   add column if not exists employer_sharing_revoked_at timestamptz;
 
