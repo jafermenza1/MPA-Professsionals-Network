@@ -183,3 +183,11 @@ All rows remain open for acceptance until exact-commit test evidence is recorded
 A shared feedback component gives members and reviewers a consistent, plain-language pattern for errors and successful saves, announces changes accessibly, offers retry actions where the page can safely reload, and preserves next steps such as signing in. API errors display the server-provided request reference when available, without exposing internal technical details. Common workflow states are translated into human-readable labels (for example, “Awaiting response”, “In progress”, “Changes requested”, and “Needs review”) rather than raw underscore-separated values. Integrated into services, mentorship, shared demand, member import, reports, reference lists, job-interest intake, invitation claim, guided profile and marketplace review.
 
 **Validation:** code committed, not yet typechecked or browser-tested. Review all remaining screens for feedback patterns and state-specific next steps before accepting the “all UI” scope; this increment covers principal P1/P2 forms above and does not claim every route has been audited.
+
+
+## Account & Security — members and non-members
+
+- Authenticated users can change their account username and password from `/account/security`; a current password confirms ordinary changes. Email remains the sign-in identifier, and account changes do not alter membership status or role permissions.
+- A one-time administrator-issued sign-in link expires after 20 minutes, can be redeemed once, revokes previous sessions at redemption, and requires the user to choose a new password. Only the token hash is stored in the recovery table; the email is queued through the existing notification outbox.
+- Only administrators with user-management authority can issue links. Privileged-account links require a system administrator; an administrator cannot issue a recovery link for their own account. Reasons are required and actions are audited.
+- **Validation not run:** migration, typecheck/build, rate-limit and one-time-use tests, email delivery, role-negative authorization, and browser/accessibility checks remain required.
