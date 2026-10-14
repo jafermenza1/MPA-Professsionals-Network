@@ -39,7 +39,7 @@
 
 | Item | Status | Evidence |
 |---|---|---|
-| Restore the intended working branch | Done | Branch `reconciliation/holistic-gates` recreated from current `main` because the previously referenced branch ref and open PR were no longer present in GitHub. No old unmerged commit was available at the previously recorded SHA. |
+| Restore the intended working branch | Done | Branch `reconciliation/holistic-gates` recreated from current `main` because the previously referenced branch ref and open PR were no longer present in GitHub. No old unmerged commit was available at the previously recorded SHA. Draft PR [#3](https://github.com/jafermenza1/MPA-Professsionals-Network/pull/3) is now open and must remain open until all current gaps are implemented and accepted. |
 | P0 implementation | In progress | Record code commits and manual test results below as they are produced. |
 | CI workflow | Intentionally absent | Do not create or re-enable until all current gaps are implemented. |
 | Merge/deploy | Not authorized | Keep draft PR open; no deployment or merge as part of this work. |
