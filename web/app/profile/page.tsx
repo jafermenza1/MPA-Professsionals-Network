@@ -14,6 +14,7 @@ import {
 import { Card, Badge } from "../../components/ui";
 import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
+import { hasProfessionalIdentity } from "../../lib/identity-capabilities";
 import styles from "./profile.module.css";
 import GuidedProfessionalProfile from "./guided-professional-profile";
 type Profile = {
@@ -151,7 +152,7 @@ export default function Profile() {
     try {
       const me = await api<Profile>("/api/v1/me", {}, token);
       const roles = Array.isArray(me.roles) ? me.roles : [];
-      if (!roles.some(role => ["member", "professional"].includes(role))) {
+      if (!hasProfessionalIdentity(roles)) {
         setProfile(me);
         setOrganizationOnly(true);
         setNotice("");
