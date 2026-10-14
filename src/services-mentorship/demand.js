@@ -194,9 +194,13 @@ export async function respondToDemandProviderMatch(matchId,userId,status,note,re
   const provider=match.provider_user_id===userId||Boolean(match.organization_id&&(await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[match.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
   if(!provider)throw fail(403,"Only the matched provider or organization team can respond.","FORBIDDEN");
   if(match.status!=="proposed")throw fail(409,"This provider match has already been answered.","INVALID_STATE");
+  if(status==="accepted"&&(await db.query("select 1 from marketplace_demand_provider_match where demand_id=$1 and id<>$2 and status='accepted' limit 1",[match.demand_id,matchId])).rowCount)throw fail(409,"Another provider has already accepted this demand. Ask the Support Desk to review the existing match before accepting another.","MATCH_ALREADY_ACCEPTED");
   const updated=(await db.query("update marketplace_demand_provider_match set status=$1,response_note=$2,responded_at=now(),updated_at=now() where id=$3 returning *",[status,responseNote||null,matchId])).rows[0];
   if(status==="accepted")await db.query("update marketplace_demand set status='matched',outcome_code='provider_search',outcome_note=coalesce($1,outcome_note),reviewed_at=now(),resolved_at=now(),updated_at=now() where id=$2",[responseNote||"A provider accepted the match.",match.demand_id]);
-  else await db.query("update marketplace_demand set status=case when status='matched' then 'under_review' else status end,outcome_note=coalesce($1,outcome_note),updated_at=now() where id=$2",[responseNote,match.demand_id]);
+  else {
+   const accepted=(await db.query("select 1 from marketplace_demand_provider_match where demand_id=$1 and status='accepted' limit 1",[match.demand_id])).rowCount>0;
+   if(!accepted) await db.query("update marketplace_demand set status=case when status='matched' then 'under_review' else status end,outcome_note=coalesce($1,outcome_note),updated_at=now() where id=$2",[responseNote,match.demand_id]);
+  }
   await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.provider_match_responded',$3,$4,$5,$6)",[match.demand_id,userId,match.demand_status,updated.status,responseNote||null,{matchId}]);
   await audit(db,userId,"marketplace.demand_provider_match_responded","marketplace_demand_provider_match",matchId,requestId,{status,demandId:match.demand_id});
   return updated;
