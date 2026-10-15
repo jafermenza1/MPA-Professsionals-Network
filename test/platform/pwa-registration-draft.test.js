@@ -23,6 +23,7 @@ test("draft persistence retries explicitly and surfaces cross-tab conflicts with
   assert.match(source, /Keep my current edits/);
   assert.match(source, /Nothing will be merged or submitted automatically/);
   assert.match(source, /function clearOrganizationDraft\(\)/);
+  assert.match(source, /setDraftPaused\(true\);setDraftStatus\("Saved draft cleared from this device/);
 });
 
 test("account creation is never queued or auto-replayed as offline synchronization", async () => {
