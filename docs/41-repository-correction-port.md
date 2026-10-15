@@ -104,3 +104,24 @@ Relevant destination commits added after the initial port head:
 - Existing accounts may have `email_verified_at IS NULL` after the additive migration. Before enabling required verification for an existing installation, plan a user-safe verification rollout and delivery checks. Do not mark existing addresses verified without trusted evidence; the flag will intentionally block unverified login and API sessions.
 
 - `97746b9437ce5ee4bb346f43060d8f892748267a` — example environment bootstrap values are now empty by default; the JWT sample is deliberately too short for production.
+
+
+## Follow-up code closure — 15 October 2026
+
+This section records targeted changes made after tracing the MPA authentication routes into their service implementations. It is implementation evidence, not test acceptance.
+
+- Commit `0b9c1aa58ce19ae9aa8ad854452577cd4f2e3295` updates `src/membership/service.js`: password login now reads `admin_passkey_enforced_at`, resolves current database roles, and refuses password-based login for an enforced `admin` or `system_admin` account with `PASSKEY_REQUIRED`. The attempt is audit-logged. Ordinary member login is unchanged. The administrator must use passkey sign-in or the single-use recovery-code flow.
+- Commit `4e4359d559c5672c4473bf57f3bd6f349b6ec6df` updates the four administrator passkey management routes in `server.js` to authorize both `admin` and `system_admin`, matching the roles already accepted by `src/platform/webauthn.js`. Ownership remains scoped to the authenticated user's identity in the service layer.
+
+### Required evidence still outstanding
+
+The code changes above have **not** been validated by a test run in this environment. Do not mark the port accepted until these are run on the resulting branch head:
+
+1. Integration test: an enforced administrator cannot obtain a session through password login; the response is `403 PASSKEY_REQUIRED`, an audit event is persisted, and a non-admin/member can still log in normally.
+2. Passkey lifecycle: recent-auth requirement; cross-account enrollment rejection; expired/reused challenge rejection; invalid origin/RP ID/signature rejection; revoked credential rejection; concurrent sign-counter protection; last-passkey revocation prevention; one-time recovery-code consumption; restricted recovery session cannot access ordinary routes before credential setup.
+3. Authorization: `admin` and `system_admin` can manage only their own passkeys; other roles and unauthenticated callers are denied. Verify this with real HTTP requests against a disposable PostgreSQL database.
+4. Registration and email: challenge missing/incorrect/expired/replayed, reference persistence, email token expiry/replay, resend invalidation, required-email login/session gate, provider failure and retry behavior.
+5. Migrations: run the migration runner against both a clean disposable database and a disposable legacy schema with an explicitly chosen baseline; rerun to verify checksum enforcement and idempotent ledger behavior. Do not run these migrations against production as part of this PR.
+6. Full suite: `npm test`, configured web build, browser workflows, and controlled email delivery using test credentials. Record exact SHA and results; a missing CI run is not a pass.
+
+No tests, build, database migration, browser run, or live email delivery are claimed as passed by these commits. Keep PR #3 open and draft until the above evidence is recorded and remaining failures are fixed without relaxing assertions.
