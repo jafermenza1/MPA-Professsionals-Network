@@ -1,6 +1,7 @@
 "use client";
 import { FormFeedback } from "../../../components/form-feedback";
 import { FormEvent, useEffect, useState } from "react";
+import { Plus, X } from "lucide-react";
 import { api, ApiError } from "../../../lib/api";
 import { Card, Badge } from "../../../components/ui";
 
@@ -22,7 +23,9 @@ const shareable = [
 ] as const;
 
 export default function JobInterestPage() {
-  const [form, setForm] = useState({ contactName: "", contactEmail: "", contactPhone: "", targetRole: "", skills: "", experience: "", location: "", workMode: "", availability: "", intent: "" });
+  const [form, setForm] = useState({ contactName: "", contactEmail: "", contactPhone: "", targetRole: "", experience: "", location: "", workMode: "", availability: "", intent: "" });
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [skillDraft, setSkillDraft] = useState("");
   const [lookupReference, setLookupReference] = useState("");
   const [lookupToken, setLookupToken] = useState("");
   const [lookupBusy, setLookupBusy] = useState(false);
@@ -98,7 +101,7 @@ export default function JobInterestPage() {
           contactEmail: form.contactEmail.trim() || null,
           contactPhone: form.contactPhone.trim() || null,
           targetRole: form.targetRole.trim(),
-          skills: form.skills.split(",").map(value => value.trim()).filter(Boolean),
+          skills: selectedSkills,
           experience: form.experience.trim(),
           location: form.location.trim(),
           workMode: form.workMode.trim(),
@@ -210,12 +213,12 @@ export default function JobInterestPage() {
           <label>Email (optional if phone provided)<input type="email" maxLength={320} value={form.contactEmail} onChange={e => update("contactEmail", e.target.value)} /></label>
           <label>Phone (optional if email provided)<input maxLength={80} value={form.contactPhone} onChange={e => update("contactPhone", e.target.value)} /></label>
           <label>Target role / occupation<input required maxLength={500} value={form.targetRole} onChange={e => update("targetRole", e.target.value)} placeholder="What kind of work are you seeking?" /></label>
-          <label>Skills (comma separated for now)<input maxLength={2000} value={form.skills} onChange={e => update("skills", e.target.value)} /></label>
+          <div className="grid" style={{gap:8}}><label htmlFor="job-interest-skill">Skills</label><div className="row" style={{gap:8,flexWrap:"wrap"}}><input id="job-interest-skill" maxLength={120} value={skillDraft} onChange={e=>setSkillDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const value=skillDraft.trim();if(value&&!selectedSkills.some(item=>item.toLocaleLowerCase()===value.toLocaleLowerCase()))setSelectedSkills(items=>[...items,value]);setSkillDraft("");}}} placeholder="Add one skill at a time" style={{flex:"1 1 220px"}}/><button type="button" className="btn btn-ghost" onClick={()=>{const value=skillDraft.trim();if(value&&!selectedSkills.some(item=>item.toLocaleLowerCase()===value.toLocaleLowerCase()))setSelectedSkills(items=>[...items,value]);setSkillDraft("");}} disabled={!skillDraft.trim()}><Plus size={15}/> Add skill</button></div><div className="row" style={{gap:6,flexWrap:"wrap"}}>{selectedSkills.map(skill=><Badge key={skill}>{skill}<button type="button" aria-label={"Remove "+skill} onClick={()=>setSelectedSkills(items=>items.filter(item=>item!==skill))} style={{marginLeft:6,border:0,background:"transparent",color:"inherit",cursor:"pointer"}}><X size={12}/></button></Badge>)}</div><span className="muted">Add each skill separately. Duplicate entries are ignored; remove any selection before submitting.</span></div>
           <label>Preferred location<input maxLength={300} value={form.location} onChange={e => update("location", e.target.value)} placeholder="City or region" /></label>
-          <label>Work mode<input maxLength={100} value={form.workMode} onChange={e => update("workMode", e.target.value)} placeholder="On-site, hybrid, remote" /></label>
-          <label>Availability<input maxLength={500} value={form.availability} onChange={e => update("availability", e.target.value)} placeholder="When could you start?" /></label>
+          <label>Preferred work mode<select value={form.workMode} onChange={e=>update("workMode",e.target.value)}><option value="">No preference</option><option value="onsite">On-site</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option></select></label>
+          <label>Availability<select value={form.availability} onChange={e=>update("availability",e.target.value)}><option value="">Not specified</option><option value="immediately">Immediately</option><option value="within_2_weeks">Within two weeks</option><option value="within_1_month">Within one month</option><option value="within_3_months">Within three months</option><option value="flexible">Flexible / to discuss</option></select></label>
         </div>
-        <label>Experience summary<textarea maxLength={3000} rows={3} value={form.experience} onChange={e => update("experience", e.target.value)} /></label>
+        <label>Experience range<select value={form.experience} onChange={e=>update("experience",e.target.value)}><option value="">Not specified</option><option value="less_than_1_year">Less than 1 year</option><option value="1_to_3_years">1–3 years</option><option value="4_to_7_years">4–7 years</option><option value="8_to_10_years">8–10 years</option><option value="more_than_10_years">More than 10 years</option></select></label>
         <label>Anything else MPA should know<textarea maxLength={2000} rows={3} value={form.intent} onChange={e => update("intent", e.target.value)} /></label>
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><input type="checkbox" required checked={consentToProcess} onChange={e => setConsentToProcess(e.target.checked)} />I agree that MPA may receive and review this job-interest request to assess possible opportunities. This does not authorize employer sharing.</label>
         <Card>
