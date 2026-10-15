@@ -171,8 +171,19 @@ export default function Organizations() {
     void load();
   }, [load]);
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("register") === "1")
-      setShowForm(true);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("register") === "1") setShowForm(true);
+    try {
+      const raw = localStorage.getItem("mpa.organization-registration-draft");
+      if (raw) {
+        const draft = JSON.parse(raw);
+        if (Number(draft.savedAt || 0) && Date.now() - Number(draft.savedAt) <= 24 * 60 * 60 * 1000) {
+          setForm({ ...blank, legalName: String(draft.legalName || ""), displayName: String(draft.displayName || ""), organizationType: String(draft.organizationType || ""), description: String(draft.description || ""), website: String(draft.website || ""), email: String(draft.email || ""), phone: String(draft.phone || ""), addressText: String(draft.addressText || "") });
+          setOrganizationTypeChoice(String(draft.organizationType || ""));
+          setShowForm(true);
+        } else localStorage.removeItem("mpa.organization-registration-draft");
+      }
+    } catch { localStorage.removeItem("mpa.organization-registration-draft"); }
   }, []);
 
   async function register(e: FormEvent) {
@@ -206,6 +217,7 @@ export default function Organizations() {
         created,
         ...current.filter((x) => x.id !== created.id),
       ]);
+      localStorage.removeItem("mpa.organization-registration-draft");
       setForm(blank);
       setOrganizationTypeChoice("");
       setShowForm(false);
