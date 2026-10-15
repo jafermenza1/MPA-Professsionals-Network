@@ -24,10 +24,10 @@ function tokenMatches(expected,supplied){
   const a=Buffer.from(expected),b=Buffer.from(supplied);
   return a.length===b.length&&timingSafeEqual(a,b);
 }
-function currentStatus(row){
+export function getMembershipCardStatus(row, now=new Date()) {
   if(row.status==="revoked"||row.status==="suspended") return row.status;
-  const now=new Date().toISOString().slice(0,10);
-  if(row.status!=="active"||String(row.start_date).slice(0,10)>now||(row.end_date&&String(row.end_date).slice(0,10)<now)) return "expired";
+  const today=now.toISOString().slice(0,10);
+  if(row.status!=="active"||String(row.start_date).slice(0,10)>today||(row.end_date&&String(row.end_date).slice(0,10)<today)) return "expired";
   return "active";
 }
 async function settings(db=getPool()){
@@ -58,7 +58,7 @@ export async function getMyMembershipCard(userId){
     memberName:row.member_name||"MPA Member",
     membershipType:row.membership_type,
     productCode:row.product_code,
-    status:currentStatus(row),
+    status:getMembershipCardStatus(row),
     startDate:row.start_date,
     endDate:row.end_date,
     profilePictureFileId:row.profile_picture_file_id,
