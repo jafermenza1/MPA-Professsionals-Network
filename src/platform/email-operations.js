@@ -8,8 +8,11 @@ async function requireAdmin(db,actorId){
  if(!roles.includes("system_admin"))fail(403,"System administrator access is required for email operations.","FORBIDDEN");
 }
 const clean=(v,max=2000)=>String(v??"").trim().slice(0,max);
-function render(template,vars){
- return String(template||"").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(_,key)=>String(vars?.[key]??""));
+function render(template,vars,{html=false}={}){
+ return String(template||"").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,(_,key)=>{
+  const value=String(vars?.[key]??"");
+  return html?value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/\u0027/g,"&#39;"):value;
+ });
 }
 function providerConfig(){
  const apiKey=clean(process.env.RESEND_API_KEY,500),from=clean(process.env.EMAIL_FROM,320);
@@ -126,7 +129,7 @@ export async function dispatchEmailOutbox(actorId,{limit=20,onlyId=null,system=f
    let subject=row.subject||"",textBody=row.text_body||row.payload?.text||"",htmlBody=row.html_body||row.payload?.html||"";
    const template=(await db.query("select subject_template,text_template,html_template,enabled from email_notification_template where template_code=$1",[row.template_code])).rows[0];
    if(template&&!template.enabled){await db.query("update notification_outbox set status='cancelled',last_error='Notification template disabled by administrator',locked_at=null,updated_at=now() where id=$1",[row.id]);results.push({id:row.id,status:"cancelled"});continue;}
-   if(template?.enabled){const vars={...(row.payload||{}),...(row.payload?.variables||{})};subject=render(template.subject_template,vars);textBody=render(template.text_template,vars);htmlBody=render(template.html_template,vars);}
+   if(template?.enabled){const vars={...(row.payload||{}),...(row.payload?.variables||{})};subject=render(template.subject_template,vars);textBody=render(template.text_template,vars);htmlBody=render(template.html_template,vars,{html:true});}
    const humanEvent=String(row.template_code||"account update").replace(/[._-]+/g," ").replace(/\b\w/g,ch=>ch.toUpperCase());
    if(!subject)subject=humanEvent+" · MPA Professionals Network";
    if(!textBody)textBody="There is a new update to your MPA Professionals Network account.\n\n"+(row.payload?.status?"Status: "+row.payload.status+"\n":"")+(row.payload?.nextAction?"Next action: "+row.payload.nextAction+"\n":"")+(row.payload?.registrationReference?"Reference: "+row.payload.registrationReference+"\n":"")+"Sign in to the platform to review the latest details. If you need help, contact platform support.";
