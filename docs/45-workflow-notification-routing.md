@@ -36,6 +36,7 @@
 
 ## Implementation inventory
 
+- Additive schema/backfill: `db/migrations/20261015200000_in_app_action_center.sql`, `db/migrations/20261015210000_notification_category_legacy_backfill.sql`
 - Shared policy: `src/platform/notifications.js`
 - Email/in-app integration: `src/platform/email-operations.js`
 - Membership and account workflow: `src/membership/service.js`
