@@ -1,39 +1,59 @@
 # Repository correction port — 15 October 2026
 
 ## Purpose
+The recent implementation work was authored against `Jafermenza/ET-Professionals-Network`, while the intended product repository is `jafermenza1/MPA-Professsionals-Network`. This record defines the exact transfer scope, safe handling rules, and evidence still required. It is not an acceptance claim.
 
-The recent implementation work was authored against the wrong repository, `Jafermenza/ET-Professionals-Network`. This branch ports the compatible changes into the intended repository, `jafermenza1/MPA-Professsionals-Network`, without replacing the existing MPA implementation or rewriting its history.
-
-## Source and destination anchors
-
+## Exact source scope — do not widen
+- Source repository / PR: `Jafermenza/ET-Professionals-Network`, PR #25
 - Source branch: `reconciliation/holistic-gates`
-- Source head reviewed: `3685817b428615f24f2fdf90c497c7bc9a254d1b`
-- Destination branch used as the starting point: `reconciliation/holistic-gates`
-- Destination starting SHA / PR #3 head: `d919d3f94b2eb9ba593b70b7c8763ffbd027bdd4`
-- Port branch: `port/et-network-correction-2026-10-15`
+- Excluded base: `433ea129f22036af00f07836a26c32c4ee548896`
+- Included source head: `3685817b428615f24f2fdf90c497c7bc9a254d1b`
+- Observed range: 126 commits and 29 net changed files.
+- Destination repository / PR: `jafermenza1/MPA-Professsionals-Network`, PR #3
+- Destination branch: `reconciliation/holistic-gates`
+- Original destination anchor: `d919d3f94b2eb9ba593b70b7c8763ffbd027bdd4`
+- Destination head before this follow-up: `0cd5edf27032b8a537d77ba9058126a7e6a957b1`
 
-The source compare range contains 126 commits and a 29-file net diff. Because the repositories have divergent implementations and different route/service layers, the original commits cannot be transplanted as-is without importing unrelated history or overwriting MPA-only work. This branch uses an additive/semantic port instead.
+Transfer only source changes after the excluded base through the pinned included head. Do not import older source work, unrelated changes, the whole source history, or changes after the pinned head. If the source head moves, do not silently widen the scope.
 
-## Ported areas
+## Why this is a semantic port
+The repositories have distinct histories and MPA-specific membership, registration, login/session, organization workspace, and marketplace contracts. A direct commit transplant or wholesale file replacement risks overwriting MPA behavior. Apply only compatible changes in destination-native commits and preserve MPA history.
 
-- Additive security controls, administrator WebAuthn/passkey service, verification-token service and email operations service.
-- Additive migrations for persistent security controls, administrator passkey state/recovery, email operations and audience templates.
-- Administrator email operations and security pages, verification page, related E2E/unit test files and operator documentation.
-- Email operations API endpoints with current database-role authorization, persistent rate limiting on registration/login, bounded background outbox dispatch and environment examples.
-- Existing MPA registration flow preserved and extended with professional/organization choice, password confirmation, organization draft preservation for 24 hours, and no visible account UUID.
-- Existing organization workspace preserved and extended to restore the organization draft and show human-readable application reference, last update and next action.
-- Existing application tracking status labels clarified; existing username/password login retained and extended with passkey sign-in/recovery and email-verification resend controls.
-- Organization registration/review, job application submission, service request and proposed mentorship match events enqueue audience-template notifications.
+The destination had 38 port-branch commits touching 29 files relative to the recorded starting anchor. This count does not prove all 126 source commits or all source behavior have been mapped. A per-file mapping and contract review are required.
 
-## Safety boundaries
+## Source areas to reconcile
+- Authentication: persistent rate limits, human challenge, email verification, administrator passkeys/WebAuthn and recovery.
+- Email operations: templates, durable drafts/outbox, inbound metadata, delivery status/retry and administrator controls.
+- Workflow integration: registration, organization review, application tracking, job applications, service requests and mentorship notifications.
+- UI/configuration: security and email administration, verification screen, registration/login updates and organization draft restoration.
+- Persistence/evidence: migrations, unit/E2E tests, environment documentation and migration/CI support.
 
-- This is a port branch based on the existing PR #3 head. No force-push, history rewrite, merge, deployment or production migration was performed.
-- Existing MPA-specific registration, membership, account-recovery, organization workspace and marketplace implementations were retained rather than replaced with divergent source files.
-- Do not apply the new migrations to production as part of this port.
-- Email delivery is not established by a queued message. Configure a verified sender and provider secrets, then verify delivery and inbound-webhook configuration in a controlled environment.
-- The copied verification/passkey functionality and cross-service email integrations still require review against the MPA schema and API contract.
-- The divergent MPA `src/membership/service.js` was intentionally not replaced. Email resend/verify endpoints exist, but initial verification-token issuance during registration and mandatory verification gating in the existing membership login/session flow are **not yet integrated**. Keep `EMAIL_VERIFICATION_REQUIRED=false` until those semantics are implemented and tested; do not assume adding the setting alone enforces verification.
+For every source path in the 29-file net diff, record a disposition: already present, compatible as-is, adapted to MPA contracts, or excluded with reason. A filename or commit is not proof of functional equivalence.
+
+## Safety findings
+1. The source `.env.example` contains a fixed JWT secret and fixed bootstrap administrator password. Do not copy fixed credentials. The destination example has been changed to unmistakable placeholders; generate unique secrets per environment and never use placeholders as live credentials.
+2. MPA's `src/membership/service.js` was intentionally not replaced. Initial verification-token issuance during registration and mandatory verification enforcement in MPA's membership login/session path remain incomplete. Keep `EMAIL_VERIFICATION_REQUIRED=false` until server-side enforcement is integrated and tested; the flag alone does not enforce verification.
+3. Review passkey origin/RP-ID validation, challenge expiry/single use, credential ownership, sign-counter behavior, recovery-code hashing/one-time consumption, session scope, admin authorization and audit trails against MPA's auth model.
+4. Validate migrations against a disposable database: dependency order, legacy baseline adoption, rerun safety, existing-row constraints, recovery procedure and schema compatibility. Do not apply these migrations to production as part of this PR.
+5. Queued email is not delivered email. Verify provider configuration, sender, retries, duplicate handling, webhook authentication, redaction and actual delivery in a controlled environment.
+6. Preserve MPA capabilities and assertions. Do not remove tests, relax authorization, replace MPA-specific services wholesale, force-push, rewrite history, merge or deploy as part of this port.
+
+## Port inventory — not yet acceptance evidence
+- Additive security controls, passkey service, verification-token service and email operations service.
+- Additive security/passkey/email migrations.
+- Administrator email/security pages, verification page, related test files and operator documentation.
+- Email operations endpoints, persistent throttling, bounded outbox dispatch and environment examples.
+- MPA registration, membership, recovery, organization workspace, tracking and marketplace implementations retained and extended rather than wholesale replaced.
+- Notification queue hooks for selected organization/application/service/mentorship workflows.
+
+## Safe transfer and acceptance procedure
+1. Pin and verify the exact source base/head above; enumerate all 29 paths and collect source patches.
+2. Compare every source patch with the destination at its current PR #3 head. Identify overlaps, schema/API differences and already-present behavior before editing.
+3. Make small, reviewable, destination-native commits only for missing compatible behavior. Do not copy unrelated source history or widen the source range.
+4. Record per-file dispositions, destination commit SHAs, adaptations/exclusions and evidence in this document.
+5. Run the agreed final validation on the exact destination SHA: unit/integration tests, migration baseline/rerun tests, security and cross-account denial tests, browser workflows, configured typecheck/build, and controlled email delivery checks.
+6. Fix root causes without weakening assertions; rerun affected tests and record final evidence.
+7. Keep PR #3 open and draft until acceptance criteria pass. This port does not authorize merge or deployment.
 
 ## Validation status
-
-**NOT VALIDATED.** No test suite, TypeScript check, lint, production build, migration application/rerun, browser journey, or provider-delivery test has been run for this port. The branch must remain a draft and must not be merged or deployed until those checks pass and any schema/API mismatches are resolved.
+**NOT VALIDATED.** The source range and destination anchors were inspected, and fixed credentials in the destination example were replaced with placeholders. Complete per-file behavioral equivalence, tests, typecheck/lint, production build, migration application/rerun, browser journeys and provider-delivery tests have not been established here. Do not mark complete or merge/deploy until evidence is recorded against the final destination SHA.
