@@ -21,7 +21,7 @@ function matchScore(question,article){
 }
 async function logAudit(db,actorId,action,resourceId,requestId){
  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,'support_bot',$3,$4,'success',$5)",
- [actorId,action,resourceId,requestId||null,{source:"support-bot-admin"}]).catch(()=>{});
+ [actorId,action,resourceId,requestId||null,{source:"support-bot-admin"}]);
 }
 export async function answerPublicQuestion(input,context={}){
  const question=clean(input.question,2000);
