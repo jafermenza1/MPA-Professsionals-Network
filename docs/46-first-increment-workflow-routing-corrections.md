@@ -95,3 +95,34 @@ The browser draft is local-only and can contain representative/organization cont
 4. Verify offline submit does not create an account; reconnecting never auto-submits; explicit submission requires a fresh challenge.
 5. Simulate registration request timeout after server commit and confirm UI does not auto-replay or claim account creation failed with certainty; verify the documented login/verification recovery path.
 6. Run the new Node contract tests, production build and browser journeys on the exact head, then record SHA and results. Until then, this increment remains unaccepted.
+
+
+## Increment 4 — Fast discovery experience (implemented slice; acceptance open)
+
+**Status: implementation committed; no tests, typecheck, build, API checks, or browser validation run.**
+
+This increment improves the existing discovery surfaces without creating a parallel identity or authorization system:
+
+- Professional discovery (/network) sends bounded limit/offset requests, renders 20 results per page, and keeps the existing server-side visibility/verified-claim rules. Existing saved search criteria remain account-backed.
+- Opportunity discovery (/jobs) requests 20 records per page; the server returns items, limit, offset, total, and hasMore. Existing save/unsave and job-alert APIs remain authoritative.
+- Service discovery (/services) uses its existing server-side query/limit/offset contract and renders 20 results per page.
+- Mentor discovery (/mentorship) requests bounded pages while retaining the existing server eligibility, active membership, moderation and visibility rules.
+- Added a public organization directory at /organizations/directory and GET /api/v1/public/organizations. It exposes only verified, explicitly public organizations and supports name/description, organization type and location filters plus bounded pagination. The private GET /api/v1/organizations workspace endpoint is unchanged.
+- Added a shared keyboard-accessible pagination control with previous/next state and an announced result range. Search submissions and clear-filter actions reset to page one.
+
+### Low-bandwidth and safety boundaries
+
+- Discovery cards remain text-first; no new profile photo/media fetches or heavy recommendation libraries were added.
+- The public organization query excludes unverified and non-public organizations in SQL. Organization membership, private workspace data and member contact data are not returned by this endpoint.
+- Professional, service and mentor endpoints continue to enforce their existing visibility/membership rules. Pagination is not authorization and does not change those rules.
+- **Known remaining gap:** saved items are not yet a consistent cross-entity feature. Jobs have server-backed save/unsave; the professional directory has saved searches, not saved professional profiles. Saved organizations, services and mentors are not implemented. Do not represent Increment 4 as fully complete until saved-item semantics are agreed with the repository contract and added with owner-scoped persistence.
+- **Known optimization gap:** the current jobs service filters viewer-specific visibility before slicing the response page to avoid leaking/inaccurately skipping restricted opportunities; it still reads matching job rows before slicing. Follow-up work should push scope-aware pagination into SQL only with equivalent authorization predicates and regression coverage.
+- Organization profile detail pages and dedicated public service/mentor profile routes remain limited by existing route/API shape; current safe detail panels continue to be used where available.
+
+### Required acceptance evidence
+
+1. Run focused tests for GET /api/v1/public/organizations including unverified/private exclusion, filters, pagination boundaries, invalid limits and anonymous access.
+2. Run professional/jobs/services/mentor pagination tests for page overlap, skipped records, empty results, filter reset, last page, and malformed query values.
+3. Verify saved-job changes persist across reload and are owner-scoped; verify no saved-item or profile endpoint leaks cross-account data.
+4. Test low-bandwidth behavior with throttling, keyboard navigation, reduced motion, narrow viewports, retry/error/empty states, and profile detail loading.
+5. Run existing regression suites and a production build on the exact head, then record SHA, commands and results. Until then, Increment 4 remains implemented but not accepted.
