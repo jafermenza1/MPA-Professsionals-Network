@@ -160,6 +160,32 @@ test("human subtraction challenges remain answerable on numeric-only keyboards",
   }
 });
 
+test("organization registration creates an organization-only account without a professional profile",async()=>{
+  const email="security-org-"+suffix+"@example.test";
+  const phone="08"+randomUUID().replace(/\D/g,"").slice(0,8);
+  const registered=await membership.register({accountType:"organization",email,password:"Security-org-password-12345",passwordConfirmation:"Security-org-password-12345",firstName:"Organization",middleName:"Representative",lastName:"Test"+suffix,displayName:"Organization Representative Test "+suffix,phone},"security-org-register");
+  const userId=registered.user.id;createdUsers.push(userId);
+  assert.equal(registered.accountType,"organization_representative");
+  assert.deepEqual(registered.roles,["organization_representative"]);
+  const db=getPool();
+  const stored=(await db.query("select account_type from app_user where id=$1",[userId])).rows[0];
+  assert.equal(stored.account_type,"organization_representative");
+  const profileCount=(await db.query("select count(*)::int count from professional_profile pr join person p on p.id=pr.person_id where p.user_id=$1",[userId])).rows[0].count;
+  assert.equal(profileCount,0,"organization-only registration must not create a professional profile");
+  const me=await membership.getMe(userId);
+  assert.equal(me.account_type,"organization_representative");
+  assert.equal(me.profile_id,null,"professional fields must be redacted for organization-only accounts");
+  assert.equal(me.headline,null);
+  assert.ok(!me.roles.includes("member"));
+  await assert.rejects(membership.updateProfile(userId,{},"security-org-profile-denied"),error=>error.code==="PROFESSIONAL_PROFILE_FORBIDDEN");
+});
+
+test.after(async()=>{
+  const db=getPool();
+  for(const userId of createdUsers){await db.query("delete from audit_log where actor_user_id=$1",[userId]);await db.query("delete from app_user where id=$1",[userId]);}
+  await closePool();
+});
+
 test.after(async()=>{
   const db=getPool();
   for(const userId of createdUsers){await db.query("delete from audit_log where actor_user_id=$1",[userId]);await db.query("delete from app_user where id=$1",[userId]);}
