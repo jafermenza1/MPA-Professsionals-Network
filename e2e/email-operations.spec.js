@@ -42,7 +42,7 @@ test("email verification shows the returned registration reference only after ve
 test("organization registration persists the draft under the key restored after verification",async({page})=>{
  await page.route("**/api/v1/auth/human-challenge",route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({id:"draft-challenge",question:"What is 1 + 1?",expiresAt:new Date(Date.now()+300000).toISOString()})}));
  await page.route("**/api/v1/auth/human-challenge/verify",route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({token:"human-check-token-12345678901234567890"})}));
- await page.route("**/api/v1/auth/register",route=>route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({verificationRequired:true,verificationSent:true})}));
+ await page.route("**/api/v1/auth/register",route=>route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({verificationRequired:true,verificationSent:true,registrationReference:"MPA-MEM-26-000123"})}));
  await page.goto("/register");
  await page.getByRole("button",{name:/Organization/}).click();
  await page.getByLabel("First name").fill("Amina");
@@ -60,6 +60,7 @@ test("organization registration persists the draft under the key restored after 
  await page.getByLabel("What is 1 + 1?").fill("2");
  await page.getByRole("button",{name:/Create representative account and continue/}).click();
  await expect(page.getByRole("heading",{name:"Check your email"})).toBeVisible();
+ await expect(page.getByText("MPA-MEM-26-000123")).toHaveCount(0);
  const draft=await page.evaluate(()=>localStorage.getItem("mpa.organization-registration-draft"));
  expect(draft).not.toBeNull();
  expect(JSON.parse(draft||"{}").legalName).toBe("Amina Trading PLC");
