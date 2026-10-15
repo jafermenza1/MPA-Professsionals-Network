@@ -427,7 +427,7 @@ export function allowedCandidateResponse(from,to){ return from==="offer"&&to==="
 
 export async function updateCandidate(jobId,applicationId,userId,input,requestId){
   return withTransaction(async db=>{
-    const j=(await db.query("select organization_id from job where id=$1",[jobId])).rows[0];
+    const j=(await db.query("select organization_id,title from job where id=$1",[jobId])).rows[0];
     if(!j) throw error(404,"Job not found.","NOT_FOUND");
     await orgRole(db,j.organization_id,userId,CANDIDATE_ROLES);
     const a=(await db.query("select * from job_application where id=$1 and job_id=$2 for update",[applicationId,jobId])).rows[0];
@@ -445,6 +445,14 @@ export async function updateCandidate(jobId,applicationId,userId,input,requestId
     )).rows[0];
     await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,$4,$5)",[applicationId,userId,a.status,input.status,input.note||null]);
     await audit(db,userId,"job.candidate_status_changed","job_application",applicationId,requestId,{from:a.status,to:input.status});
+    if(input.status==="offer"&&offerApproval==="pending"){
+      const approvers=(await db.query("select user_id from job_team_member where job_id=$1 and role_code='approver' and active=true",[jobId])).rows;
+      for(const approver of approvers)await queueWorkflowEmail(db,approver.user_id,"employer.offer_approval_required",{notificationEventCode:"job.offer_approval_required",category:"recruitment",title:"Job offer needs approval",audience:"employer",jobTitle:j.title||"job",status:"pending approval",message:"A candidate offer is waiting for the required internal approval.",nextAction:"Review the proposed offer and approve or reject it in the recruitment workspace.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
+    }else{
+      const candidateMessage=input.status==="offer"?"An employment offer is ready for your response.":input.status==="rejected"?"The employer has updated your application decision.":input.status==="hired"?"Your hiring status has been recorded.":input.status==="shortlisted"?"You have been shortlisted for the next recruitment stage.":input.status==="interview"?"Your application has advanced to interview stage.":"Your application status has been updated.";
+      const nextAction=input.status==="offer"?"Review the offer terms and accept or decline it.":input.status==="rejected"?"Review the decision and continue exploring other opportunities.":input.status==="hired"?"Review the hiring details and any onboarding instructions.":input.status==="shortlisted"?"Check your application timeline for interview or next-step updates.":input.status==="interview"?"Review your interview invitation and confirm availability.":"Review your application timeline for the latest progress.";
+      await queueWorkflowEmail(db,a.applicant_user_id,"professional.workflow_update",{notificationEventCode:"job.application_status_changed",category:"recruitment",title:"Application status updated",status:input.status,message:candidateMessage,nextAction,actionUrl:"/jobs",actionRequired:["offer","interview"].includes(input.status),priority:["offer","interview"].includes(input.status)?"high":"normal"},"job_application",applicationId);
+    }
     return updated;
   });
 }
@@ -457,6 +465,7 @@ export async function approveJobOffer(applicationId,userId,input,requestId){
   const decision=input.decision==="approved"?"approved":"rejected";
   const row=(await db.query("update job_application set offer_approval_status=$1,updated_at=now() where id=$2 returning *",[decision,applicationId])).rows[0];
   await audit(db,userId,"job.offer_approval_decided","job_application",applicationId,requestId,{decision});
+  await queueWorkflowEmail(db,a.applicant_user_id,"professional.workflow_update",{notificationEventCode:"job.offer_approval_decided",category:"recruitment",title:decision==="approved"?"Offer approved":"Offer not approved",status:decision,message:decision==="approved"?"The employer approved the offer and it is ready for your response.":"The proposed offer was not approved by the employer.",nextAction:decision==="approved"?"Review the offer terms and accept or decline.":"Check your application timeline or contact the employer for clarification.",actionUrl:"/jobs",actionRequired:decision==="approved",priority:decision==="approved"?"high":"normal"},"job_application",applicationId);
   return row;
  }
  );
