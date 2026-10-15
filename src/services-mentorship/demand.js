@@ -17,8 +17,8 @@ async function audit(db,actor,action,type,id,requestId,metadata={}){
 }
 async function notify(db,userId,eventCode,type,id,payload={}){
  if(!userId)return {channel:"in_app",status:"not_recorded"};
- const row=(await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload,delivery_channel,delivery_status) values($1,$2,$3,$4,$5,'in_app','recorded') returning id,delivery_channel,delivery_status",[userId,eventCode,type,id,payload])).rows[0];
- return {channel:row.delivery_channel,status:row.delivery_status,eventId:row.id,externalDelivery:"not_configured"};
+ const row=(await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload) values($1,$2,$3,$4,$5) returning id",[userId,eventCode,type,id,payload])).rows[0];
+ return {channel:"in_app",status:"recorded",eventId:row.id,externalDelivery:"not_configured"};
 }
 function clean(value,max){return String(value??"").trim().slice(0,max);}
 function required(value,label,max){const v=clean(value,max);if(!v)throw fail(400,label+" is required.","VALIDATION_ERROR");return v;}
