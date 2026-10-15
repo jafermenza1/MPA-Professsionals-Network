@@ -12,7 +12,6 @@
   "theme_color": "#0A3258",
   "categories": ["business", "education", "social"],
   "icons": [
-    { "src": "/brand/mpa-logo-light.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/brand/mpa-logo-dark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    { "src": "/brand/mpa-logo-light.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }
