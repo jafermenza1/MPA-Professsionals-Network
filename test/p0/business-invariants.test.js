@@ -128,23 +128,24 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
     error => error.code === "CONSENT_REQUIRED"
   );
 
-  const granted = await publicOpportunity.updateSharingConsent(inquiry.public_reference, inquiry.continuationToken, {
-    employerSharingConsent: true,
-    scope: "named_employer",
-    fields: ["targetRole", "skills"]
-  }, "p0-sharing-consent-granted");
-  assert.equal(granted.employer_sharing_consent, true);
-  assert.deepEqual(granted.employer_sharing_fields, ["targetRole", "skills"]);
-  assert.equal(granted.employer_sharing_consent_version, "job-seeker-sharing-v1");
-  const recovered = await publicOpportunity.getPublicInquiry(inquiry.public_reference, inquiry.continuationToken);
-  assert.equal(recovered.employerSharingConsent, true);
-  assert.deepEqual(recovered.employerSharingFields, ["targetRole", "skills"]);
-
   const organization = await organizationJobs.registerOrganization(support.user.id, {
     legalName: "P0 Consent Test Organization " + randomUUID(),
     displayName: "P0 Consent Test Organization"
   }, "p0-consent-test-organization");
   await db.query("update organization set verification_status='verified',public_visible=true,verified_at=now() where id=$1", [organization.id]);
+
+  const granted = await publicOpportunity.updateSharingConsent(inquiry.public_reference, inquiry.continuationToken, {
+    employerSharingConsent: true,
+    scope: "named_employer",
+    organizationId: organization.id,
+    fields: ["targetRole", "skills"]
+  }, "p0-sharing-consent-granted");
+  assert.equal(granted.employer_sharing_consent, true);
+  assert.deepEqual(granted.employer_sharing_fields, ["targetRole", "skills"]);
+  assert.equal(granted.employer_sharing_consent_version, "job-seeker-sharing-v2");
+  const recovered = await publicOpportunity.getPublicInquiry(inquiry.public_reference, inquiry.continuationToken);
+  assert.equal(recovered.employerSharingConsent, true);
+  assert.deepEqual(recovered.employerSharingFields, ["targetRole", "skills"]);
 
   await assert.rejects(
     publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: organization.id, fields: ["contactEmail"] }, "p0-share-outside-consent"),
