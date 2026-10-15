@@ -245,7 +245,12 @@ export async function createDemandProviderMatch(demandId,actorId,input,requestId
   if(!match)throw fail(409,"This provider offer has already been matched to the demand.","DUPLICATE_MATCH");
   await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.provider_match_proposed',$3,$3,$4,$5)",[demandId,actorId,demand.status,clean(input.note,2000)||null,{listingType,listingId,matchId:match.id}]);
   await audit(db,actorId,"marketplace.demand_provider_match_proposed","marketplace_demand_provider_match",match.id,requestId,{demandId,listingType,listingId});
-  return match;
+  const recipients=new Set();
+  if(providerUserId)recipients.add(providerUserId);
+  if(organizationId){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[organizationId,["owner","administrator","recruiter","project_manager"]])).rows;for(const member of team)recipients.add(member.user_id);}
+  const notificationResults=[];
+  for(const recipient of recipients){const event=await notify(db,recipient,"marketplace.provider_match_proposed","marketplace_demand_provider_match",match.id,{message:"The Support Desk proposed a private demand match for your offer. No requester contact details are included in this notification.",nextAction:"Open your matching workspace to review the allowed scope and accept or decline with a note."});if(event.status==="recorded")notificationResults.push(event);}
+  return {...match,notificationStatus:notificationResults.length?"in_app_recorded":"no_active_recipients",notificationCount:notificationResults.length,externalDelivery:"not_configured",nextAction:notificationResults.length?"Match proposal saved and in-app event recorded for the matched provider/team. Email/SMS delivery is not configured.":"Match proposal saved, but no active provider/team recipient was available for an in-app notification."};
  });
 }
 export async function listMyDemandProviderMatches(userId){
@@ -274,8 +279,9 @@ export async function respondToDemandProviderMatch(matchId,userId,status,note,re
   await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.provider_match_responded',$3,$4,$5,$6)",[match.demand_id,userId,match.demand_status,nextDemandStatus,responseNote||null,{matchId,matchStatus:updated.status}]);
   await audit(db,userId,"marketplace.demand_provider_match_responded","marketplace_demand_provider_match",matchId,requestId,{status,demandId:match.demand_id});
   const demandOwner=(await db.query("select requester_user_id from marketplace_demand where id=$1",[match.demand_id])).rows[0];
-  if(demandOwner?.requester_user_id&&demandOwner.requester_user_id!==userId) await notify(db,demandOwner.requester_user_id,status==="accepted"?"marketplace.provider_match_accepted":"marketplace.provider_match_declined","marketplace_demand_provider_match",matchId,{status,message:status==="accepted"?"A provider accepted the proposed match.":"A provider cannot take this request; the Support Desk can look for another.",nextAction:status==="accepted"?"Review the provider details and coordinate the next step.":"Wait for another proposed match or contact the Support Desk."});
-  return {...updated,nextAction:status==="accepted"?"The requester has been notified. Coordinate the next step.":"The Support Desk can propose another provider."};
+  let requesterNotification={status:"not_required"};
+  if(demandOwner?.requester_user_id&&demandOwner.requester_user_id!==userId)requesterNotification=await notify(db,demandOwner.requester_user_id,status==="accepted"?"marketplace.provider_match_accepted":"marketplace.provider_match_declined","marketplace_demand_provider_match",matchId,{status,message:status==="accepted"?"A provider accepted the proposed match.":"A provider cannot take this request; the Support Desk can look for another.",nextAction:status==="accepted"?"Review the provider details and coordinate the next step.":"Wait for another proposed match or contact the Support Desk."});
+  return {...updated,notificationStatus:requesterNotification.status==="recorded"?"in_app_recorded":requesterNotification.status==="not_required"?"not_required":"not_recorded",externalDelivery:"not_configured",nextAction:status==="accepted"?(requesterNotification.status==="recorded"?"The requester was notified in-app. Email/SMS delivery is not configured. Coordinate the next step.":"The match was accepted, but no requester notification was recorded for this action. Contact the requester through the platform before proceeding."):"The Support Desk can propose another provider."};
  });
 }
 export async function getDemandSummary(userId,topicId){
