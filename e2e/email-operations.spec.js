@@ -5,7 +5,7 @@ const API_BASE=process.env.API_BASE_URL||"http://127.0.0.1:3000";
 test("registration mode switch presents organization representative and legal-entity fields",async({page})=>{
  await page.goto("/register");
  await expect(page.getByLabel("First name")).toBeVisible();
- await expect(page.getByLabel("Display name")).toBeVisible();
+ await expect(page.getByLabel("Display name",{exact:true})).toBeVisible();
  await page.locator("button.choice").filter({hasText:"Organization"}).first().click();
  await expect(page.getByLabel("Representative work email")).toBeVisible();
  await expect(page.getByLabel("Legal or registered organization name")).toBeVisible();
@@ -13,10 +13,10 @@ test("registration mode switch presents organization representative and legal-en
  await expect(page.getByLabel("Registered location / address")).toBeVisible();
  await expect(page.getByLabel("Organization work email")).toBeVisible();
  await expect(page.getByLabel("Organization phone")).toBeVisible();
- await expect(page.getByText(/organization approval is a separate review decision/i)).toBeVisible();
- await expect(page.getByLabel("Display name")).toHaveCount(0);
+ await expect(page.getByText(/organization approval happens separately after profile submission and review/i)).toBeVisible();
+ await expect(page.getByLabel("Display name",{exact:true})).toHaveCount(0);
  await page.locator("button.choice").filter({hasText:"Professional"}).first().click();
- await expect(page.getByLabel("Display name")).toBeVisible();
+ await expect(page.getByLabel("Display name",{exact:true})).toBeVisible();
  await expect(page.getByLabel("Legal or registered organization name")).toHaveCount(0);
 });
 
