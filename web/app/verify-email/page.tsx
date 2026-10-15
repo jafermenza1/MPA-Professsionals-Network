@@ -18,7 +18,7 @@ export default function VerifyEmail(){
    const raw=localStorage.getItem(ORGANIZATION_DRAFT_KEY);
    if(raw){
     const draft=JSON.parse(raw);
-    if(Number(draft.savedAt)>0&&Date.now()-Number(draft.savedAt)<=DRAFT_TTL_MS)setOrganizationDraft(true);
+    if(Number(draft.savedAt)>0&&Number(draft.savedAt)<=Date.now()&&Date.now()-Number(draft.savedAt)<=DRAFT_TTL_MS)setOrganizationDraft(true);
     else localStorage.removeItem(ORGANIZATION_DRAFT_KEY);
    }
   }catch{localStorage.removeItem(ORGANIZATION_DRAFT_KEY);}
