@@ -16,6 +16,7 @@ import { Card, Badge } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
 import { UsersTable, type ManagedRole, type ManagedUser } from "./users-table";
+import { AdminPageHeader } from "./admin-page-header";
 
 type Demo = {
   id: string;
@@ -209,28 +210,7 @@ export default function AdminPage() {
     );
   return (
     <div className="grid">
-      <div>
-        <div className="eyebrow">Platform administration</div>
-        <h1 className="h1">Operate the platform.</h1>
-        <p className="muted">
-          Global account controls are separate from organization roles and
-          business review decisions. Your authority comes from the current
-          account roles shown below.
-        </p>
-        <div className="row" style={{ flexWrap: "wrap", marginTop: 10 }}>
-          {roles.map((role) => (
-            <Badge key={role} tone="slate">
-              {role}
-            </Badge>
-          ))}
-          {(isPlatformAdmin || roles.includes("supporting_staff")) && <a className="btn btn-ghost" href="/support/job-seeker-demands">Review job-seeker demand and consent</a>}
-          {isPlatformAdmin && <a className="btn btn-ghost" href="/admin/reference-portfolio">Manage professional reference lists and CSV imports</a>}
-          {isPlatformAdmin && <a className="btn btn-ghost" href="/admin/reports">Reports and PDF/XLSX exports</a>}
-          {isPlatformAdmin && <a className="btn btn-ghost" href="/admin/members">Bulk approved-member import/export</a>}
-          {isPlatformAdmin && <a className="btn btn-ghost" href="/admin/email"><Mail size={16} /> Email operations</a>}
-          {(isPlatformAdmin || roles.includes("supporting_staff")) && <a className="btn btn-primary" href="/admin/marketplace">Review marketplace listings and service/mentorship demand</a>}
-        </div>
-      </div>
+      <AdminPageHeader eyebrow="Platform administration" title="Operate the platform." description="Global account controls are separate from organization roles and business review decisions. Your authority comes from the current account roles shown below." actions={<div className="grid" style={{gap:8}}><div className="row" style={{flexWrap:"wrap"}}>{roles.map((role) => <Badge key={role} tone="slate">{role}</Badge>)}</div><div className="row" style={{flexWrap:"wrap"}}>{(isPlatformAdmin || roles.includes("supporting_staff")) && <a className="btn btn-ghost" href="/support/job-seeker-demands">Review job-seeker demand and consent</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/reference-portfolio">Manage professional reference lists and CSV imports</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/reports">Reports and PDF/XLSX exports</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/members">Bulk approved-member import/export</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/email"><Mail size={16} /> Email operations</a>}{(isPlatformAdmin || roles.includes("supporting_staff")) && <a className="btn btn-primary" href="/admin/marketplace">Review marketplace listings and service/mentorship demand</a>}</div></div>}/>
       {error && (
         <div className="field-banner">
           <ShieldCheck size={18} />
