@@ -153,28 +153,30 @@ export async function getSharingHistory(reference,token){
  if(inquiry.inquiry_type!=="job"||inquiry.job_id) throw error(400,"Sharing history applies only to job-seeker demand without a linked vacancy.","NOT_JOB_SEEKER_DEMAND");
  return (await db.query("select s.id,o.display_name,o.legal_name,s.shared_fields,s.shared_at,s.revoked_at,s.revoke_reason from job_seeker_demand_share s join organization o on o.id=s.organization_id where s.inquiry_id=$1 order by s.shared_at desc",[inquiry.id])).rows.map(row=>({shareId:row.id,organizationName:row.display_name||row.legal_name,sharedFields:Array.isArray(row.shared_fields)?row.shared_fields:JSON.parse(row.shared_fields||"[]"),sharedAt:row.shared_at,revokedAt:row.revoked_at,revokeReason:row.revoke_reason,status:row.revoked_at?"revoked":"shared"}));
 }
+async function saveSharingConsentForInquiry(db,r,input,requestId,actorId=null){
+ if(r.inquiry_type!=="job"||r.job_id) throw error(400,"Employer-sharing consent applies only to job-seeker demand without a linked vacancy.","NOT_JOB_SEEKER_DEMAND");
+ const consent=input.employerSharingConsent===true;
+ const scope=consent?String(input.scope||""):"support_desk_only";
+ const fields=consent&&Array.isArray(input.fields)?[...new Set(input.fields.map(String))]:[];
+ const organizationId=consent?String(input.organizationId||"").trim():null;
+ if(consent&&scope!=="named_employer") throw error(400,"Consent must identify a specific employer; broad employer sharing is not supported.","INVALID_CONSENT_SCOPE");
+ if(consent&&!organizationId) throw error(400,"Choose the named organization before giving employer-sharing consent.","SHARING_AUDIENCE_REQUIRED");
+ if(fields.some(field=>!EMPLOYER_SHARE_FIELDS.has(field))) throw error(400,"One or more selected sharing fields are not allowed.","INVALID_SHARING_FIELD");
+ if(consent&&!fields.length) throw error(400,"Select at least one field to share before giving employer-sharing consent.","SHARING_FIELDS_REQUIRED");
+ if(consent){const org=(await db.query("select id from organization where id=$1 and verification_status='verified' and public_visible=true",[organizationId])).rows[0];if(!org)throw error(400,"Choose an available verified organization from the list.","SHARING_AUDIENCE_INVALID");}
+ const row=(await db.query("update public_opportunity_inquiry set employer_sharing_consent=$1,employer_sharing_scope=$2,employer_sharing_organization_id=case when $1 then $3::uuid else employer_sharing_organization_id end,employer_sharing_fields=$4::jsonb,employer_sharing_consent_version=case when $1 then 'job-seeker-sharing-v2' else employer_sharing_consent_version end,employer_sharing_consented_at=case when $1 then now() else employer_sharing_consented_at end,employer_sharing_revoked_at=case when $1 then null else now() end,updated_at=now() where id=$5 returning id,public_reference,employer_sharing_consent,employer_sharing_scope,employer_sharing_organization_id,employer_sharing_fields,employer_sharing_consent_version,employer_sharing_consented_at,employer_sharing_revoked_at",[consent,scope,organizationId,JSON.stringify(fields),r.id])).rows[0];
+ const oldFields=Array.isArray(r.employer_sharing_fields)?r.employer_sharing_fields:JSON.parse(r.employer_sharing_fields||"[]");
+ const consentChanged=!consent||r.employer_sharing_consent!==true||String(r.employer_sharing_organization_id||"")!==String(organizationId||"")||JSON.stringify([...oldFields].sort())!==JSON.stringify([...fields].sort());
+ if(consentChanged) await db.query("update job_seeker_demand_share set revoked_at=coalesce(revoked_at,now()),revoke_reason=$1,updated_at=now() where inquiry_id=$2 and revoked_at is null",[consent?"applicant_updated_consent":"applicant_revoked_consent",r.id]);
+ await audit(db,actorId||r.app_user_id||null,consent?"job_seeker_demand.sharing_consent_granted":"job_seeker_demand.sharing_consent_revoked","public_opportunity_inquiry",r.id,requestId,{scope,organizationId,fields,priorOrganizationId:r.employer_sharing_organization_id||null,priorFields:oldFields});
+ if(r.app_user_id)await notify(db,r.app_user_id,consent?"job_seeker.sharing_consent_granted":"job_seeker.sharing_consent_revoked","public_opportunity_inquiry",r.id,{organizationId,message:consent?"You consented to share selected information with one named organization.":"Your sharing consent was revoked; future employer access is blocked.",nextAction:consent?"Review your sharing history and revoke consent if your preference changes.":"Your request remains private. Grant new consent only if you want to share again."});
+ return {...row,nextStep:consent?"Your selected fields may be shared only with the named organization after MPA Support Desk review. You can revoke this consent at any time.":"Your request is private to you and MPA Support Desk. Existing employer access has been revoked."};
+}
 export async function updateSharingConsent(reference,token,input,requestId){
- return withTransaction(async db=>{
-  const r=await getByToken(db,reference,token);
-  if(r.inquiry_type!=="job"||r.job_id) throw error(400,"Employer-sharing consent applies only to a job-seeker demand without a linked vacancy.","NOT_JOB_SEEKER_DEMAND");
-  const consent=input.employerSharingConsent===true;
-  const scope=consent?String(input.scope||""):"support_desk_only";
-  const fields=consent&&Array.isArray(input.fields)?[...new Set(input.fields.map(String))]:[];
-  const organizationId=consent?String(input.organizationId||"").trim():null;
-  if(consent&&scope!=="named_employer") throw error(400,"Consent must identify a specific employer; broad employer sharing is not supported.","INVALID_CONSENT_SCOPE");
-  if(consent&&!organizationId) throw error(400,"Choose the named organization before giving employer-sharing consent.","SHARING_AUDIENCE_REQUIRED");
-  if(fields.some(field=>!EMPLOYER_SHARE_FIELDS.has(field))) throw error(400,"One or more selected sharing fields are not allowed.","INVALID_SHARING_FIELD");
-  if(consent&&!fields.length) throw error(400,"Select at least one field to share before giving employer-sharing consent.","SHARING_FIELDS_REQUIRED");
-  if(consent){const org=(await db.query("select id from organization where id=$1 and verification_status='verified' and public_visible=true",[organizationId])).rows[0];if(!org)throw error(400,"Choose an available verified organization from the list.","SHARING_AUDIENCE_INVALID");}
-  const row=(await db.query("update public_opportunity_inquiry set employer_sharing_consent=$1,employer_sharing_scope=$2,employer_sharing_organization_id=case when $1 then $3::uuid else employer_sharing_organization_id end,employer_sharing_fields=$4::jsonb,employer_sharing_consent_version=case when $1 then 'job-seeker-sharing-v2' else employer_sharing_consent_version end,employer_sharing_consented_at=case when $1 then now() else employer_sharing_consented_at end,employer_sharing_revoked_at=case when $1 then null else now() end,updated_at=now() where id=$5 returning id,public_reference,employer_sharing_consent,employer_sharing_scope,employer_sharing_organization_id,employer_sharing_fields,employer_sharing_consent_version,employer_sharing_consented_at,employer_sharing_revoked_at",[consent,scope,organizationId,JSON.stringify(fields),r.id])).rows[0];
-  const oldFields=Array.isArray(r.employer_sharing_fields)?r.employer_sharing_fields:JSON.parse(r.employer_sharing_fields||"[]");
-  const consentChanged=!consent||r.employer_sharing_consent!==true||String(r.employer_sharing_organization_id||"")!==String(organizationId||"")||JSON.stringify([...oldFields].sort())!==JSON.stringify([...fields].sort());
-  if(consentChanged) await db.query("update job_seeker_demand_share set revoked_at=coalesce(revoked_at,now()),revoke_reason=$1,updated_at=now() where inquiry_id=$2 and revoked_at is null",[consent?"applicant_updated_consent":"applicant_revoked_consent",r.id]);
-  await audit(db,r.app_user_id||null,consent?"job_seeker_demand.sharing_consent_granted":"job_seeker_demand.sharing_consent_revoked","public_opportunity_inquiry",r.id,requestId,{scope,organizationId,fields,priorOrganizationId:r.employer_sharing_organization_id||null,priorFields:oldFields});
-  
-  if(r.app_user_id)await notify(db,r.app_user_id,consent?"job_seeker.sharing_consent_granted":"job_seeker.sharing_consent_revoked","public_opportunity_inquiry",r.id,{organizationId,message:consent?"You consented to share selected information with one named organization.":"Your sharing consent was revoked; future employer access is blocked.",nextAction:consent?"Review your sharing history and revoke consent if your preference changes.":"Your request remains private. Grant new consent only if you want to share again."});
-  return {...row,nextStep:consent?"Your selected fields may be shared only with "+organizationId+" after MPA Support Desk review. You can revoke this consent at any time.":"Your request is private to you and MPA Support Desk. Existing employer access has been revoked."};
- });
+ return withTransaction(async db=>{const r=await getByToken(db,reference,token);return saveSharingConsentForInquiry(db,r,input,requestId,r.app_user_id||null);});
+}
+export async function updateLinkedSharingConsent(reference,userId,input,requestId){
+ return withTransaction(async db=>{const r=(await db.query("select * from public_opportunity_inquiry where public_reference=$1 and app_user_id=$2 for update",[reference,userId])).rows[0];if(!r)throw error(404,"No inquiry linked to this account has that reference.","NOT_FOUND");return saveSharingConsentForInquiry(db,r,input,requestId,userId);});
 }
 export async function shareJobSeekerDemand(inquiryId,actorId,input,requestId){
  return withTransaction(async db=>{
