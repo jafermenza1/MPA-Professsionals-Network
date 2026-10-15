@@ -5,6 +5,8 @@ import { Building2, ExternalLink, MapPin, RefreshCw, Search, ShieldCheck } from 
 import { Card, Badge } from "../../../components/ui";
 import { DiscoveryPagination } from "../../../components/discovery-pagination";
 import { api, ApiError } from "../../../lib/api";
+import { Bookmark } from "lucide-react";
+import { useSavedDiscoveryItems } from "../../../lib/use-saved-discovery-items";
 
 type PublicOrganization = {
   id: string;
@@ -19,6 +21,7 @@ const PAGE_SIZE = 20;
 const EMPTY = { q: "", organizationType: "", location: "" };
 
 export default function OrganizationDirectory() {
+  const savedItems = useSavedDiscoveryItems();
   const [filters, setFilters] = useState(EMPTY);
   const [items, setItems] = useState<PublicOrganization[]>([]);
   const [page, setPage] = useState(0);
@@ -63,12 +66,13 @@ export default function OrganizationDirectory() {
         </div>
       </form>
     </Card>
-    {error && <div className="form-error" role="alert">{error}<button className="btn btn-ghost" type="button" onClick={() => void load(filters, page)}>Retry</button></div>}
+    {error && <div className="form-error" role="alert">{error}<button className="btn btn-ghost" type="button" onClick={() => void load(filters, page)}>Retry</button></div>}{savedItems.savedError&&<div className="form-error" role="status">{savedItems.savedError}</div>}
     {!loading && !error && <p className="muted" aria-live="polite">{total === null ? items.length + " organizations loaded" : total + " verified public organizations match your search."}</p>}
     {loading ? <Card><div className="row"><RefreshCw size={18} /><p className="muted">Loading verified public organizations…</p></div></Card>
       : items.length === 0 && !error ? <Card><h2 className="h2">No matching organizations</h2><p className="muted">Try a broader name, type or location. Private or unverified organizations are intentionally excluded.</p></Card>
       : <div className="grid grid-2">{items.map(org => <Card key={org.id}>
         <div className="row"><div className="avatar"><Building2 size={22} /></div><div style={{ flex: 1, minWidth: 0 }}><h2 className="h2">{org.display_name}</h2><p className="tagline">{org.organization_type || "MPA network organization"}</p></div><Badge><ShieldCheck size={13} /> Verified</Badge></div>
+        <button className="btn btn-ghost" type="button" disabled={!savedItems.signedIn||savedItems.isSaving("organization",org.id)} aria-pressed={savedItems.isSaved("organization",org.id)} onClick={()=>void savedItems.toggle("organization",org.id)}><Bookmark size={16}/>{savedItems.isSaved("organization",org.id)?"Saved":"Save organization"}</button>
         {org.description && <p className="muted" style={{ marginTop: 12 }}>{org.description}</p>}
         {org.location_label && <p className="tagline"><MapPin size={14} /> {org.location_label}</p>}
         {org.website && /^https:\/\//i.test(org.website) && <a className="btn btn-ghost" href={org.website} target="_blank" rel="noreferrer">Public website <ExternalLink size={14} /></a>}
