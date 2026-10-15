@@ -26,6 +26,7 @@ function notificationCategory(eventCode){
   const code=String(eventCode||"").toLowerCase();
   if(code.startsWith("membership."))return "membership";
   if(code.startsWith("verification."))return "verification";
+  if(code.startsWith("opportunity."))return "opportunities";
   if(code.startsWith("organization."))return "organizations";
   if(code.startsWith("job.")||code.startsWith("job_application.")||code.startsWith("employer."))return "recruitment";
   if(code.startsWith("mentor.")||code.startsWith("mentorship."))return "mentorship";
