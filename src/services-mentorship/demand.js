@@ -15,6 +15,10 @@ async function orgAccess(db,orgId,userId){
 async function audit(db,actor,action,type,id,requestId,metadata={}){
  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]);
 }
+async function notify(db,userId,eventCode,type,id,payload={}){
+ if(!userId)return;
+ await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload) values($1,$2,$3,$4,$5)",[userId,eventCode,type,id,payload]);
+}
 function clean(value,max){return String(value??"").trim().slice(0,max);}
 function required(value,label,max){const v=clean(value,max);if(!v)throw fail(400,label+" is required.","VALIDATION_ERROR");return v;}
 function allowedType(type){if(!["service","mentorship"].includes(type))throw fail(400,"Demand type must be service or mentorship.","VALIDATION_ERROR");return type;}
@@ -49,7 +53,7 @@ export async function listPublishedTopics(filters={}){
  if(filters.q){args.push("%"+clean(filters.q,120)+"%");where.push("(t.title ilike $"+args.length+" or t.summary ilike $"+args.length+" or t.category ilike $"+args.length+")");}
  const limit=Math.min(Math.max(Number(filters.limit)||24,1),60);
  const db=getPool();
- const rows=(await db.query("select t.id,t.demand_type,t.title,t.summary,t.category,t.delivery_mode,t.location_label,t.interest_goal,t.published_at,coalesce(i.total,0)::int interest_count,coalesce(i.ready,0)::int ready_count from marketplace_demand_topic t left join lateral (select count(*) total,count(*) filter(where interest_level in ('interested','ready_to_engage','can_provide')) ready from marketplace_demand_interest where topic_id=t.id) i on true where "+where.join(" and ")+" order by t.published_at desc limit "+limit,args)).rows;
+ const rows=(await db.query("select t.id,t.demand_type,t.title,t.summary,t.category,t.delivery_mode,t.location_label,t.interest_goal,t.published_at,coalesce(i.total,0)::int interest_count,coalesce(i.ready,0)::int ready_count from marketplace_demand_topic t left join lateral (select count(*) filter(where status='active') total,count(*) filter(where status='active' and interest_level in ('interested','ready_to_engage','can_provide')) ready from marketplace_demand_interest where topic_id=t.id) i on true where "+where.join(" and ")+" order by t.published_at desc limit "+limit,args)).rows;
  return {items:rows,limit};
 }
 export async function joinDemandTopic(topicId,userId,input,requestId){
@@ -59,14 +63,32 @@ export async function joinDemandTopic(topicId,userId,input,requestId){
  return withTransaction(async db=>{
   const topic=(await db.query("select id,status,closes_at from marketplace_demand_topic where id=$1 for update",[topicId])).rows[0];
   if(!topic||topic.status!=="published"||(topic.closes_at&&new Date(topic.closes_at)<=new Date()))throw fail(404,"This demand topic is no longer open for interest.","TOPIC_CLOSED");
-  const row=(await db.query("insert into marketplace_demand_interest(topic_id,user_id,interest_level,comment) values($1,$2,$3,$4) on conflict(topic_id,user_id) do update set interest_level=excluded.interest_level,comment=excluded.comment,updated_at=now() returning id,topic_id,interest_level,comment,created_at,updated_at",[topicId,userId,level,comment])).rows[0];
-  await db.query("insert into marketplace_demand_event(topic_id,actor_user_id,action,note,metadata) values($1,$2,'demand.interest_recorded',$3,$4)",[topicId,userId,comment,{interestLevel:level}]);
-  await audit(db,userId,"marketplace.demand_interest_recorded","marketplace_demand_topic",topicId,requestId,{interestLevel:level});
+  const prior=(await db.query("select id,topic_id,interest_level,comment,status,created_at,updated_at from marketplace_demand_interest where topic_id=$1 and user_id=$2 for update",[topicId,userId])).rows[0];
+  if(prior?.status==="active"&&prior.interest_level===level&&(prior.comment||null)===comment) return {...prior,idempotent:true};
+  const row=(await db.query("insert into marketplace_demand_interest(topic_id,user_id,interest_level,comment,status,withdrawn_at,withdrawal_reason) values($1,$2,$3,$4,'active',null,null) on conflict(topic_id,user_id) do update set interest_level=excluded.interest_level,comment=excluded.comment,status='active',withdrawn_at=null,withdrawal_reason=null,updated_at=now() returning id,topic_id,interest_level,comment,status,withdrawn_at,created_at,updated_at",[topicId,userId,level,comment])).rows[0];
+  await db.query("insert into marketplace_demand_event(topic_id,actor_user_id,action,note,metadata) values($1,$2,'demand.interest_recorded',$3,$4)",[topicId,userId,comment,{interestLevel:level,restored:prior?.status==="withdrawn"}]);
+  await audit(db,userId,"marketplace.demand_interest_recorded","marketplace_demand_topic",topicId,requestId,{interestLevel:level,restored:prior?.status==="withdrawn"});
+  const owner=(await db.query("select d.requester_user_id,d.source_demand_id from marketplace_demand_topic t left join marketplace_demand d on d.id=t.source_demand_id where t.id=$1",[topicId])).rows[0];
+  if(owner?.requester_user_id&&owner.requester_user_id!==userId) await notify(db,owner.requester_user_id,"marketplace.demand_interest_received","marketplace_demand_topic",topicId,{message:"Someone expressed interest in your published demand topic.",nextAction:"Review your demand status or contact the Support Desk for matching."});
   return row;
  });
 }
 export async function listMyInterests(userId){
- return (await getPool().query("select i.id,i.topic_id,i.interest_level,i.comment,i.created_at,i.updated_at,t.title,t.demand_type,t.status topic_status from marketplace_demand_interest i join marketplace_demand_topic t on t.id=i.topic_id where i.user_id=$1 order by i.updated_at desc",[userId])).rows;
+ return (await getPool().query("select i.id,i.topic_id,i.interest_level,i.comment,i.status,i.withdrawn_at,i.withdrawal_reason,i.created_at,i.updated_at,t.title,t.demand_type,t.status topic_status,case when i.status='withdrawn' then 'You withdrew your interest. You can rejoin while the topic remains open.' when t.status<>'published' then 'This topic is no longer accepting interest.' else 'Your interest is recorded. You can update or withdraw it while the topic is open.' end next_action from marketplace_demand_interest i join marketplace_demand_topic t on t.id=i.topic_id where i.user_id=$1 order by i.updated_at desc",[userId])).rows;
+}
+
+export async function withdrawDemandInterest(topicId,userId,reason,requestId){
+ return withTransaction(async db=>{
+  const topic=(await db.query("select id,status,closes_at from marketplace_demand_topic where id=$1 for update",[topicId])).rows[0];
+  if(!topic)throw fail(404,"Demand topic was not found.","NOT_FOUND");
+  const interest=(await db.query("select * from marketplace_demand_interest where topic_id=$1 and user_id=$2 for update",[topicId,userId])).rows[0];
+  if(!interest)throw fail(404,"You have not expressed interest in this topic.","INTEREST_NOT_FOUND");
+  if(interest.status==="withdrawn")return {...interest,idempotent:true,nextAction:"Your interest is already withdrawn."};
+  const updated=(await db.query("update marketplace_demand_interest set status='withdrawn',withdrawn_at=now(),withdrawal_reason=$1,updated_at=now() where id=$2 returning id,topic_id,interest_level,status,withdrawn_at,withdrawal_reason,updated_at",[clean(reason,1000)||null,interest.id])).rows[0];
+  await db.query("insert into marketplace_demand_event(topic_id,actor_user_id,action,note,metadata) values($1,$2,'demand.interest_withdrawn',$3,$4)",[topicId,userId,updated.withdrawal_reason,{interestId:interest.id}]);
+  await audit(db,userId,"marketplace.demand_interest_withdrawn","marketplace_demand_interest",interest.id,requestId,{topicId});
+  return {...updated,nextAction:"Your interest is withdrawn. You can express interest again while this topic is open."};
+ });
 }
 export async function listReviewQueue(userId,filters={}){
  const db=getPool();await staff(db,userId);
@@ -85,6 +107,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   await staff(db,actorId);
   const demand=(await db.query("select * from marketplace_demand where id=$1 for update",[demandId])).rows[0];
   if(!demand)throw fail(404,"Demand request not found.","NOT_FOUND");
+  if(demand.status===status&&!input.publishTopic&&!input.internalNote&&!input.outcomeNote) return {...demand,idempotent:true,nextAction:status==="topic_published"?"Review incoming interest and provider matches.":status==="matched"?"Coordinate the accepted provider match.":"No further action is required unless the need changes."};
   if(status==="matched"&&!(await db.query("select 1 from marketplace_demand_provider_match where demand_id=$1 and status='accepted' limit 1",[demandId])).rowCount)throw fail(409,"A provider must accept a proposed match before this demand can be marked matched.","PROVIDER_MATCH_REQUIRED");
   if(["converted","closed","declined"].includes(demand.status))throw fail(409,"Resolved demand cannot be changed; record a new request if needs have changed.","INVALID_STATE");
   const note=clean(input.internalNote,3000)||null;
@@ -111,7 +134,8 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   const updated=(await db.query("update marketplace_demand set status=$1,internal_note=coalesce($2,internal_note),outcome_code=coalesce($3,outcome_code),outcome_note=coalesce($4,outcome_note),reviewed_by=$5,reviewed_at=now(),resolved_at=case when $1 in ('converted','closed','declined','topic_published') then now() else resolved_at end,updated_at=now() where id=$6 returning id,status,outcome_code,outcome_note,reviewed_by,reviewed_at,resolved_at",[next,note,outcome,outcomeNote,actorId,demandId])).rows[0];
   await db.query("insert into marketplace_demand_event(demand_id,topic_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,$3,'demand.reviewed',$4,$5,$6,$7)",[demandId,topic?.id||null,actorId,demand.status,next,note,{outcomeCode:outcome,publishedTopic:Boolean(topic)}]);
   await audit(db,actorId,"marketplace.demand_reviewed","marketplace_demand",demandId,requestId,{from:demand.status,to:next,outcomeCode:outcome,publishedTopic:Boolean(topic)});
-  return {...updated,topic};
+  await notify(db,demand.requester_user_id,"marketplace.demand_status_changed","marketplace_demand",demandId,{status:next,outcomeCode:outcome||updated.outcome_code||null,message:outcomeNote||note||"The Support Desk updated your request.",nextAction:next==="topic_published"?"Your privacy-safe topic is published. Review interest as it arrives.":next==="matched"?"A provider has accepted the proposed match. Review the next coordination steps.":["closed","declined","converted"].includes(next)?"Review the recorded outcome. Submit a new request if your need changes.":"Review the request status and provide clarification if requested."});
+  return {...updated,topic,nextAction:next==="topic_published"?"Your topic is published and can receive interest.":next==="matched"?"Coordinate with the accepted provider.":"Review the updated status and outcome note."};
  });
 }
 export async function listAdminListings(userId){
@@ -194,6 +218,7 @@ export async function respondToDemandProviderMatch(matchId,userId,status,note,re
   if(!match)throw fail(404,"Provider match was not found.","NOT_FOUND");
   const provider=match.provider_user_id===userId||Boolean(match.organization_id&&(await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[match.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
   if(!provider)throw fail(403,"Only the matched provider or organization team can respond.","FORBIDDEN");
+  if(match.status===status)return {...match,idempotent:true,nextAction:status==="accepted"?"Coordinate the accepted match.":"The Support Desk can propose another provider."};
   if(match.status!=="proposed")throw fail(409,"This provider match has already been answered.","INVALID_STATE");
   if(["converted","closed","declined"].includes(match.demand_status))throw fail(409,"This demand has been resolved and no longer accepts provider responses.","INVALID_STATE");
   if(status==="accepted"&&(await db.query("select 1 from marketplace_demand_provider_match where demand_id=$1 and id<>$2 and status='accepted' limit 1",[match.demand_id,matchId])).rowCount)throw fail(409,"Another provider has already accepted this demand. Ask the Support Desk to review the existing match before accepting another.","MATCH_ALREADY_ACCEPTED");
@@ -203,9 +228,12 @@ export async function respondToDemandProviderMatch(matchId,userId,status,note,re
    const accepted=(await db.query("select 1 from marketplace_demand_provider_match where demand_id=$1 and status='accepted' limit 1",[match.demand_id])).rowCount>0;
    if(!accepted) await db.query("update marketplace_demand set status=case when status='matched' then 'under_review' else status end,outcome_note=coalesce($1,outcome_note),updated_at=now() where id=$2",[responseNote,match.demand_id]);
   }
-  await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.provider_match_responded',$3,$4,$5,$6)",[match.demand_id,userId,match.demand_status,updated.status,responseNote||null,{matchId}]);
+  const nextDemandStatus=status==="accepted"?"matched":(match.demand_status==="matched"?"under_review":match.demand_status);
+  await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.provider_match_responded',$3,$4,$5,$6)",[match.demand_id,userId,match.demand_status,nextDemandStatus,responseNote||null,{matchId,matchStatus:updated.status}]);
   await audit(db,userId,"marketplace.demand_provider_match_responded","marketplace_demand_provider_match",matchId,requestId,{status,demandId:match.demand_id});
-  return updated;
+  const demandOwner=(await db.query("select requester_user_id from marketplace_demand where id=$1",[match.demand_id])).rows[0];
+  if(demandOwner?.requester_user_id&&demandOwner.requester_user_id!==userId) await notify(db,demandOwner.requester_user_id,status==="accepted"?"marketplace.provider_match_accepted":"marketplace.provider_match_declined","marketplace_demand_provider_match",matchId,{status,message:status==="accepted"?"A provider accepted the proposed match.":"A provider cannot take this request; the Support Desk can look for another.",nextAction:status==="accepted"?"Review the provider details and coordinate the next step.":"Wait for another proposed match or contact the Support Desk."});
+  return {...updated,nextAction:status==="accepted"?"The requester has been notified. Coordinate the next step.":"The Support Desk can propose another provider."};
  });
 }
 export async function getDemandSummary(userId,topicId){
