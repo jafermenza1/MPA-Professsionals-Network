@@ -79,7 +79,7 @@ test("email verification is one-time and blocks unverified login",async()=>{
   } finally {
     if(previous===undefined)delete process.env.EMAIL_VERIFICATION_REQUIRED;else process.env.EMAIL_VERIFICATION_REQUIRED=previous;
   }
-  assert.deepEqual(await verifyEmailToken(verification.token,"security-email-verify"),{verified:true});
+  assert.deepEqual(await verifyEmailToken(verification.token,"security-email-verify"),{verified:true,registrationReference:registered.registrationReference});
   await assert.rejects(verifyEmailToken(verification.token,"security-email-replay"),error=>error.code==="EMAIL_VERIFICATION_INVALID");
   const login=await membership.login(email,"Security-email-password-12345","security-email-login-after-verify");
   assert.equal(typeof login.token,"string");
