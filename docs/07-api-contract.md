@@ -218,3 +218,17 @@ These endpoints support the added `/membership`, `/verification`, and `/recruitm
 
 
 Sign-in accepts either the account's email address or username. Username changes must not collide with another account's username or email address.
+
+
+## Membership card and profile photograph contract (Gate 5 implementation; acceptance pending)
+
+- `PATCH /api/v1/me/profile-picture` — authenticated active professional member attaches a confirmed private JPEG/PNG `fileObjectId` created by their own account. The server validates ownership, MIME type and private storage before associating it with the existing `professional_profile` row.
+- `DELETE /api/v1/me/profile-picture` — authenticated active professional member removes the profile picture reference. Existing uploaded private files are not silently deleted; retention remains governed by the file lifecycle.
+- `GET /api/v1/membership/card` — authenticated member receives their latest membership record, membership product name/type, canonical membership ID, validity/status, profile-picture file ID, card branding settings and verification URL path.
+- `GET /api/v1/admin/membership-card?membershipNumber=MPA-YYYY-XXXXXXXX` — restricted to current membership-view/manage roles or permissions; returns a card only for a canonical membership ID. The ID is not editable through card branding settings.
+- `GET/PATCH /api/v1/admin/membership-card-settings` — authorized membership administrators read/update card heading, title, footer, background style/colors, accent/text colors and membership-type visibility. Input is validated server-side and changes are audited.
+- `GET /api/v1/public/membership-verification?record={recordId}&token={opaqueToken}` — rate-limited public verification; returns minimal member name, membership ID/type, dates, current status and verification time. It must not return contact details, birth date, address, email, private evidence or account identifiers.
+- `POST /api/v1/admin/membership-records/{recordId}/rotate-verification` — privileged administrators invalidate a previously printed QR token without changing the membership ID.
+- The card is designed for landscape ATM-card dimensions (85.6 × 53.98 mm). Photograph/placeholder occupies one side and the QR code occupies the opposite side. Printing/saving as PDF uses the browser print dialog; online verification remains authoritative for status.
+- The tracking-reference utility and its `MPA-MEM-YY-NNNNNN` format remain separate and unchanged. Membership activation continues to generate canonical member IDs as `MPA-YYYY-XXXXXXXX`.
+- **Acceptance pending:** run the migration and focused tests against a disposable PostgreSQL database, verify photo ownership and role-negative cases, scan generated QR codes, exercise token rotation and every status, confirm print/PDF dimensions, and run the web production build. No acceptance is claimed until those checks are recorded at the exact head.
