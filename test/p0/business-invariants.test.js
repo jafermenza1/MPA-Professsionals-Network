@@ -238,4 +238,51 @@ test("P0: membership activation requires approval and confirmed payment; reversa
   assert.equal(repeatedReversal.id, reversal.id, "repeated reversal requests must return the existing reversal record");
 });
 
+test("P0: expired membership loses direct profile and provider privileges", async () => {
+  const account = await register(randomUUID());
+  const db = getPool();
+  const product = (await db.query("select id from membership_product where product_code='BASIC'")).rows[0];
+  assert.ok(product, "BASIC membership product must exist");
+  await db.query("insert into membership_record(user_id,membership_product_id,membership_number,status,start_date,end_date,source) values($1,$2,$3,'active',current_date-400,current_date-1,'online')", [account.user.id, product.id, "MPA-P0-EXP-" + randomUUID().slice(0,8).toUpperCase()]);
+  await assert.rejects(
+    membership.updateProfile(account.user.id, {}, "p0-expired-profile-edit"),
+    error => error.code === "MEMBERSHIP_REQUIRED",
+    "an expired row with status=active must not grant profile editing"
+  );
+  await assert.rejects(
+    serviceMentorship.createServiceListing(account.user.id, { title: "Expired member offer", description: "Must remain denied.", serviceCategory: "p0-test" }, "p0-expired-service-create"),
+    error => error.code === "MEMBERSHIP_REQUIRED",
+    "an expired row with status=active must not grant provider publishing"
+  );
+});
+
+test("P0: applications retain their original fee-rule version after a future plan change", async () => {
+  const applicant = await register(randomUUID());
+  const administrator = await register(randomUUID());
+  const db = getPool();
+  const productCode = "P0VER" + randomUUID().replace(/-/g, "").slice(0,8).toUpperCase();
+  const today = new Date().toISOString().slice(0,10);
+  const future = new Date(Date.now() + 10 * 86400000).toISOString().slice(0,10);
+  await membership.saveMembershipProduct(administrator.user.id, null, {
+    productCode, name: "P0 Versioned Plan", description: "Isolated plan-version invariant fixture.",
+    amount: 100, currency: "ETB", billingModel: "recurring", durationDays: 365,
+    renewalRequired: true, gracePeriodDays: 0, effectiveFrom: today, planEffectiveFrom: today,
+    planEffectiveTo: null, active: true, benefits: [], eligibility: {}, taxAmount: 0, serviceFee: 0
+  }, "p0-plan-version-create");
+  const application = await membership.createApplication(applicant.user.id, { productCode }, "p0-plan-version-application");
+  assert.equal(Number(application.fee_snapshot.amount), 100);
+  assert.equal(Number(application.fee_snapshot.feeRuleVersion), 1);
+
+  await membership.saveMembershipProduct(administrator.user.id, productCode, {
+    productCode, name: "P0 Versioned Plan", description: "Future fee revision.",
+    amount: 150, currency: "ETB", billingModel: "recurring", durationDays: 365,
+    renewalRequired: true, gracePeriodDays: 0, effectiveFrom: future, planEffectiveFrom: today,
+    planEffectiveTo: null, active: true, benefits: [], eligibility: {}, taxAmount: 0, serviceFee: 0,
+    expectedVersion: "1"
+  }, "p0-plan-version-future-change");
+  const stored = (await db.query("select fee_snapshot from membership_application where id=$1", [application.id])).rows[0];
+  assert.equal(Number(stored.fee_snapshot.amount), 100, "existing application must keep its original obligation");
+  assert.equal(Number(stored.fee_snapshot.feeRuleVersion), 1, "existing application must retain the original fee-rule version");
+});
+
 test.after("close P0 test database pool", async () => { await closePool(); });
