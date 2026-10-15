@@ -77,6 +77,7 @@ test("P1 marketplace: Support Desk merges duplicate demand into a canonical requ
   error=>error.code==="FORBIDDEN",
   "non-staff actors cannot merge private demand"
  );
+ await assert.rejects(marketplaceDemand.reviewDemand(duplicate.id,staff,{status:"closed",outcomeCode:"duplicate_merged",outcomeNote:"test-only fake merge"},"marketplace-fake-merge"),error=>error.code==="MERGE_ACTION_REQUIRED","generic closure must not masquerade as a merge");
  const merged=await marketplaceDemand.mergeDemand(duplicate.id,target.id,staff,"marketplace-merge");
  assert.equal(merged.status,"closed");
  assert.equal(merged.outcome_code,"duplicate_merged");
