@@ -16,8 +16,8 @@ function matchScore(question,article){
  return score;
 }
 async function logAudit(db,actorId,action,resourceId,requestId){
- await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,metadata,request_id,created_at) values($1,$2,'support_bot',$3,$4::jsonb,$5,now())",
- [actorId,action,resourceId,JSON.stringify({source:"support-bot-admin"}),requestId||null]).catch(()=>{});
+ await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,'support_bot',$3,$4,'success',$5)",
+ [actorId,action,resourceId,requestId||null,{source:"support-bot-admin"}]).catch(()=>{});
 }
 export async function answerPublicQuestion(input,context={}){
  const question=clean(input.question,2000);
