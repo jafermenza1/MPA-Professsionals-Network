@@ -23,6 +23,13 @@ async function activeMember(userId){
  const role=(await db.query("select id from app_role where role_code='member'")).rows[0];
  if(role) await db.query("insert into app_user_role(user_id,role_id) values($1,$2) on conflict do nothing",[userId,role.id]);
 }
+async function financeStaff(){
+ const db=getPool(),userId=await account();
+ const role=(await db.query("select id from app_role where role_code='finance_officer'")).rows[0];
+ assert.ok(role,"finance_officer role must exist");
+ await db.query("insert into app_user_role(user_id,role_id) values($1,$2) on conflict do nothing",[userId,role.id]);
+ return userId;
+}
 async function supportStaff(){
  const db=getPool(),userId=await account();
  const role=(await db.query("select id from app_role where role_code='supporting_staff'")).rows[0];
@@ -70,6 +77,23 @@ test("Gate 2: public service journey reaches accepted delivery, requester outcom
  assert.equal(Number(feedback.rating),5);
 });
 
+test("Gate 2: paid service completion cannot be accepted before finance verifies the agreed payment",async()=>{
+ const provider=await account(),requester=await account(),finance=await financeStaff();
+ await activeMember(provider);
+ const listing=await journeys.createServiceListing(provider,{title:"Gate 2 paid service settlement",description:"A fixed-price engagement used to prove that completion acceptance follows finance-verified settlement.",serviceCategory:"Operations",deliveryMode:"remote",pricingModel:"fixed",priceAmount:500,currency:"ETB",visibility:"public"},"gate2-paid-service-listing");
+ await journeys.changeServiceListingStatus(listing.id,provider,"published","gate2-paid-service-publish");
+ const staff=await supportStaff();
+ await marketplace.moderateListing("service",listing.id,staff,{decision:"approved",note:"Fixed-price scope and terms reviewed."},"gate2-paid-service-moderate");
+ const request=await journeys.requestService(listing.id,requester,{message:"Please deliver the fixed-price operating procedure review.",proposedPrice:500,currency:"ETB"},"gate2-paid-service-request");
+ await journeys.changeServiceRequestStatus(request.id,provider,"accepted","Agreed fixed price: ETB 500.","gate2-paid-service-accept");
+ await journeys.changeServiceRequestStatus(request.id,provider,"in_progress","Work started.","gate2-paid-service-start");
+ await journeys.changeServiceRequestStatus(request.id,provider,"completed","Deliverables are ready for requester review.","gate2-paid-service-submit-completion");
+ await assert.rejects(journeys.acceptServiceCompletion(request.id,requester,"The work looks complete.","gate2-paid-service-premature-accept"),error=>error.code==="PAYMENT_NOT_SETTLED");
+ const payment=await journeys.submitServicePayment(request.id,requester,{amount:500,currency:"ETB",channel:"bank_transfer",reference:"GATE2-"+randomUUID(),idempotencyKey:"gate2-paid-service-"+randomUUID()},"gate2-paid-service-payment");
+ assert.equal(payment.status,"pending");
+ assert.equal((await journeys.verifyServicePayment(payment.id,finance,{decision:"approved",note:"Bank transfer evidence and amount checked.",evidenceChecked:["amount","currency","reference"]},"gate2-paid-service-verify")).status,"succeeded");
+ assert.equal((await journeys.acceptServiceCompletion(request.id,requester,"Finance-confirmed payment and agreed deliverables are accepted.","gate2-paid-service-final-accept")).status,"completed");
+});
 test("Gate 2: verified organization publishes under its own identity and can fulfill a public service request",async()=>{
  const owner=await account(),requester=await account(),staff=await supportStaff(),org=await approvedOrg(owner);
  const listing=await journeys.createServiceListing(owner,{organizationId:org.id,title:"Gate 2 organization training",description:"Practical workplace training with a clear agenda, materials and measurable learning outcomes.",serviceCategory:"Training",deliveryMode:"hybrid",pricingModel:"quote",visibility:"public"},"gate2-org-service-create");
