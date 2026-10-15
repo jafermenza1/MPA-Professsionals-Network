@@ -32,6 +32,7 @@ The source compare range contains 126 commits and a 29-file net diff. Because th
 - Do not apply the new migrations to production as part of this port.
 - Email delivery is not established by a queued message. Configure a verified sender and provider secrets, then verify delivery and inbound-webhook configuration in a controlled environment.
 - The copied verification/passkey functionality and cross-service email integrations still require review against the MPA schema and API contract.
+- The divergent MPA `src/membership/service.js` was intentionally not replaced. Email resend/verify endpoints exist, but initial verification-token issuance during registration and mandatory verification gating in the existing membership login/session flow are **not yet integrated**. Keep `EMAIL_VERIFICATION_REQUIRED=false` until those semantics are implemented and tested; do not assume adding the setting alone enforces verification.
 
 ## Validation status
 
