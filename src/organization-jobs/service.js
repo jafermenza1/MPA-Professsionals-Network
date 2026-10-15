@@ -1,6 +1,7 @@
 import { getPool, withTransaction } from "../platform/db.js";
 import { nextTrackingReference } from "../platform/tracking-reference.js";
 import { assertOrganizationCapability } from "../platform/identity-policy.js";
+import { queueWorkflowEmail } from "../platform/email-operations.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
 const ORG_WRITE_ROLES=["owner","administrator","recruiter"];
@@ -39,6 +40,9 @@ export async function registerOrganization(userId,input,requestId){
   await db.query("insert into organization_membership(organization_id,user_id,role_code,status,joined_at) values($1,$2,'owner','active',now())",[org.id,userId]);
   await db.query("insert into organization_verification_case(organization_id,status,submitted_by,submitted_at) values($1,'draft',$2,null)",[org.id,userId]);
   await audit(db,userId,"organization.created","organization",org.id,requestId,{});
+  await queueWorkflowEmail(db,userId,"organization.registration_received",{organizationId:org.id,organizationName:org.display_name,registrationReference:org.tracking_reference,status:"draft",nextAction:"Upload required private evidence and submit for organization review"},"organization",org.id);
+  const reviewers=(await db.query("select distinct ur.user_id from app_user_role ur join app_role r on r.id=ur.role_id where r.role_code in ('reviewer','system_admin')")).rows;
+  for(const reviewer of reviewers) await queueWorkflowEmail(db,reviewer.user_id,"reviewer.review_queue_update",{workflowType:"organization verification",registrationReference:org.tracking_reference,status:"new organization registration",nextAction:"Review the organization verification queue"},"organization",org.id);
   return org;
  });
 }
@@ -114,7 +118,7 @@ export async function reviewOrganization(orgId,reviewerId,input,requestId){
   if(!["verified","rejected","correction_required"].includes(input.decision)) throw error(400,"Invalid organization verification decision.","VALIDATION_ERROR");
   const c=(await db.query("select id,status,submitted_by from organization_verification_case where organization_id=$1 for update",[orgId])).rows[0];
   if(!c) throw error(404,"Organization verification case not found.","NOT_FOUND");
-  const org=(await db.query("select created_by from organization where id=$1",[orgId])).rows[0];
+  const org=(await db.query("select created_by,display_name,tracking_reference,updated_at from organization where id=$1",[orgId])).rows[0];
   const conflict=(org?.created_by===reviewerId)||c.submitted_by===reviewerId||(await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' limit 1",[orgId,reviewerId])).rowCount>0;
   if(conflict) throw error(403,"A reviewer cannot decide verification for an organization they created, submitted, or belong to.","REVIEWER_CONFLICT");
   if(c.status!=="submitted"&&c.status!=="correction_required") throw error(409,"Organization verification must be submitted before review.","INVALID_STATE");
@@ -123,6 +127,7 @@ export async function reviewOrganization(orgId,reviewerId,input,requestId){
   await db.query("update organization_verification_case set status=$1,reviewed_by=$2,decision_reason=$3,reviewed_at=now() where id=$4",[status,reviewerId,input.reason||null,c.id]);
   await db.query("update organization set verification_status=$1,verified_at=case when $1='verified' then now() else verified_at end,verified_by=case when $1='verified' then $2 else verified_by end,public_visible=case when $1='verified' then true else false end,updated_at=now() where id=$3",[status,reviewerId,orgId]);
   await audit(db,reviewerId,"organization.verification_decided","organization",orgId,requestId,{decision:status});
+  if(org?.created_by) await queueWorkflowEmail(db,org.created_by,"organization.review_update",{organizationId:orgId,organizationName:org.display_name,registrationReference:org.tracking_reference,status,nextAction:status==="correction_required"?"Review the reviewer feedback and provide the requested corrections":status==="verified"?"No action required; organization verification is complete":"Contact support if you believe this decision is incorrect",lastUpdated:org.updated_at?.toISOString?.()||String(org.updated_at||"")},"organization",orgId);
   return {organizationId:orgId,status};
  });
 }
