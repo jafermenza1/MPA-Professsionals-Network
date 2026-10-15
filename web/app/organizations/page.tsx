@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormFeedback } from "../../components/form-feedback";
 import {
   Building2,
   FileCheck2,
@@ -1050,16 +1051,8 @@ export default function Organizations() {
           </Card>
         </>
       )}
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-      {notice && (
-        <p className="muted" role="status">
-          {notice}
-        </p>
-      )}
+      {error && <FormFeedback kind="error" message={error} onRetry={()=>void load()} retryLabel="Reload workspace" />}
+      {notice && <FormFeedback kind="success" message={notice} />}
       <Card>
         <div className="row">
           <div>
