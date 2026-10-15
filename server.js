@@ -119,7 +119,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && req.url==="/readyz") return ok(res,{status:"ready",databaseConfigured:Boolean(config.databaseUrl)},requestId);
     const parts=pathParts(req.url);
     const p=parts.join("/");
-    if(req.method==="GET" && p==="api/v1/public/membership-verification") { const q=query(req.url); return ok(res,await membershipCard.verifyMembershipCard(q.get("record"),q.get("token")),requestId); }
+    if(req.method==="GET" && p==="api/v1/public/membership-verification") { await enforcePersistentRateLimit(req,"membership-card-verify",60,60000); const q=query(req.url); return ok(res,await membershipCard.verifyMembershipCard(q.get("record"),q.get("token")),requestId); }
     if(req.method==="GET" && p==="api/v1/auth/human-challenge") { await enforcePersistentRateLimit(req,"human-challenge",10,60000); return ok(res,await issueHumanChallenge(),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/human-challenge/verify") { const b=await body(req); await enforcePersistentRateLimit(req,"human-challenge-verify",10,60000); return ok(res,await verifyHumanChallenge(b.id,b.answer),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/email-verification/resend") { const b=await body(req); await enforcePersistentRateLimit(req,"email-verification-resend",3,3600000,String(b.email||"").trim().toLowerCase()); return ok(res,await resendEmailVerification(b.email,requestId),requestId,202); }
