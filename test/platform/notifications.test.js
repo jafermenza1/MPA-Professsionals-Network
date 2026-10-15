@@ -15,6 +15,7 @@ test("notification deep links accept only safe same-origin relative paths",()=>{
   assert.equal(safeInternalUrl("/jobs?tab=saved"),"/jobs?tab=saved");
   assert.equal(safeInternalUrl("https://example.org/phishing"),null);
   assert.equal(safeInternalUrl("//example.org/phishing"),null);
+  assert.equal(safeInternalUrl("/\\\\example.org/phishing"),null);
   assert.equal(safeInternalUrl("javascript:alert(1)"),null);
   assert.equal(safeInternalUrl("/notifications\nattacker"),null);
 });
