@@ -3,11 +3,12 @@ import { FormFeedback } from "../../components/form-feedback";
 import { TagInput } from "../../components/tag-input";
 import { humanStatus } from "../../lib/status-labels";
 import {FormEvent,useCallback,useEffect,useRef,useState} from "react";
-import {Clock3,HeartHandshake,Languages,RefreshCw,Target} from "lucide-react";
+import {Bookmark,Clock3,HeartHandshake,Languages,RefreshCw,Target} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
 import {DiscoveryPagination} from "../../components/discovery-pagination";
 import {useUiStore} from "../../lib/store";
+import {useSavedDiscoveryItems} from "../../lib/use-saved-discovery-items";
 
 type Mentor={id:string;user_id:string;display_name:string;headline?:string;bio?:string;expertise?:string[]|string;languages?:string[]|string;mentoring_modes?:string[]|string;max_active_mentees?:number};
 type OrganizationOffer={id:string;organization_id:string;organization_name:string;title:string;description:string;expertise?:string[]|string;languages?:string[]|string;delivery_mode:string;visibility:string;status:string;moderation_status:string;moderation_note?:string|null};
@@ -23,6 +24,7 @@ type MentorProfile={id:string;headline:string;bio?:string|null;expertise?:string
 function values(value:unknown):string[]{if(Array.isArray(value))return value.map(String);if(typeof value==="string"){try{const parsed=JSON.parse(value);if(Array.isArray(parsed))return parsed.map(String)}catch{}return value?[value]:[]}return []}
 export default function Mentorship(){
  const token=useUiStore(s=>s.token);
+ const savedItems=useSavedDiscoveryItems();
  const [mentors,setMentors]=useState<Mentor[]>([]);
   const [discoveryPage,setDiscoveryPage]=useState(0);const [mentorsHasMore,setMentorsHasMore]=useState(false);const discoveryPageSize=20;
   const [organizationOffers,setOrganizationOffers]=useState<OrganizationOffer[]>([]);
@@ -158,7 +160,9 @@ export default function Mentorship(){
      {values(mentor.languages).length>0&&<div className="tagline"><Languages size={14}/> {values(mentor.languages).join(" · ")}</div>}
      {values(mentor.mentoring_modes).length>0&&<div className="tagline" style={{marginTop:8}}><Clock3 size={14}/> {values(mentor.mentoring_modes).join(" · ")}</div>}
      <button className="btn btn-primary" type="button" style={{width:"100%",marginTop:17}} onClick={()=>{setSelected(mentor);setShowRequestForm(false);setCreated(null);setGoals("");setNotice("");}}>Request mentorship <HeartHandshake size={16}/></button>
+   <button className="btn btn-ghost" type="button" disabled={!savedItems.signedIn||savedItems.isSaving("mentor",mentor.user_id)} aria-pressed={savedItems.isSaved("mentor",mentor.user_id)} onClick={()=>void savedItems.toggle("mentor",mentor.user_id)}><Bookmark size={16}/>{savedItems.isSaved("mentor",mentor.user_id)?"Saved":"Save mentor"}</button>
    </Card>)}</div>}
+   {savedItems.savedError&&<div role="status" className="form-error">{savedItems.savedError}</div>}
    {!loading&&!error&&mentors.length>0&&<DiscoveryPagination page={discoveryPage} pageSize={discoveryPageSize} itemCount={mentors.length} hasMore={mentorsHasMore} disabled={loading} label="mentors" onPageChange={next=>void load(query,topic,next)}/>}
    {(selected||showRequestForm)&&<Card id="mentor-goal"><div className="row"><div><div className="eyebrow">Mentorship request</div><h2 className="h2">Goal and preferences</h2>{selected?<p className="muted">Preferred mentor: {selected.display_name}</p>:<p className="muted">No preferred mentor selected. Matching remains a separate, governed step.</p>}</div><button className="btn btn-ghost" type="button" onClick={()=>{setSelected(null);setShowRequestForm(false)}}>Close</button></div>
      {!token?<><p className="muted">A formal request requires sign-in and active membership. You can still explore mentor profiles.</p><a className="btn btn-primary" href="/login?next=/mentorship">Sign in to continue</a></>:<form className="form-stack" onSubmit={submit}>
