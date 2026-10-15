@@ -518,6 +518,7 @@ export async function addOrganizationUser(orgId,actorUserId,input,requestId){
   const target=(await db.query("select id from app_user where id=$1",[input.userId])).rows[0]; if(!target) throw error(404,"User account not found.","NOT_FOUND");
   const row=(await db.query("insert into organization_membership(organization_id,user_id,role_code,status,invited_by,joined_at) values($1,$2,$3,'active',$4,now()) on conflict(organization_id,user_id) do update set role_code=excluded.role_code,status='active',updated_at=now() returning *",[orgId,input.userId,input.roleCode,actorUserId])).rows[0];
   await audit(db,actorUserId,"organization.user_added","organization_membership",row.id,requestId,{roleCode:input.roleCode});
+  await queueWorkflowEmail(db,input.userId,"organization.membership_added",{category:"organizations",title:"Organization workspace access granted",message:"You were added to an organization workspace with the "+String(input.roleCode).replace(/_/g," ")+" role.",nextAction:"Open the organization workspace to review your access and assigned responsibilities.",actionUrl:"/organizations",eventVersion:row.id},"organization_membership",row.id);
   return row;
  });
 }
@@ -530,6 +531,7 @@ export async function updateOrganizationUser(orgId,actorUserId,userId,input,requ
   const status=input.status||row.status; if(!["active","suspended","removed"].includes(status)) throw error(400,"Invalid organization user status.","VALIDATION_ERROR");
   const updated=(await db.query("update organization_membership set role_code=$1,status=$2,updated_at=now() where id=$3 returning *",[role,status,row.id])).rows[0];
   await audit(db,actorUserId,"organization.user_updated","organization_membership",row.id,requestId,{roleCode:role,status});
+  await queueWorkflowEmail(db,row.user_id,"organization.membership_updated",{category:"organizations",title:"Organization workspace access updated",message:"Your organization workspace role or access status was updated.",nextAction:status==="active"?"Review your organization workspace access and responsibilities.":"Contact an organization owner if you believe your access was changed in error.",actionUrl:"/organizations",actionRequired:status!=="active",priority:status==="active"?"normal":"high",eventVersion:row.id+":"+status+":"+role},"organization_membership",row.id);
   return updated;
  });
 }
