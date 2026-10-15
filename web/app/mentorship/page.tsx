@@ -1,5 +1,6 @@
 "use client";
 import { FormFeedback } from "../../components/form-feedback";
+import { TagInput } from "../../components/tag-input";
 import { humanStatus } from "../../lib/status-labels";
 import {FormEvent,useCallback,useEffect,useRef,useState} from "react";
 import {Clock3,HeartHandshake,Languages,RefreshCw,Target} from "lucide-react";
@@ -57,8 +58,8 @@ export default function Mentorship(){
  const [topic,setTopic]=useState("");
  const lastSearch=useRef({query:"",topic:""});
  const [goals,setGoals]=useState("");
- const [topics,setTopics]=useState("");
- const [languages,setLanguages]=useState("");
+ const [topics,setTopics]=useState<string[]>([]);
+ const [languages,setLanguages]=useState<string[]>([]);
  const [mode,setMode]=useState("remote");
  const [submitting,setSubmitting]=useState(false);
  const [created,setCreated]=useState<RequestResult|null>(null);
@@ -116,12 +117,12 @@ export default function Mentorship(){
      const result=await api<RequestResult>("/api/v1/mentorship/requests",{method:"POST",body:JSON.stringify({
        goals:goals.trim(),
        preferredMentorUserId:selected?.user_id||null,
-       topics:topics.split(",").map(x=>x.trim()).filter(Boolean),
+       topics,
        preferredModes:[mode],
-       preferredLanguages:languages.split(",").map(x=>x.trim()).filter(Boolean)
+       preferredLanguages:languages
      })},token);
      setCreated(result);setNotice("Your mentorship request was recorded. Matching and mentor acceptance remain explicit next steps.");await loadMyRequests();
-     setSelected(null);setShowRequestForm(false);setGoals("");setTopics("");setLanguages("");
+     setSelected(null);setShowRequestForm(false);setGoals("");setTopics([]);setLanguages([]);
    }catch(e){setError(e instanceof ApiError?e.message:"We couldn't submit your mentorship request.");}
    finally{setSubmitting(false);}
  }
@@ -159,8 +160,8 @@ export default function Mentorship(){
    {(selected||showRequestForm)&&<Card id="mentor-goal"><div className="row"><div><div className="eyebrow">Mentorship request</div><h2 className="h2">Goal and preferences</h2>{selected?<p className="muted">Preferred mentor: {selected.display_name}</p>:<p className="muted">No preferred mentor selected. Matching remains a separate, governed step.</p>}</div><button className="btn btn-ghost" type="button" onClick={()=>{setSelected(null);setShowRequestForm(false)}}>Close</button></div>
      {!token?<><p className="muted">A formal request requires sign-in and active membership. You can still explore mentor profiles.</p><a className="btn btn-primary" href="/login?next=/mentorship">Sign in to continue</a></>:<form className="form-stack" onSubmit={submit}>
        <label>Your mentorship goal<textarea required rows={4} value={goals} onChange={e=>setGoals(e.target.value)} placeholder="What outcome do you want help achieving?"/></label>
-       <label>Topics, separated by commas<input value={topics} onChange={e=>setTopics(e.target.value)} placeholder="e.g. product leadership, finance"/></label>
-       <label>Preferred languages, separated by commas<input value={languages} onChange={e=>setLanguages(e.target.value)} placeholder="e.g. Amharic, English"/></label>
+       <TagInput label="Topics and goals" value={topics} onChange={setTopics} placeholder="Add one topic at a time" help="Select several topics; duplicates are ignored."/>
+       <TagInput label="Preferred languages" value={languages} onChange={setLanguages} placeholder="Add one language at a time" help="Add each language separately."/>
        <label>Preferred mode<select value={mode} onChange={e=>setMode(e.target.value)}><option value="remote">Remote</option><option value="in_person">In person</option><option value="hybrid">Hybrid</option></select></label>
        <p className="muted">Submitting records a request; it does not automatically confirm a match or schedule a session.</p>
        <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting?"Submitting…":"Submit mentorship request"} <Target size={16}/></button>
