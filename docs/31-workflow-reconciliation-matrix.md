@@ -310,3 +310,13 @@ Static safety contract tests were added at `test/platform/pwa-registration-draft
 | Low bandwidth | Bounded page sizes, text-first cards, no new media/recommendation runtime | Throttled-network, rendering, responsive and accessibility acceptance not run |
 
 **Evidence status: implementation committed; no tests/typecheck/build/browser/API validation run.** Increment 4 is not accepted until the exact-head acceptance checklist in docs/46-first-increment-workflow-routing-corrections.md is executed and recorded.
+
+
+## Increment 4 follow-up — saved discovery items, SQL paging and detail pages (IMPLEMENTED, NOT ACCEPTED)
+
+- Added account-owned saved-item persistence for professionals, verified public organizations, visible service listings and eligible mentors, plus `/saved` management UI and save/unsave controls. Existing saved jobs and talent saved searches remain unchanged.
+- Added owner-authenticated saved-item APIs. Save writes verify target visibility; list reads are owner-scoped and re-check public/member visibility. Unavailable targets are omitted.
+- Opportunity pagination now applies posting-scope visibility in SQL before count/limit/offset, using deterministic ordering; this removes the old all-results-in-memory + per-result membership-query pattern.
+- Added dedicated detail routes for professionals, organizations, services and mentors, with server-side visibility checks and text-first loading.
+- Migration `20261016200000_saved_discovery_items.sql` is committed to the branch but has not been applied to any database.
+- Validation is open: do not claim acceptance until migration-backed API tests, cross-account authorization tests, typecheck/build, browser, responsive and throttled-network checks pass on the exact head.
