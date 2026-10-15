@@ -147,7 +147,7 @@ These are committed test additions, not test results. I could not clone the repo
 
 Remaining acceptance work:
 1. Correct the registration success UI to display the returned registration reference when email verification is disabled, then add a UI regression test.
-2. Run `node --test test/platform/security-auth.test.js test/platform/security-route-contract.test.js` (if the route-contract file is present) and the complete `npm test` suite against a disposable PostgreSQL database with migrations applied.
+2. Run `node --test test/platform/security-auth.test.js` and the complete `npm test` suite against a disposable PostgreSQL database with migrations applied. Add and run HTTP route-level acceptance tests; the static route-contract test file was not created.
 3. Run actual HTTP integration tests for unauthenticated enrollment, cross-account enrollment, revoked passkey authentication, recovery-session route bypass attempts, challenge replay/expiry, and production registration with missing/invalid/replayed challenge tokens. Source/service tests alone do not establish route-level acceptance.
 4. Validate rate limits across two separately running API instances sharing the same database, including identity-bucket enforcement when requests use different source IPs. Confirm reverse-proxy configuration overwrites forwarded headers before enabling `TRUST_PROXY=true`.
 5. Exercise configured email delivery, provider failure, resend invalidation, expiry/replay, and verification-required login/session enforcement using a controlled test sender.
