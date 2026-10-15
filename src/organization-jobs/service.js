@@ -483,6 +483,8 @@ export async function respondToJobApplication(applicationId,userId,input,request
       const row=(await db.query("update job_application set status='accepted',offer_responded_at=now(),updated_at=now() where id=$1 returning *",[applicationId])).rows[0];
       await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,'offer','accepted',$3)",[applicationId,userId,input.note||null]);
       await audit(db,userId,"job.offer_accepted","job_application",applicationId,requestId);
+      const employers=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+      for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.offer_accepted",category:"recruitment",title:"Candidate accepted offer",audience:"employer",status:"accepted",message:"The candidate accepted the employment offer.",nextAction:"Update the candidate pipeline and prepare any authorized onboarding steps.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
       return row;
     }
     if(input.status==="withdrawn"){
@@ -490,6 +492,8 @@ export async function respondToJobApplication(applicationId,userId,input,request
       const row=(await db.query("update job_application set status='withdrawn',withdrawn_at=now(),updated_at=now() where id=$1 returning *",[applicationId])).rows[0];
       await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,'withdrawn',$4)",[applicationId,userId,a.status,input.note||null]);
       await audit(db,userId,"job.application_withdrawn","job_application",applicationId,requestId);
+      const employers=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+      for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.application_withdrawn",category:"recruitment",title:"Candidate withdrew application",audience:"employer",status:"withdrawn",message:"A candidate withdrew their job application.",nextAction:"Review the updated candidate pipeline.",actionUrl:"/recruitment"},"job_application",applicationId);
       return row;
     }
     throw error(400,"Application response must be accepted or withdrawn.","VALIDATION_ERROR");
@@ -694,16 +698,21 @@ export async function scheduleInterview(applicationId,userId,input,requestId){
   await db.query("insert into job_interview_participant(interview_id,user_id,role_code) values($1,$2,'candidate') on conflict do nothing",[row.id,a.applicant_user_id]);
   if(input.interviewerUserId) await db.query("insert into job_interview_participant(interview_id,user_id,role_code) values($1,$2,'interviewer') on conflict do nothing",[row.id,input.interviewerUserId]);
   await audit(db,userId,"job.interview_scheduled","job_interview",row.id,requestId,{applicationId});
+  await queueWorkflowEmail(db,a.applicant_user_id,"professional.workflow_update",{notificationEventCode:"job.interview_scheduled",category:"recruitment",title:"Interview scheduled",status:"scheduled",message:"An interview has been scheduled for your application.",nextAction:"Review the interview time, timezone, format and instructions, then confirm or decline.",actionUrl:"/jobs",actionRequired:true,priority:"high",scheduledStart:start.toISOString(),scheduledEnd:end.toISOString(),timezone:input.timezone||"Africa/Addis_Ababa"},"job_interview",row.id);
+  const interviewParticipants=(await db.query("select user_id,role_code from job_interview_participant where interview_id=$1 and user_id<>$2",[row.id,a.applicant_user_id])).rows;
+  for(const participant of interviewParticipants)await queueWorkflowEmail(db,participant.user_id,"employer.interview_scheduled",{notificationEventCode:"job.interview_scheduled",category:"recruitment",title:"Interview scheduled",audience:"employer",status:"scheduled",message:"An interview was scheduled for a candidate in your recruitment workflow.",nextAction:"Review the interview details and confirm your availability.",actionUrl:"/recruitment",scheduledStart:start.toISOString(),scheduledEnd:end.toISOString(),timezone:input.timezone||"Africa/Addis_Ababa"},"job_interview",row.id);
   return row;
  });
 }
 export async function respondInterview(interviewId,userId,status,requestId){
  return withTransaction(async db=>{
-  const p=(await db.query("select jp.*,ji.application_id,j.organization_id from job_interview_participant jp join job_interview ji on ji.id=jp.interview_id join job_application a on a.id=ji.application_id join job j on j.id=a.job_id where jp.interview_id=$1 and jp.user_id=$2",[interviewId,userId])).rows[0];
+  const p=(await db.query("select jp.*,ji.application_id,j.organization_id,a.applicant_user_id,j.title job_title from job_interview_participant jp join job_interview ji on ji.id=jp.interview_id join job_application a on a.id=ji.application_id join job j on j.id=a.job_id where jp.interview_id=$1 and jp.user_id=$2",[interviewId,userId])).rows[0];
   if(!p) throw error(403,"You are not an interview participant.","FORBIDDEN");
   if(!["accepted","declined"].includes(status)) throw error(400,"Invalid interview response.","VALIDATION_ERROR");
   const row=(await db.query("update job_interview_participant set response_status=$1 where interview_id=$2 and user_id=$3 returning *",[status,interviewId,userId])).rows[0];
   await audit(db,userId,"job.interview_response","job_interview",interviewId,requestId,{status});
+  const otherParticipants=(await db.query("select user_id,role_code from job_interview_participant where interview_id=$1 and user_id<>$2",[interviewId,userId])).rows;
+  for(const participant of otherParticipants){const candidate=participant.role_code==="candidate";await queueWorkflowEmail(db,participant.user_id,candidate?"professional.workflow_update":"employer.interview_response",{notificationEventCode:"job.interview_response",category:"recruitment",title:"Interview response received",audience:candidate?undefined:"employer",status,message:"An interview participant "+status+" the scheduled interview.",nextAction:candidate?"Review the interview details and prepare for the meeting.":"Review the interview schedule and coordinate any needed changes.",actionUrl:candidate?"/jobs":"/recruitment",actionRequired:status==="declined",priority:status==="declined"?"high":"normal"},"job_interview",interviewId);}
   return row;
  });
 }
