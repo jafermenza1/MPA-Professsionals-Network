@@ -36,7 +36,7 @@ function notificationCategory(eventCode){
 }
 function notificationActionUrl(payload,resourceType,resourceId){
   const explicit=String(payload?.actionUrl||payload?.action_url||"");
-  if(explicit.startsWith("/")&&!explicit.startsWith("//")&&!/[\\u0000-\\u001f\\u007f]/.test(explicit))return explicit;
+  if(explicit.startsWith("/")&&!explicit.startsWith("//")&&![...explicit].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127))return explicit;
   if(!resourceId)return null;
   const paths={membership_application:"/membership",membership_record:"/membership/card",verification_case:"/verification",
     organization:"/organizations",job:"/jobs",job_application:"/jobs",service_request:"/services",service_listing:"/services",
