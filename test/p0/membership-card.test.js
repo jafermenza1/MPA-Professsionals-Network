@@ -19,4 +19,6 @@ test("membership card status reflects current dates and lifecycle status",()=>{
   assert.equal(getMembershipCardStatus({status:"active",start_date:"2026-10-16",end_date:null},now),"expired");
   assert.equal(getMembershipCardStatus({status:"suspended",start_date:"2026-01-01",end_date:null},now),"suspended");
   assert.equal(getMembershipCardStatus({status:"revoked",start_date:"2026-01-01",end_date:null},now),"revoked");
+  assert.equal(getMembershipCardStatus({status:"cancelled",start_date:"2026-01-01",end_date:null},now),"revoked");
+  assert.equal(getMembershipCardStatus({status:"merged",start_date:"2026-01-01",end_date:null},now),"revoked");
 });
