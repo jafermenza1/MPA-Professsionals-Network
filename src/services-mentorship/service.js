@@ -278,7 +278,7 @@ export async function acceptServiceCompletion(requestId,userId,note,requestIdHea
     const paid=(await db.query("select count(*)::int count from service_payment where request_id=$1 and amount>0",[requestId])).rows[0].count;
     const expectedAmount=Number(r.agreed_price||0);
     if(expectedAmount>0||Number(paid)>0){
-      const settled=(await db.query("select 1 from service_payment where request_id=$1 and status='succeeded' and amount>0 and ($2::numeric<=0 or amount=$2::numeric) and ($3::text is null or upper(currency)=upper($3::text)) order by verified_at desc nulls last,created_at desc limit 1",[requestId,expectedAmount||null,r.agreed_currency||null])).rows[0];
+      const settled=(await db.query("select 1 from service_payment where request_id=$1 and status='succeeded' and amount>0 and ($2::numeric<=0 or amount=$2::numeric) and ($3::text is null or upper(currency)=upper($3::text)) order by verified_at desc nulls last,created_at desc limit 1",[requestId,expectedAmount,r.agreed_currency||null])).rows[0];
       if(!settled) throw error(409,"The agreed paid service must have a finance-verified successful payment for the agreed amount and currency before the requester can accept completion.","PAYMENT_NOT_SETTLED");
     }
     const outcome=String(note||"The requester accepted the submitted service outcome.").trim().slice(0,3000);
