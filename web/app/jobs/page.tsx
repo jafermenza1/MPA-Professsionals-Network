@@ -4,6 +4,7 @@ import {FormEvent,useCallback,useEffect,useState} from "react";
 import {Bookmark,Building2,Clock3,MapPin,SlidersHorizontal,Users,RefreshCw} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
+import {DiscoveryPagination} from "../../components/discovery-pagination";
 import {useUiStore} from "../../lib/store";
 
 type Job={
@@ -33,6 +34,7 @@ export default function Jobs(){
  const token=useUiStore(s=>s.token);
  const [filters,setFilters]=useState<Filters>(initialFilters);
  const [jobs,setJobs]=useState<Job[]>([]);
+ const [page,setPage]=useState(0);const [hasMore,setHasMore]=useState(false);const pageSize=20;
  const [saved,setSaved]=useState<string[]>([]);
  const [expanded,setExpanded]=useState<Record<string,boolean>>({});
  const [loading,setLoading]=useState(true);
@@ -44,13 +46,14 @@ export default function Jobs(){
  const [draftIds,setDraftIds]=useState<Record<string,string>>({});
  const [applyingId,setApplyingId]=useState("");
 
- const loadJobs=useCallback(async(nextFilters:Filters)=>{
+ const loadJobs=useCallback(async(nextFilters:Filters,pageIndex=0)=>{
    setLoading(true);setError("");setNotice("");
    try{
-     const qs=queryString(nextFilters);
-     const payload=await api<{items:Job[]}|Job[]>(`/api/v1/jobs${qs?"?"+qs:""}`,{},token||undefined);
+     const params=new URLSearchParams(queryString(nextFilters));params.set("limit",String(pageSize));params.set("offset",String(pageIndex*pageSize));
+     const payload=await api<{items:Job[];hasMore?:boolean;total?:number}|Job[]>(`/api/v1/jobs?${params.toString()}`,{},token||undefined);
      const items=Array.isArray(payload)?payload:payload?.items;
-     setJobs(Array.isArray(items)?items.filter(j=>j&&typeof j.id==="string"&&typeof j.title==="string"):[]);
+     const valid=Array.isArray(items)?items.filter(j=>j&&typeof j.id==="string"&&typeof j.title==="string"):[];
+     setJobs(valid);setHasMore(Array.isArray(payload)?valid.length===pageSize:Boolean(payload.hasMore));setPage(pageIndex);
      if(!Array.isArray(items))setError("The service returned an unexpected jobs response. Please refresh and try again.");
    }catch(e){
      setJobs([]);
@@ -66,7 +69,7 @@ export default function Jobs(){
    return ()=>{active=false};
  },[token]);
 
- async function submitFilters(e:FormEvent){e.preventDefault();await loadJobs(filters);}
+ async function submitFilters(e:FormEvent){e.preventDefault();await loadJobs(filters,0);}
  async function createAlert(){
    if(!token){setNotice("Sign in to save a job alert for these search criteria.");return;}
    setCreatingAlert(true);setError("");setNotice("");
@@ -141,12 +144,12 @@ export default function Jobs(){
          <label style={{display:"grid",gap:6,marginTop:16,fontSize:13,fontWeight:700}}>Seniority<input value={filters.seniority} onChange={e=>setFilters({...filters,seniority:e.target.value})} placeholder="Seniority level"/></label>
          <label style={{display:"grid",gap:6,marginTop:16,fontSize:13,fontWeight:700}}>Scope<select value={filters.postingScope} onChange={e=>setFilters({...filters,postingScope:e.target.value})}><option value="">All opportunities visible to me</option><option value="public">Public</option><option value="partner_network">Member network</option><option value="organization_internal">Organization internal</option></select></label>
          <button className="btn btn-primary" type="submit" disabled={loading} style={{width:"100%",marginTop:18}}>{loading?"Searching…":"Apply filters"}</button>
-         <button className="btn btn-ghost" type="button" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters)}} disabled={loading} style={{width:"100%",marginTop:8}}>Clear filters</button>
+         <button className="btn btn-ghost" type="button" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters,0)}} disabled={loading} style={{width:"100%",marginTop:8}}>Clear filters</button>
          <button className="btn btn-ghost" type="button" onClick={()=>void createAlert()} disabled={creatingAlert||loading} style={{width:"100%",marginTop:8}}>{creatingAlert?"Saving alert…":"Save job alert"}</button>
        </form>
      </Card>
      <div id="job-card" className="grid">
-       {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" onClick={()=>void loadJobs(filters)} type="button" style={{marginLeft:8}}>Retry</button></div>}
+       {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" onClick={()=>void loadJobs(filters,page)} type="button" style={{marginLeft:8}}>Retry</button></div>}
        {notice&&<p className="muted" role="status">{notice}{!token&&<a href="/login?next=/jobs"> Sign in</a>}</p>}
        {loading&&<Card><div className="row"><RefreshCw size={18}/><p className="muted">Loading current opportunities…</p></div></Card>}
        {!loading&&!error&&jobs.length===0&&<Card><h2 className="h2">No matching opportunities</h2><p className="muted">There are no published opportunities matching these filters right now. Try clearing filters or check again later.</p><button className="btn btn-ghost" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters)}}>Clear filters</button></Card>}
@@ -168,6 +171,7 @@ export default function Jobs(){
            <a className="btn btn-primary" href={"/apply/job"}>Start public inquiry</a>
          </div>
        </Card>)}
+       {!loading&&!error&&jobs.length>0&&<DiscoveryPagination page={page} pageSize={pageSize} itemCount={jobs.length} hasMore={hasMore} disabled={loading} label="opportunities" onPageChange={next=>void loadJobs(filters,next)}/>}
      </div>
    </div>
  </div>;
