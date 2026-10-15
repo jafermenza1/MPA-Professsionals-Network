@@ -1,8 +1,8 @@
 # 37 — Specific Product Gap Audit: Roles, Workflows, Forms, and Marketplace
 
 **Date:** 2026-10-14  
-**Status:** Actionable product gap register; implementation and acceptance remain pending  
-**Applies to:** `main`  
+**Status:** Actionable product gap register; implementation inventory reconciled 2026-10-15; acceptance remains pending  
+**Applies to:** `main` and the reviewed working branch `reconciliation/holistic-gates`  
 **Related contracts:** [Product requirements](01-product-requirements.md), [roles and permissions](04-roles-and-permissions.md), [workflow contract](05-workflows.md), [API contract](07-api-contract.md), [security and privacy](08-security-privacy.md), [reference portfolio](19-configurable-reference-portfolio.md), [workflow reconciliation matrix](31-workflow-reconciliation-matrix.md), [manual release policy](36-manual-test-release-and-deployment-policy.md).
 
 ## 1. Purpose and evidence rules
@@ -325,3 +325,42 @@ See `docs/40-p1-professional-profile-and-vetting-progress.md` for the detailed i
 - Bank-transfer declarations now require a transaction reference in the member form; cash/other manual channels may provide one when available. Members can attach a private receipt/bank confirmation to an application while payment is pending.
 - The authorized reviewer/finance queue now shows applicant identity, application tracking reference, saved fee-version amount, payment reference/channel/status, verification and reconciliation notes, reversal details, submitted attachments and review history. Private application attachments can be opened by scoped finance/member-review permissions and those reads are audited.
 - This is code-only; payment proof access, finance permission boundaries, correction/retry, reconciliation outcomes and reversal flows remain part of the deferred final gate.
+
+## 12. Branch implementation reconciliation — 2026-10-15
+
+This table distinguishes **implementation status** from **acceptance status**. “Implemented” means the required code path is present in the inspected branch, not that the workflow passed. Every row below remains **ACCEPTANCE PENDING** until the relevant authorization, persistence, failure/retry, privacy, and UI assertions are executed and recorded on the exact final head. No test or build is claimed as run for this checkpoint.
+
+| Gap | Implementation status | Current implementation evidence / remaining implementation work | Acceptance |
+|---|---|---|---|
+| GAP-001 | **Implemented** | Shared identity policy, organization-only profile redaction/denial, profile route/navigation boundary. | **Pending** — direct API, stale browser state, organization workspace positives, and cross-organization negatives. |
+| GAP-002 | **Implemented** | Current-membership policy guards profile edits and personal service/mentor publishing; permitted public requests remain available. | **Pending** — absent, pending, expired, renewed, and active membership across direct APIs and UI. |
+| GAP-003 | **Partial** | Approval/payment/activation gates, fee snapshots, payment idempotency, refund/reversal records and suspension exist. | **Pending** — concurrent retries, replacement payments, wrong amounts/currency, refund before/after activation, audit history, and provider reconciliation. |
+| GAP-004 | **Implemented** | Shared annual validity policy and inclusive end-date checks. | **Pending** — leap-year, year-end, renewal, reminders, expiry and post-expiry authorization. |
+| GAP-005 | **Partial** | Versioned/effective-dated plan terms and immutable application fee snapshots exist. | **Pending** — admin/finance permission boundaries, public form updates, schedule edges, and historical terms. |
+| GAP-006 | **Partial** | Repeatable structured education records, searchable reference-backed fields, date/current-study/explanation/visibility controls. | **Pending** — create/edit/remove/reload, invalid combinations, and privacy visibility. |
+| GAP-007 | **Partial** | Shared reference selectors exist in guided profile; skills and language tags are structured in additional forms. | **Pending** — managed reference data and “Other” behavior must cover every listed consumer, including job interest, recruitment, organization, service, and mentorship forms. Some newly structured tags remain free-entry rather than reference-backed. |
+| GAP-008 | **Partial** | Versioned reference working-copy/publication flow and CSV/JSON/XLSX import/export code, with preview validation and staged imports. | **Pending** — round trips, invalid-file/no-partial-write cases, stable codes, version history, every consumer, and workbook interoperability. |
+| GAP-009 | **Implemented** | Gender label/options and safe legacy preservation are present in the inspected profile implementation. | **Pending** — registration, profile, admin, API validation and exports. |
+| GAP-010 | **Partial** | Portfolio links, dates, visibility, skill/occupation references, review provenance and private evidence flows exist. | **Pending** — owner isolation, evidence authorization, URL/date edge cases, and reviewer history. |
+| GAP-011 | **Partial** | Governed skill/language selection exists in the guided profile; tag inputs replace comma-separated fields in job-interest and mentorship forms. | **Pending** — reference-backed aliases/custom “Other”, deduplication, search/filter consistency and all consumers. |
+| GAP-012 | **Partial** | Moderated listings, participant/organization-aware requests, milestones/deliveries, revision/acceptance, outcomes and feedback are implemented in code. | **Pending** — full requester/provider/organization journey, disputes, retry/idempotency, unauthorized actors, and status-history/notification checks. |
+| GAP-013 | **Partial** | Private demand, reviewed privacy-safe topics, unique interest updates/withdrawals, provider matching, and an explicit audited duplicate-merge operation are implemented. A merge keeps the original record and links it to a canonical request. | **Pending** — merge races/retries, cross-organization privacy, target eligibility, interest preservation policy, and end-to-end closure. |
+| GAP-014 | **Partial** | Personal mentor offers and matching/session/goal/feedback flows, public mentorship-demand topics, and separate organization-owned mentorship offers/requests exist. | **Pending** — participant and organization role matrix, completion/outcomes, no-show/retry, privacy, and notification status. |
+| GAP-015 | **Partial** | Organization-owned service listings, organization-scoped demand, verified-organization mentorship offers and private requests are present. | **Pending** — end-to-end organization owner/team journey through provider match, proposal, delivery, outcome and closure. |
+| GAP-016 | **Implemented** | No-vacancy intake, verified named-employer selection, field-scoped consent, Support Desk sharing, history and revocation paths exist. Both initial and retry consent requests include the selected organization ID. | **Pending** — direct API/UI consent, field allow-list, revoked access, share-history and cross-organization isolation. |
+| GAP-017 | **Partial** | Role-filtered catalogue and PDF/XLSX exports now include membership, payments, marketplace outcomes, professional and organization verification, job-application funnel, marketplace-demand response timing, reference-import quality, platform activity and audit activity. | **Pending** — SQL/schema reconciliation, source-total checks, full cross-platform Support Desk SLA, saved views/scheduling, branded file interoperability and role/tenant export negatives. Events/learning/projects reports are not implemented in this scoped release. |
+| GAP-018 | **Implemented** | Five independent public homepage feeds have loading, empty, failure and retry UI and publication/consent filters in code. | **Pending** — exact-head browser, API failure, privacy, responsive and accessibility checks. |
+| GAP-019 | **Partial** | Recruitment team assignment uses an organization-member selector; scorecard criteria are structured rows; screening options, job-interest skills and mentorship topics/languages/modes use structured controls. | **Pending** — remaining free-entry organization type/service category/availability and other fields; reference-backed selector coverage; all routes' input retention and error correction. |
+| GAP-020 | **Partial** | Shared FormFeedback is used across several core workflows; recruiting and demand merge use retry/status feedback and explicitly avoid claiming email/SMS delivery. | **Pending** — route-by-route action inventory for truthful success, validation, retry, pending review, correction, authorization, expired state, next action and preserved input. |
+
+### Notification status contract
+
+The existing notification_event is the in-app event ledger and the existing notification_outbox is the provider-delivery boundary. A committed in-app event may be described as **recorded in-app**. It must not be described as email/SMS delivered unless a configured provider and delivery record confirm that result. Provider-backed email/SMS retry/dead-letter handling remains **not implemented for these marketplace transitions**; preference persistence alone is not delivery evidence.
+
+### Duplicate demand merge contract
+
+The Support Desk merge action is a real state change, not an outcome label: it requires two distinct existing requests of the same type, staff authorization, an eligible unresolved duplicate and an eligible canonical target. It locks both rows in deterministic order, marks the duplicate closed with duplicate_merged, stores merged_into_demand_id, preserves both source records and event history, writes audit/events, and records in-app notification events. The generic review endpoint rejects a bare duplicate_merged outcome. Email/SMS is explicitly not claimed.
+
+### Exact-head acceptance gate
+
+Implementation snapshot before this documentation reconciliation: 0932e965c03378f9d0d2524244778aa43bb853f1. Subsequent commits update the audit/matrix and do not change the validation rule: **no gap is accepted by this document**. Execute the full manual process in [36 — Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md) only after the remaining code increment is assembled. Record the exact final SHA, migrations, unit/API tests, build, browser journeys, privacy/accessibility review, export-opening checks, and all failures. Do not remove assertions or enable CI/merge/deploy as a substitute for this evidence.
