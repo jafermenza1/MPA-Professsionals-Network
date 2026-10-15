@@ -94,6 +94,37 @@ export async function withdrawDemandInterest(topicId,userId,reason,requestId){
   return {...updated,nextAction:"Your interest is withdrawn. You can express interest again while this topic is open."};
  });
 }
+/**
+ * Support Desk aggregate for need assessment. Returns only grouped counts, never
+ * requester identity, free-text comments, or private demand descriptions.
+ * The same persisted demand/interest records power the public topics and this
+ * internal assessment; no parallel reporting tables are introduced.
+ */
+export async function getDemandInterestAssessment(userId,filters={}){
+ const db=getPool();
+ await staff(db,userId);
+ const type=filters.type?allowedType(filters.type):null;
+ const args=[];
+ const where=["i.status='active'","t.status='published'"];
+ if(type){args.push(type);where.push("t.demand_type=$"+args.length);}
+ if(filters.from){args.push(filters.from);where.push("t.published_at >= $"+args.length+"::date");}
+ if(filters.to){args.push(filters.to);where.push("t.published_at < ($"+args.length+"::date + interval '1 day')");}
+ const rows=(await db.query(`
+  select t.demand_type, t.category,
+         coalesce(nullif(trim(t.location_label),''),'Not specified') location,
+         coalesce(nullif(trim(t.audience),''),'general') audience,
+         i.interest_level, count(distinct i.user_id)::int participant_count
+    from marketplace_demand_interest i
+    join marketplace_demand_topic t on t.id=i.topic_id
+   where ${where.join(" and ")}
+   group by t.demand_type,t.category,coalesce(nullif(trim(t.location_label),''),'Not specified'),
+            coalesce(nullif(trim(t.audience),''),'general'),i.interest_level
+   order by t.demand_type,t.category,location,audience,i.interest_level
+ `,args)).rows;
+ await audit(db,userId,"marketplace.demand_interest_assessment_viewed","marketplace_demand_topic",null,filters.requestId||null,{type:type||"all",from:filters.from||null,to:filters.to||null,rowCount:rows.length});
+ return {items:rows,filters:{type:type||"all",from:filters.from||null,to:filters.to||null},generatedAt:new Date().toISOString(),privacy:"aggregate_only"};
+}
+
 export async function listReviewQueue(userId,filters={}){
  const db=getPool();await staff(db,userId);
  const status=filters.status||"submitted";
