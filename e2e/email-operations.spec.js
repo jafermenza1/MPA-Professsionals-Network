@@ -46,6 +46,7 @@ test("organization registration persists the draft under the key restored after 
  await page.goto("/register");
  await page.getByRole("button",{name:/Organization/}).click();
  await page.getByLabel("First name").fill("Amina");
+ await page.getByLabel("Middle / father name").fill("Hassan");
  await page.getByLabel("Last / grandfather name").fill("Yusuf");
  await page.getByLabel("Representative work email").fill("rep@example.org");
  await page.getByLabel("Legal or registered organization name").fill("Amina Trading PLC");
