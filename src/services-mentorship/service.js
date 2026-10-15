@@ -25,13 +25,13 @@ async function requirePersonalProfessionalCapability(db,userId){
   }
 }
 async function serviceProviderRecipients(db,requestId){
- const request=(await db.query("select sr.provider_user_id,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1",[requestId])).rows[0];
+ const request=(await db.query("select sr.provider_user_id,sl.organization_id,pu.status provider_status from service_request sr join service_listing sl on sl.id=sr.service_listing_id left join app_user pu on pu.id=sr.provider_user_id where sr.id=$1",[requestId])).rows[0];
  if(!request)return [];
- if(request.organization_id)return (await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[request.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id);
- return request.provider_user_id?[request.provider_user_id]:[];
+ if(request.organization_id)return (await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[request.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id);
+ return request.provider_user_id&&request.provider_status==="active"?[request.provider_user_id]:[];
 }
 async function isServiceProviderActor(db,requestId,userId){
- const request=(await db.query("select sr.provider_user_id,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1",[requestId])).rows[0];
+ const request=(await db.query("select sr.provider_user_id,sl.organization_id,pu.status provider_status from service_request sr join service_listing sl on sl.id=sr.service_listing_id left join app_user pu on pu.id=sr.provider_user_id where sr.id=$1",[requestId])).rows[0];
  if(!request)return false;
  if(request.organization_id){
   return Boolean((await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[request.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
