@@ -149,6 +149,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   const note=clean(input.internalNote,3000)||null;
   const outcomeNote=clean(input.outcomeNote,3000)||null;
   if(["converted","closed","declined"].includes(status)&&!outcomeNote)throw fail(400,"Record an outcome explanation before resolving or declining demand.","OUTCOME_NOTE_REQUIRED");
+  if(input.outcomeCode==="duplicate_merged")throw fail(400,"Use the explicit merge action and select a canonical request; a duplicate-merged label alone does not merge records.","MERGE_ACTION_REQUIRED");
   const outcome=input.publishTopic?"topic_published":(input.outcomeCode||null);
   if(outcome&&!["provider_search","topic_published","listing_created","program_project","no_action","duplicate_merged","declined"].includes(outcome))throw fail(400,"Unsupported outcome code.","VALIDATION_ERROR");
   let topic=null;
