@@ -49,6 +49,22 @@ test("P1 marketplace: private demand is reviewed before a privacy-safe public to
  assert.equal(summary.readyCount,1);
  assert.ok(summary.counts.some(row=>row.interest_level==="ready_to_engage"&&Number(row.count)===1));
 });
+test("P1 marketplace: demand assessment is Support Desk-only and returns aggregate-only rows",async()=>{
+ const requester=await account(randomUUID()),staff=await supportStaff(),outsider=await account(randomUUID());
+ const demand=await marketplaceDemand.createDemand(requester,{demandType:"service",title:"Need bookkeeping support",description:"Our small team needs monthly bookkeeping and financial reporting support.",category:"Finance",deliveryMode:"remote",locationLabel:"Addis Ababa"}, "marketplace-assessment-submit");
+ const reviewed=await marketplaceDemand.reviewDemand(demand.id,staff,{status:"topic_published",publishTopic:true,publicTitle:"Bookkeeping support for small teams",publicSummary:"Small teams are seeking qualified help with monthly bookkeeping and clear financial reporting.",publicCategory:"Finance",publicLocationLabel:"Addis Ababa",interestGoal:3},"marketplace-assessment-review");
+ await marketplaceDemand.joinDemandTopic(reviewed.topic.id,outsider,{interestLevel:"ready_to_engage"},"marketplace-assessment-interest");
+ const assessment=await marketplaceDemand.getDemandInterestAssessment(staff,{type:"service"});
+ assert.equal(assessment.privacy,"aggregate_only");
+ assert.ok(assessment.items.some(row=>row.demand_type==="service"&&row.category==="Finance"&&row.participant_count===1));
+ for(const row of assessment.items){
+   assert.equal("user_id" in row,false);
+   assert.equal("comment" in row,false);
+   assert.equal("requester_user_id" in row,false);
+   assert.equal("description" in row,false);
+ }
+ await assert.rejects(marketplaceDemand.getDemandInterestAssessment(outsider,{type:"service"}),error=>error.code==="FORBIDDEN");
+});
 test("P1 marketplace: organization demand is visible to its owner but not an unrelated account",async()=>{
  const owner=await account(randomUUID()),unrelated=await account(randomUUID());
  const org=await organizationJobs.registerOrganization(owner,{legalName:"Marketplace Test "+randomUUID(),displayName:"Marketplace Test Organization"},"marketplace-org-create");
