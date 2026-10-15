@@ -166,6 +166,9 @@ test("Gate 2: verified organization mentorship offer is moderated, requested, ac
  assert.ok(publicOffer);assert.equal(publicOffer.organization_name,org.display_name);
  const request=await organizationOffers.requestOrganizationMentorship(offer.id,requester,{message:"I want support building a leadership plan and improving team communication."},"gate2-org-mentorship-request");
  assert.equal(request.status,"requested");
+ assert.equal(request.notificationStatus,"in_app_recorded");
+ assert.equal(request.externalDelivery,"not_configured");
+ assert.ok((await getPool().query("select 1 from notification_event where user_id=$1 and resource_id=$2 and event_code='organization.mentorship_request_received'",[owner,request.id])).rowCount>=1,"organization team notification must be persisted in-app before status is claimed");
  assert.ok((await organizationOffers.listMyOrganizationMentorshipRequests(owner)).some(x=>x.id===request.id&&!x.is_requester));
  await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,requester,"accepted","Requester cannot impersonate the organization.","gate2-org-mentorship-requester-forbidden"),e=>e.code==="FORBIDDEN");
  await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,await account(),"accepted","Unrelated account cannot decide.","gate2-org-mentorship-outsider-forbidden"),e=>e.code==="FORBIDDEN");
