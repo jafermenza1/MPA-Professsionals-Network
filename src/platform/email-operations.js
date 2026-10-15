@@ -43,7 +43,7 @@ function workflowNotificationCategory(code){
  if(value.startsWith("security."))return "security";
  return "system";
 }
-function safeActionUrl(value){const url=String(value||"");return url.startsWith("/")&&!url.startsWith("//")&&![...url].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127)?url:null;}
+function safeActionUrl(value){const url=String(value||"");return url.startsWith("/")&&!url.startsWith("//")&&!url.includes("\\")&&![...url].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127)?url:null;}
 export async function queueWorkflowEmail(db,userId,templateCode,variables={},resourceType="workflow",resourceId=null){
  const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled,coalesce(np.in_app_enabled,true) in_app_enabled,coalesce(np.in_app_categories,'{}'::jsonb) in_app_categories,p.first_name from app_user u left join notification_preference np on np.user_id=u.id left join person p on p.user_id=u.id where u.id=$1",[userId])).rows[0];
  if(!user)return false;
