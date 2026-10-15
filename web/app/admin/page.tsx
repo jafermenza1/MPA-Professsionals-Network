@@ -86,7 +86,8 @@ export default function AdminPage() {
     const errors: string[] = [];
     const getList = async <T,>(path: string, key?: string): Promise<T[]> => {
       const payload = await api<any>(path, {}, token);
-      const rows = Array.isArray(payload) ? payload : (key && Array.isArray(payload?.[key]) ? payload[key] : Array.isArray(payload?.items) ? payload.items : []);
+      const rows = Array.isArray(payload) ? payload : (key && Array.isArray(payload?.[key]) ? payload[key] : Array.isArray(payload?.items) ? payload.items : null);
+      if (!rows) throw new Error("The service returned an unexpected list response for " + path + ".");
       return rows as T[];
     };
     const settle = async <T,>(name: string, request: Promise<T>, apply: (value: T) => void) => {
