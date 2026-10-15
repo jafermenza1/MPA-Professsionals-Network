@@ -494,5 +494,15 @@ const server=http.createServer(async (req,res)=>{
     return json(res,status,{error:{code:error.code||"INTERNAL_ERROR",message:status>=500?"Internal server error.":error.message}},requestId);
   }
 });
+// Bounded, unref'd dispatcher. Row-level locking in the outbox service coordinates multiple instances.
+let emailWorkerRunning=false;
+const emailWorkerTimer=setInterval(async()=>{
+  if(emailWorkerRunning)return;
+  emailWorkerRunning=true;
+  try { const result=await emailOperations.dispatchPendingSystemEmail(); if(result.processed)logger.info("email.outbox.dispatched",{processed:result.processed}); }
+  catch(error){ logger.warn("email.outbox.dispatch_failed",{error:error.message,code:error.code||"EMAIL_DISPATCH_FAILED"}); }
+  finally { emailWorkerRunning=false; }
+},30000);
+emailWorkerTimer.unref();
 server.listen(config.port,config.host,async()=>{ try { await bootstrapAdmin(); logger.info("server.started",{host:config.host,port:config.port,environment:config.nodeEnv,bootstrapAdmin:Boolean(config.bootstrapAdminEmail)}); } catch(error){ logger.error("bootstrap.admin.failed",{error:error.message}); if(config.nodeEnv==="production") process.exitCode=1; } });
 export { server };
