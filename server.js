@@ -163,6 +163,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && p==="api/v1/services") { const q=query(req.url); const viewer=req.headers.authorization?.startsWith("Bearer ")?await auth(req):null; return ok(res,await servicesMentorship.listServices(viewer?.sub||null,{category:q.get("category"),q:q.get("q"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
     if(req.method==="GET" && parts.length===4 && p.startsWith("api/v1/services/")) return ok(res,await servicesMentorship.getServiceListing(parts[3],null),requestId);
     if(req.method==="GET" && p==="api/v1/mentors") { const q=query(req.url); const viewer=req.headers.authorization?.startsWith("Bearer ")?await auth(req):null; return ok(res,await servicesMentorship.listMentors(viewer?.sub||null,{q:q.get("q"),topic:q.get("topic"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
+     if(req.method==="GET" && p==="api/v1/public/organizations") { const q=query(req.url); return ok(res,await organizationJobs.listPublicOrganizations({q:q.get("q"),organizationType:q.get("organizationType"),location:q.get("location"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
     if(req.method==="POST" && p==="api/v1/files/uploads") { const identity=await auth(req); return ok(res,await authorizePrivateUpload(identity.sub,await body(req)),requestId,201); }
     if(req.method==="PUT" && parts.length===6 && p.startsWith("api/v1/files/uploads/") && parts[5]==="content") { const identity=await auth(req); if(!String(req.headers["content-type"]||"").startsWith("application/octet-stream")) throw Object.assign(new Error("Upload content must use application/octet-stream."),{statusCode:415,code:"UNSUPPORTED_MEDIA_TYPE"}); const result=await receivePrivateUpload(identity.sub,parts[4],String(req.headers["x-upload-token"]||""),await rawBody(req)); return ok(res,result,requestId,201); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/files/uploads/") && parts[5]==="confirm") { const identity=await auth(req); return ok(res,await confirmPrivateUpload(identity.sub,parts[4]),requestId,201); }
@@ -171,7 +172,6 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && p==="api/v1/auth/register") { const b=await body(req); await enforcePersistentRateLimit(req,"register",5,60000,String(b.email||"").trim().toLowerCase()); return ok(res,await membership.register(b,requestId),requestId,201); }
     if(req.method==="GET" && p==="api/v1/membership/products") return ok(res,await membership.listMembershipProducts(),requestId);
     if(req.method==="GET" && p==="api/v1/admin/membership/products") {
-     if(req.method==="GET" && p==="api/v1/public/organizations") { const q=query(req.url); return ok(res,await organizationJobs.listPublicOrganizations({q:q.get("q"),organizationType:q.get("organizationType"),location:q.get("location"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
      const identity=await auth(req);
       anyRoleOrPermission(identity,["system_admin","reviewer"],["members.view","members.manage"]);
       return ok(res,await membership.listMembershipProductsForAdmin(),requestId);
