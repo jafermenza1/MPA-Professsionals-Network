@@ -7,6 +7,7 @@ const ACTIVE_MEMBER_SQL="exists(select 1 from membership_record m where m.user_i
 const clean=(value,max=5000)=>String(value??"").trim().slice(0,max);
 function values(input){return Array.isArray(input)?input.map(v=>clean(v,120)).filter(Boolean).slice(0,40):String(input??"").split(",").map(v=>clean(v,120)).filter(Boolean).slice(0,40);}
 async function audit(db,actor,action,type,id,requestId,metadata={}){await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]);}
+async function notify(db,userId,eventCode,type,id,payload={}){if(!userId)return;await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload) values($1,$2,$3,$4,$5)",[userId,eventCode,type,id,payload]);}
 async function organizationAccess(db,organizationId,userId,{requireVerified=true}={}){
  let row;
  try { row=await assertOrganizationCapability(db,organizationId,userId,TEAM_ROLES); }
@@ -73,27 +74,35 @@ export async function requestOrganizationMentorship(offerId,requesterId,input,re
   if((await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active'",[offer.organization_id,requesterId])).rowCount)throw fail(409,"Your organization team already manages this offer.","SELF_REQUEST");
   const message=clean(input.message,3000);
   if(message.length<10)throw fail(400,"Tell the organization what mentorship support you need (at least 10 characters).","VALIDATION_ERROR");
-  const row=(await db.query("insert into organization_mentorship_request(offer_id,requester_user_id,message) values($1,$2,$3) on conflict(offer_id,requester_user_id) do update set message=excluded.message,status=case when organization_mentorship_request.status in ('declined','cancelled') then 'requested' else organization_mentorship_request.status end,response_note=case when organization_mentorship_request.status in ('declined','cancelled') then null else organization_mentorship_request.response_note end,responded_by=case when organization_mentorship_request.status in ('declined','cancelled') then null else organization_mentorship_request.responded_by end,responded_at=case when organization_mentorship_request.status in ('declined','cancelled') then null else organization_mentorship_request.responded_at end,updated_at=now() where organization_mentorship_request.status in ('declined','cancelled') returning *",[offerId,requesterId,message])).rows[0];
-  if(!row)throw fail(409,"You already have an active request for this organization mentorship offer.","DUPLICATE_REQUEST");
-  await audit(db,requesterId,"organization.mentorship_requested","organization_mentorship_request",row.id,requestId,{offerId});
-  return row;
+  const prior=(await db.query("select * from organization_mentorship_request where offer_id=$1 and requester_user_id=$2 for update",[offerId,requesterId])).rows[0];
+  if(prior&&!["declined","cancelled"].includes(prior.status))return {...prior,idempotent:true,nextAction:prior.status==="requested"?"Wait for the organization team to respond.":prior.status==="accepted"?"Agree the program goals and first session with the organization.":"This request is already resolved; contact the organization if your need has changed."};
+  const row=(await db.query("insert into organization_mentorship_request(offer_id,requester_user_id,message) values($1,$2,$3) on conflict(offer_id,requester_user_id) do update set message=excluded.message,status='requested',response_note=null,responded_by=null,responded_at=null,updated_at=now() returning *",[offerId,requesterId,message])).rows[0];
+  await audit(db,requesterId,"organization.mentorship_requested","organization_mentorship_request",row.id,requestId,{offerId,from:prior?.status||null,to:"requested"});
+  const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[offer.organization_id,TEAM_ROLES])).rows;
+  for(const member of team)await notify(db,member.user_id,"organization.mentorship_request_received","organization_mentorship_request",row.id,{message:"A new mentorship request needs your organization's response.",nextAction:"Review the request and accept or decline with a clear note."});
+  return {...row,nextAction:"Your request is recorded. The organization team must respond before a program is confirmed."};
  });
 }
 export async function listMyOrganizationMentorshipRequests(userId){
  return (await getPool().query("select r.*,x.title offer_title,x.organization_id,o.display_name organization_name,(r.requester_user_id=$1) is_requester from organization_mentorship_request r join organization_mentorship_offer x on x.id=r.offer_id join organization o on o.id=x.organization_id where r.requester_user_id=$1 or exists(select 1 from organization_membership om where om.organization_id=x.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])) order by r.updated_at desc",[userId,TEAM_ROLES])).rows;
 }
 export async function respondOrganizationMentorshipRequest(requestId,userId,status,note,requestIdHeader){
- if(!["accepted","declined","completed"].includes(status))throw fail(400,"Choose accept, decline or complete for this request.","VALIDATION_ERROR");
+ if(!["accepted","declined","completed","cancelled"].includes(status))throw fail(400,"Choose accept, decline, complete or cancel for this request.","VALIDATION_ERROR");
  const responseNote=clean(note,2000);
- if(["declined","completed"].includes(status)&&!responseNote)throw fail(400,status==="declined"?"Explain why the request is being declined.":"Record the outcome before marking the mentorship request complete.",status==="declined"?"RESPONSE_NOTE_REQUIRED":"OUTCOME_NOTE_REQUIRED");
+ if(["declined","completed","cancelled"].includes(status)&&responseNote.length<4)throw fail(400,status==="declined"?"Explain why the request is being declined.":status==="completed"?"Record the outcome before marking the mentorship request complete.":"Add a short cancellation reason.",status==="declined"?"RESPONSE_NOTE_REQUIRED":"OUTCOME_NOTE_REQUIRED");
  return withTransaction(async db=>{
   const row=(await db.query("select r.*,x.organization_id from organization_mentorship_request r join organization_mentorship_offer x on x.id=r.offer_id where r.id=$1 for update of r",[requestId])).rows[0];
   if(!row)throw fail(404,"Organization mentorship request was not found.","NOT_FOUND");
-  await organizationAccess(db,row.organization_id,userId);
+  const requesterAction=status==="cancelled"&&row.requester_user_id===userId;
+  if(status==="cancelled"&&!requesterAction)throw fail(403,"Only the requester can cancel this organization mentorship request.","FORBIDDEN");
+  if(!requesterAction)await organizationAccess(db,row.organization_id,userId);
   if(status==="completed"&&row.status!=="accepted")throw fail(409,"Only an accepted mentorship request can be marked completed.","INVALID_STATE");
   if(["accepted","declined"].includes(status)&&row.status!=="requested")throw fail(409,"This request has already been answered.","INVALID_STATE");
+  if(status==="cancelled"&&!["requested","accepted"].includes(row.status))throw fail(409,"Only an open or accepted request can be cancelled.","INVALID_STATE");
+  if(row.status===status)return {...row,idempotent:true,nextAction:status==="accepted"?"Agree program goals and a start date.":status==="completed"?"Review the recorded outcome.":"No further action is required for this request."};
   const updated=(await db.query("update organization_mentorship_request set status=$1,response_note=$2,responded_by=$3,responded_at=now(),updated_at=now() where id=$4 returning *",[status,responseNote||null,userId,requestId])).rows[0];
-  await audit(db,userId,"organization.mentorship_request_responded","organization_mentorship_request",requestId,requestIdHeader,{status});
-  return updated;
+  await audit(db,userId,"organization.mentorship_request_responded","organization_mentorship_request",requestId,requestIdHeader,{from:row.status,to:status});
+  if(row.requester_user_id!==userId)await notify(db,row.requester_user_id,"organization.mentorship_request_status_changed","organization_mentorship_request",requestId,{from:row.status,to:status,note:responseNote,message:status==="accepted"?"The organization accepted your mentorship request.":status==="declined"?"The organization declined your request.":status==="completed"?"The organization recorded the program outcome.":"The organization mentorship request was cancelled.",nextAction:status==="accepted"?"Agree goals and a start date with the organization.":status==="declined"?"Review the explanation or consider another program.":status==="completed"?"Review the outcome and submit feedback if available.":"Submit a new request if your need remains."});
+  return {...updated,nextAction:status==="accepted"?"Agree program goals and a start date.":status==="completed"?"Review the recorded outcome.":status==="declined"?"Review the explanation or consider another program.":"The request is cancelled."};
  });
 }
