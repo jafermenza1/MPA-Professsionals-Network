@@ -51,6 +51,16 @@ PR: #3 — keep open and draft until validation passes.
 
 The inventory is a coverage register for subsequent rendered/browser validation; listing a route does not mean its visual and behavioral acceptance has already passed.
 
+## Route audit — initial source pass (in progress)
+
+The route-by-route source review has started; this is not browser validation and does not establish acceptance. The following implementation defects were corrected during the first pass:
+
+- Support workspace now exits its initial loading state when no session exists and presents a sign-in path. Its knowledge base and inquiry inbox load independently with Promise.allSettled, so one unavailable endpoint does not discard the other panel's usable data.
+- Marketplace demand distinguishes a confirmed empty topic list from a failed topic request. When no previously loaded topics exist and the request fails, it now presents an unavailable/retry state rather than claiming there are no open topics.
+- Membership plan loading now safely normalizes the API response to an array and does not display “No active membership plans” when the request failed. Existing application and payment workflows were left intact.
+
+These are source-level fixes only. They have not been built, typechecked, tested, or browser-verified. The full route matrix, remaining state/authorization checks, responsive behavior, accessibility and localization are still open.
+
 ## Remaining work — do not mark complete until verified
 
 1. **Admin consistency implementation tranche complete; acceptance pending:** the shared shell, responsive navigation, breadcrumbs and reusable headers now cover the admin routes. Support Desk roles see marketplace/support destinations prioritized without hiding other tools; the admin overview retains its explicit role-conditioned shortcuts; the support inbox keeps its live queue-counter hero. Sidebar visibility does not imply authorization. The next queued task is the route-by-route functional audit, not validation or release acceptance.
