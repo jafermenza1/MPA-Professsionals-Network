@@ -32,7 +32,7 @@ export function AdminWorkspace(  children }:   children: React.ReactNode }) {
     let cancelled = false;
     if (!hydrated || !token) { setRoles(null); return () => { cancelled = true; }; }
     api<{ roles?: unknown }>("/api/v1/me", {}, token)
-      .then((me) => { if (!cancelled) setRoles(Array.isArray(me.roles) ? me.roles.filter((role): role is string => typeof role === "string") : []); })
+      .then((me) => { if (!cancelled) setRoles(Array.isArray(me.roles) ? me.roles.map((role) => typeof role === "string" ? role : role && typeof role === "object" && "role_code" in role && typeof role.role_code === "string" ? role.role_code : "").filter(Boolean) : []); })
       .catch(() => { if (!cancelled) setRoles([]); });
     return () => { cancelled = true; };
   }, [hydrated, token]);
