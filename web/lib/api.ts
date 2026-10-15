@@ -16,6 +16,7 @@ const FRIENDLY_ERRORS: Record<string,string> = {
   PASSWORD_TOO_SHORT: "Choose a password with at least 10 characters.",
   EMAIL_NOT_VERIFIED: "Verify your email before signing in. You can request a new verification link below.",
   EMAIL_VERIFICATION_REQUIRED: "Verify your email before signing in. Use the resend verification option if needed.",
+  EMAIL_VERIFICATION_REQUIRED: "Verify your email before signing in. Use the resend verification option if needed.",
   EMAIL_DELIVERY_NOT_CONFIGURED: "Email verification delivery is not configured for this deployment. Contact the platform operator.",
   PASSKEY_REQUIRED: "This administrator account requires a passkey or a one-time recovery code.",
   PASSKEY_ENROLLMENT_REQUIRED: "Register an administrator passkey before continuing.",
