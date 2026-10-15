@@ -45,10 +45,10 @@ export function parseXlsxRows(input) {
   const files = unzip(input);
   const workbook = entryText(files, "xl/workbook.xml");
   const relationships = entryText(files, "xl/_rels/workbook.xml.rels");
-  const firstSheet = workbook.match(/<sheet\\b[^>]*\\br:id="([^"]+)"/);
-  const target = firstSheet && relationships.match(new RegExp("<Relationship\\\\b(?=[^>]*\\\\bId=\\""+firstSheet[1]+"\\")(?=[^>]*\\\\bTarget=\\"([^"]+)\\")[^>]*/>"));
-  const sheetTarget = target?.[1] || "worksheets/sheet1.xml";
-  const sheetPath = sheetTarget.startsWith("/") ? sheetTarget.slice(1) : "xl/" + sheetTarget.replace(/^\\.\\//, "");
+  const firstSheet = workbook.match(/<sheet\b[^>]*\br:id="([^"]+)"/);
+  const relationship = [...relationships.matchAll(/<Relationship\b([^>]*)\/>/g)].map(match => ({ id: match[1].match(/\bId="([^"]+)"/)?.[1], target: match[1].match(/\bTarget="([^"]+)"/)?.[1] })).find(item => item.id === firstSheet?.[1]);
+  const sheetTarget = relationship?.target || "worksheets/sheet1.xml";
+  const sheetPath = sheetTarget.startsWith("/") ? sheetTarget.slice(1) : "xl/" + sheetTarget.replace(/^\.\//, "");
   const sheet = entryText(files, sheetPath);
   if (!sheet) throw new Error("The XLSX workbook has no readable first worksheet.");
   const sharedXml = entryText(files, "xl/sharedStrings.xml");
