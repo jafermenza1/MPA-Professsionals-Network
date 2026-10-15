@@ -45,6 +45,14 @@ test("critical security notifications bypass ordinary notification preference to
  assert.match(insert.params[11],/security.credentials_changed:security_event:user-1:request-1/);
 });
 
+test("legacy notification backfill covers underscore event codes without deleting history",async()=>{
+ const {readFile}=await import("node:fs/promises");
+ const migration=await readFile(new URL("../../db/migrations/20261015210000_notification_category_legacy_backfill.sql",import.meta.url),"utf8");
+ for(const category of ["membership","verification","opportunities","recruitment","organizations","mentorship","services","security"])assert.match(migration,new RegExp("THEN '"+category+"'"));
+ assert.match(migration,/UPDATE notification_event/);
+ assert.doesNotMatch(migration,/DROP TABLE|TRUNCATE|DELETE FROM notification_event/i);
+});
+
 test("deduplication distinguishes separate persisted workflow transitions",async()=>{
  const db=fakeDb();
  await createInAppNotification(db,"user-1","job.application_status_changed","job_application","app-1",{status:"shortlisted"});
