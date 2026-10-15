@@ -99,12 +99,10 @@ const blank = {
 };
 export default function Profile() {
   const token = useUiStore((s) => s.token),
-    setToken = useUiStore((s) => s.setToken),
     clearToken = useUiStore((s) => s.clearToken),
     language = useUiStore((s) => s.language);
   const [profile, setProfile] = useState<Profile | null>(null),
     [form, setForm] = useState(blank),
-    [tokenDraft, setTokenDraft] = useState("");
   const [organizationOnly, setOrganizationOnly] = useState(false);
   const [profilePictureUrl, setProfilePictureUrl] = useState("");
   const [uploadingPicture, setUploadingPicture] = useState(false);
@@ -458,41 +456,14 @@ export default function Profile() {
           <div className="row">
             <LogIn color="var(--primary)" />
             <div>
-              <div className="h2">Connect your account</div>
+              <div className="h2">Sign in to your account</div>
               <p className="muted">
-                Sign in to load and edit your profile. A development bearer
-                token may be pasted for local testing only.
+                Sign in securely to load and manage your profile, professional
+                details and communication preferences.
               </p>
+              <p><a className="btn btn-primary" href="/login?next=%2Fprofile">Sign in</a></p>
             </div>
           </div>
-          <label htmlFor="profile-token">Development bearer token</label>
-          <input
-            id="profile-token"
-            aria-label="Bearer token"
-            type="password"
-            placeholder="Paste token only for local testing"
-            value={tokenDraft}
-            onChange={(e) => setTokenDraft(e.target.value)}
-            style={{
-              width: "100%",
-              padding: 11,
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              background: "var(--bg)",
-              color: "var(--text)",
-            }}
-          />
-          <button
-            className="btn btn-primary"
-            type="button"
-            disabled={!tokenDraft.trim()}
-            onClick={() => setToken(tokenDraft.trim())}
-          >
-            Connect session
-          </button>
-          <p className="muted">
-            Tokens are stored in this browser session only.
-          </p>
         </Card>
       ) : (
         <>
