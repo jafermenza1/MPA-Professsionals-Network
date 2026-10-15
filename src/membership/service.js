@@ -6,6 +6,8 @@ import { nextTrackingReference } from "../platform/tracking-reference.js";
 import { hashPassword, verifyPassword, normalizeEmail, normalizePhone, normalizeName, validatePersonInput } from "./identity.js";
 import { assertProfessionalProfileCapability } from "../platform/identity-policy.js";
 import { membershipEndDate } from "../platform/membership-duration.js";
+import { consumeHumanChallenge } from "../platform/security-controls.js";
+import { createEmailVerification, deliverEmailVerification } from "../platform/email-verification.js";
 
 function httpError(status,message,code="BUSINESS_RULE"){
   const e=new Error(message); e.statusCode=status; e.code=code; return e;
@@ -55,7 +57,11 @@ export async function register(input,requestId){
   const email=normalizeEmail(input.email);
   if(!email || !String(input.password||"")) throw httpError(400,"email and password are required.","VALIDATION_ERROR");
   const person=validatePersonInput(input);
-  return withTransaction(async db=>{
+  const verificationRequired=String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true";
+  const humanChallengeRequired=String(process.env.HUMAN_CHALLENGE_REQUIRED||"false").toLowerCase()==="true";
+  let verificationMessage=null;
+  const registered=await withTransaction(async db=>{
+    if(humanChallengeRequired || input.humanCheckToken) await consumeHumanChallenge(db,input.humanCheckToken);
     const identity=await db.query(`
       select u.id from app_user u where lower(u.email)=lower($1)
       union
@@ -64,17 +70,26 @@ export async function register(input,requestId){
       select p.user_id from person p where lower(regexp_replace(coalesce(p.display_name,''),'[^[:alnum:]]','','g'))=
         lower(regexp_replace($3,'[^[:alnum:]]','','g')) limit 3`,[email,person.phone,person.displayName]);
     if(identity.rows.length) throw httpError(409,"An existing account or identity matches these details. Sign in or contact membership support instead of creating a duplicate.","IDENTITY_CONFLICT");
-    const user=(await db.query("insert into app_user(username,email,password_hash,status) values($1,$2,$3,'active') returning id,email,username",[email,email,hashPassword(input.password)])).rows[0];
+    const registrationReference=await nextTrackingReference(db,"membership");
+    const user=(await db.query("insert into app_user(username,email,password_hash,status,registration_reference) values($1,$2,$3,'active',$4) returning id,email,username,registration_reference",[email,email,hashPassword(input.password),registrationReference])).rows[0];
     const p=(await db.query(`insert into person(user_id,first_name,middle_name,last_name,display_name,phone,date_of_birth,sex,nationality)
       values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id,user_id,first_name,middle_name,last_name,display_name,phone,date_of_birth,sex,nationality`,
       [user.id,person.firstName,person.middleName,person.lastName,person.displayName,person.phone,person.dateOfBirth,person.sex,person.nationality])).rows[0];
     await db.query("insert into professional_profile(person_id,completion_percent) values($1,20)",[p.id]);
     await db.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code='member' on conflict do nothing",[user.id]);
     await db.query("insert into notification_preference(user_id) values($1) on conflict do nothing",[user.id]);
-    await audit(db,user.id,"account.registered","account",user.id,requestId,{identityPolicy:"email_phone_exact_name"});
-    await notify(db,user.id,"account_registered","account",user.id,{displayName:p.display_name});
-    return {user:{id:user.id,email:user.email},person:p,token:await tokenFor(db,user,["member"])};
+    await audit(db,user.id,"account.registered","account",user.id,requestId,{identityPolicy:"email_phone_exact_name",registrationReference});
+    await notify(db,user.id,"account_registered","account",user.id,{displayName:p.display_name,registrationReference});
+    if(verificationRequired){
+      verificationMessage=await createEmailVerification(db,user.id,user.email,registrationReference,p.first_name||"");
+    }
+    return {user:{id:user.id,email:user.email},person:p,registrationReference,roles:["member"],token:verificationRequired?null:await tokenFor(db,user,["member"])};
   });
+  if(verificationRequired){
+    const delivery=await deliverEmailVerification(verificationMessage);
+    return {user:registered.user,registrationReference:registered.registrationReference,verificationRequired:true,verificationSent:Boolean(delivery.sent),developmentVerificationUrl:delivery.developmentVerificationUrl||undefined};
+  }
+  return {...registered,verificationRequired:false};
 }
 
 export async function login(email,password,requestId,requestMeta={}){
