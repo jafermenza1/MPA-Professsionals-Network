@@ -81,7 +81,19 @@ test("Gate 2: verified organization publishes under its own identity and can ful
  const publicListing=(await journeys.listServices(null,{q:"Gate 2 organization training"})).items.find(x=>x.id===listing.id);
  assert.ok(publicListing);assert.equal(publicListing.organization_id,org.id);assert.equal(publicListing.display_name,org.display_name);
  const request=await journeys.requestService(listing.id,requester,{message:"Please share a training outline and available dates."},"gate2-org-service-request");
+ await assert.rejects(journeys.changeServiceRequestStatus(request.id,await account(),"accepted","Unrelated actor","gate2-org-service-outsider"),e=>e.code==="FORBIDDEN");
+ assert.equal((await journeys.listMyServiceRequests(owner)).some(row=>row.id===request.id),true,"authorized organization owner can follow the request");
+ assert.equal((await journeys.listMyServiceRequests(await account())).some(row=>row.id===request.id),false,"unrelated account cannot discover organization request details");
  assert.equal((await journeys.changeServiceRequestStatus(request.id,owner,"accepted","Organization accepted the request.","gate2-org-service-accept")).status,"accepted");
+ assert.equal((await journeys.changeServiceRequestStatus(request.id,owner,"in_progress","The organization began the agreed work.","gate2-org-service-start")).status,"in_progress");
+ const milestone=await journeys.createServiceMilestone(request.id,owner,{title:"Training delivery",description:"Deliver the agreed workshop, materials and learning outcomes."},"gate2-org-service-milestone");
+ const delivery=await journeys.submitServiceDelivery(request.id,owner,{milestoneId:milestone.id,description:"Workshop delivered, materials shared and learning outcomes summarized."},"gate2-org-service-delivery");
+ assert.equal((await journeys.reviewServiceDelivery(delivery.id,requester,{status:"accepted",note:"The training and materials meet the agreed scope."},"gate2-org-service-delivery-review")).status,"accepted");
+ await journeys.changeServiceRequestStatus(request.id,owner,"completed","Organization submitted the agreed deliverables for requester acceptance.","gate2-org-service-completion");
+ const acceptedOutcome=await journeys.acceptServiceCompletion(request.id,requester,"The training outcome and materials are accepted.","gate2-org-service-outcome");
+ assert.equal(acceptedOutcome.status,"completed");
+ const feedback=await journeys.submitServiceFeedback(request.id,requester,{targetRole:"provider",rating:5,comments:"The organization delivered the agreed training outcome."},"gate2-org-service-feedback");
+ assert.equal(Number(feedback.rating),5);
 });
 
 test("Gate 2: mentorship offer is reviewed, matched, accepted, scheduled, completed and rated",async()=>{
@@ -131,6 +143,10 @@ test("Gate 2: verified organization mentorship offer is moderated, requested, ac
  const request=await organizationOffers.requestOrganizationMentorship(offer.id,requester,{message:"I want support building a leadership plan and improving team communication."},"gate2-org-mentorship-request");
  assert.equal(request.status,"requested");
  assert.ok((await organizationOffers.listMyOrganizationMentorshipRequests(owner)).some(x=>x.id===request.id&&!x.is_requester));
+ await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,requester,"accepted","Requester cannot impersonate the organization.","gate2-org-mentorship-requester-forbidden"),e=>e.code==="FORBIDDEN");
+ await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,await account(),"accepted","Unrelated account cannot decide.","gate2-org-mentorship-outsider-forbidden"),e=>e.code==="FORBIDDEN");
+ assert.equal((await organizationOffers.listMyOrganizationMentorshipRequests(requester)).some(row=>row.id===request.id&&row.is_requester),true);
+ assert.equal((await organizationOffers.listMyOrganizationMentorshipRequests(await account())).some(row=>row.id===request.id),false,"unrelated account cannot list private organization mentorship requests");
  const accepted=await organizationOffers.respondOrganizationMentorshipRequest(request.id,owner,"accepted","We can support this goal. The organization will contact you to agree next steps.","gate2-org-mentorship-accept");
  assert.equal(accepted.status,"accepted");
  const completed=await organizationOffers.respondOrganizationMentorshipRequest(request.id,owner,"completed","Program completed and the agreed outcome was recorded.","gate2-org-mentorship-complete");
