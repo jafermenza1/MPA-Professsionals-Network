@@ -127,6 +127,7 @@ export async function updateUser(actor,userId,input,requestId){
   await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.user.updated','app_user',$2,$3,'success',$4)",[
    actorId,userId,requestId,JSON.stringify({scope:"platform",previousStatus:u.status,currentStatus:status??u.status,status:status??null,previousRoles:currentRoles,currentRoles:newRoles,roleCode:roleCode??null,removeRoleCode:removeRoleCode??null,reason})
   ]);
+  if(roleCode!==undefined||removeRoleCode!==undefined||status!==undefined)await createInAppNotification(tx,userId,"security.account_access_changed","security_event",userId,{category:"security",critical:true,priority:"high",message:"An MPA administrator changed your account status or access roles and active sessions were revoked.",nextAction:"Sign in again to refresh your access. If you did not expect this change, contact MPA Support.",actionUrl:"/profile",actionRequired:true});
   return {id:userId,status:status||u.status,roles:newRoles};
  });
 }
