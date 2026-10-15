@@ -356,9 +356,9 @@ export async function createApplication(userId,input,requestId){
     const row=(await db.query(`insert into membership_application(user_id,tracking_reference,application_type,previous_membership_id,membership_product_id,status,submitted_at,data_snapshot,fee_snapshot)
       values($1,$2,$3,$4,$5,'submitted',now(),$6,$7) returning *`,[userId,trackingReference,type,active.rows[0]?.id||null,prod.id,snapshot,fee])).rows[0];
     await audit(db,userId,"membership.application_submitted","membership_application",row.id,requestId,{applicationType:type,productCode:prod.product_code});
-    await notify(db,userId,"membership_application_submitted","membership_application",row.id,{productCode:prod.product_code});
-    const reviewers=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='members.manage')")).rows;
-    for(const reviewer of reviewers)await notify(db,reviewer.user_id,"membership_review_queue_item","membership_application",row.id,{category:"membership",message:"A membership application is ready for review.",nextAction:"Open the existing membership review queue, review required evidence, and record a reasoned decision.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high"});
+    await notify(db,userId,"membership_application_submitted","membership_application",row.id,{productCode:prod.product_code,eventVersion:row.submitted_at||row.updated_at||row.id});
+    const reviewers=(await db.query("select distinct u.id user_id from app_user u where u.status='active' and (exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='members.manage'))")).rows;
+    for(const reviewer of reviewers)await notify(db,reviewer.user_id,"membership_review_queue_item","membership_application",row.id,{category:"membership",message:"A membership application is ready for review.",nextAction:"Open the existing membership review queue, review required evidence, and record a reasoned decision.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high",eventVersion:row.submitted_at||row.updated_at||row.id});
     return row;
   });
 }
@@ -376,7 +376,7 @@ export async function reviewApplication(applicationId,reviewerId,input,requestId
     await db.query("update membership_application set status=$1,approved_at=case when $1='payment_pending' then now() else approved_at end,updated_at=now() where id=$2",[next,applicationId]);
     if(decision==="correction_required") await db.query("insert into membership_correction(application_id,requested_by,requested_fields,reviewer_note) values($1,$2,$3,$4)",[applicationId,reviewerId,JSON.stringify(input.requestedFields||[]),input.note||"Correction required."]);
     await audit(db,reviewerId,"membership.application_reviewed","membership_application",applicationId,requestId,{decision});
-    await notify(db,row.user_id,`membership_application_${decision}`,"membership_application",applicationId,{note:input.note||null});
+    await notify(db,row.user_id,`membership_application_${decision}`,"membership_application",applicationId,{note:input.note||null,eventVersion:review.id});
     return review;
   });
 }
@@ -390,8 +390,8 @@ export async function respondCorrection(applicationId,userId,input,requestId){
     await db.query("update membership_correction set status='responded',responded_by=$1,applicant_response=$2,responded_at=now() where id=$3",[userId,input.response||{},open.id]);
     const updated=(await db.query("update membership_application set status='submitted',data_snapshot=data_snapshot || $1::jsonb,updated_at=now() where id=$2 returning *",[JSON.stringify(input.response||{}),applicationId])).rows[0];
     await audit(db,userId,"membership.correction_responded","membership_application",applicationId,requestId,{correctionId:open.id});
-    await notify(db,userId,"membership_correction_submitted","membership_application",applicationId,{message:"Your response to the membership correction request was submitted.",nextAction:"Wait for the reviewer to reassess the updated application.",actionUrl:"/membership"});
-    const reviewers=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='members.manage')")).rows;
+    await notify(db,userId,"membership_correction_submitted","membership_application",applicationId,{message:"Your response to the membership correction request was submitted.",nextAction:"Wait for the reviewer to reassess the updated application.",actionUrl:"/membership",eventVersion:updated.updated_at||open.id});
+    const reviewers=(await db.query("select distinct u.id user_id from app_user u where u.status='active' and (exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='members.manage'))")).rows;
     for(const reviewer of reviewers)await notify(db,reviewer.user_id,"membership_correction_received","membership_application",applicationId,{category:"membership",message:"A member responded to a requested correction.",nextAction:"Reopen the membership review queue and review the member's response.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high",eventVersion:open.id});
     return updated;
   });
@@ -430,7 +430,7 @@ export async function createManualPayment(applicationId,userId,input,requestId){
       await db.query("update payment_transaction set evidence_file_id=$1 where id=$2",[input.evidenceFileId,p.id]);
     }
     await audit(db,userId,"membership.payment_submitted","payment_transaction",p.id,requestId,{applicationId,channel:input.channel||"manual"});
-    await notify(db,userId,"membership_payment_submitted","membership_application",applicationId,{paymentId:p.id});
+    await notify(db,userId,"membership_payment_submitted","membership_application",applicationId,{paymentId:p.id,eventVersion:p.id});
     const financeUsers=(await db.query("select distinct ur.user_id from app_user_role ur join app_role r on r.id=ur.role_id where r.role_code in ('finance_officer','system_admin') union select distinct up.user_id from app_user_permission up where up.permission_code='finance.manage'")).rows;
     for(const finance of financeUsers)await notify(db,finance.user_id,"membership_payment_review_required","payment_transaction",p.id,{category:"membership",message:"A membership payment is awaiting finance verification.",nextAction:"Review the payment evidence and reconcile the payment against the approved application fee.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high"});
     return p;
@@ -461,7 +461,7 @@ export async function verifyPayment(paymentId,verifierId,input,requestId){
     await db.query("update membership_application set status=$1,updated_at=now() where id=$2",[appStatus,p.application_id]);
     if(decision==="approved") await db.query("insert into payment_reconciliation(payment_transaction_id,membership_id,reconciliation_status,reconciled_by,reconciled_at,note) values($1,null,'matched',$2,now(),$3)",[paymentId,verifierId,"Matched to membership application "+p.application_id]);
     await audit(db,verifierId,"membership.payment_verified","payment_transaction",paymentId,requestId,{decision,applicationId:p.application_id});
-    await notify(db,p.user_id,`membership_payment_${decision}`,"payment_transaction",paymentId,{applicationId:p.application_id});
+    await notify(db,p.user_id,`membership_payment_${decision}`,"payment_transaction",paymentId,{applicationId:p.application_id,eventVersion:requestId||paymentId});
     return (await db.query("select * from payment_transaction where id=$1",[paymentId])).rows[0];
   });
 }
