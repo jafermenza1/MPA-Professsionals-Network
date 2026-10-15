@@ -6,6 +6,7 @@ import { createLogger } from "./src/platform/logger.js";
 import { verifyToken, requireRole, hashSessionToken, withCurrentRoles } from "./src/platform/auth.js";
 import { getPool } from "./src/platform/db.js";
 import * as membership from "./src/membership/service.js";
+import * as membershipCard from "./src/membership/card.js";
 import * as membershipAdminBulk from "./src/membership/admin-bulk.js";
 import * as reports from "./src/platform/reports.js";
 import * as verification from "./src/verification/service.js";
@@ -118,6 +119,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && req.url==="/readyz") return ok(res,{status:"ready",databaseConfigured:Boolean(config.databaseUrl)},requestId);
     const parts=pathParts(req.url);
     const p=parts.join("/");
+    if(req.method==="GET" && p==="api/v1/public/membership-verification") { const q=query(req.url); return ok(res,await membershipCard.verifyMembershipCard(q.get("record"),q.get("token")),requestId); }
     if(req.method==="GET" && p==="api/v1/auth/human-challenge") { await enforcePersistentRateLimit(req,"human-challenge",10,60000); return ok(res,await issueHumanChallenge(),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/human-challenge/verify") { const b=await body(req); await enforcePersistentRateLimit(req,"human-challenge-verify",10,60000); return ok(res,await verifyHumanChallenge(b.id,b.answer),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/email-verification/resend") { const b=await body(req); await enforcePersistentRateLimit(req,"email-verification-resend",3,3600000,String(b.email||"").trim().toLowerCase()); return ok(res,await resendEmailVerification(b.email,requestId),requestId,202); }
@@ -357,6 +359,12 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && p==="api/v1/opportunity-inquiries") { const identity=await auth(req); return ok(res,await publicOpportunity.listInquiries(identity.sub,{type:query(req.url).get("type"),status:query(req.url).get("status")}),requestId); }
     if(req.method==="PATCH" && parts.length===4 && p.startsWith("api/v1/opportunity-inquiries/")) { const identity=await auth(req); const b=await body(req); return ok(res,await publicOpportunity.decideInquiry(parts[3],identity.sub,b,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/me/application-tracking") { const q=query(req.url); return ok(res,await applicationTracking.getApplicationTracking(identity.sub,{limit:q.get("limit")||undefined,offset:q.get("offset")||undefined,reference:q.get("reference")||undefined}),requestId); }
+    if(req.method==="GET" && p==="api/v1/membership/card") return ok(res,await membershipCard.getMyMembershipCard(identity.sub),requestId);
+    if(req.method==="PATCH" && p==="api/v1/me/profile-picture") return ok(res,await membershipCard.setMyProfilePicture(identity.sub,(await body(req)).fileObjectId,requestId),requestId);
+    if(req.method==="DELETE" && p==="api/v1/me/profile-picture") return ok(res,await membershipCard.removeMyProfilePicture(identity.sub,requestId),requestId);
+    if(req.method==="GET" && p==="api/v1/admin/membership-card-settings") { anyRoleOrPermission(identity,["system_admin","admin"],["members.manage"]); return ok(res,await membershipCard.getMembershipCardSettings(),requestId); }
+    if(req.method==="PATCH" && p==="api/v1/admin/membership-card-settings") { anyRoleOrPermission(identity,["system_admin"],["members.manage"]); return ok(res,await membershipCard.updateMembershipCardSettings(identity.sub,await body(req),requestId),requestId); }
+    if(req.method==="POST" && parts.length===6 && parts[0]==="api" && parts[1]==="v1" && parts[2]==="admin" && parts[3]==="membership-records" && parts[5]==="rotate-verification") { anyRoleOrPermission(identity,["system_admin"],["members.manage"]); return ok(res,await membershipCard.rotateMembershipCardVerification(parts[4],identity.sub,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/me") return ok(res,{...(await membership.getMe(identity.sub)),permissions:identity.permissions||[],credential_setup_required:identity.credential_setup_required===true},requestId);
     if(req.method==="PATCH" && p==="api/v1/me/account") return ok(res,await accountSecurity.updateOwnCredentials(identity,await body(req),requestId),requestId);
     if(req.method==="PATCH" && p==="api/v1/me/profile") return ok(res,await membership.updateProfile(identity.sub,await body(req),requestId),requestId);
