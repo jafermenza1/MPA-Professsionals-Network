@@ -61,7 +61,7 @@ export default function MembershipCardPage(){
           <div className={styles.details}><p className={styles.memberName}>{card.memberName}</p>{s.show_membership_type&&<p className={styles.memberType}>{card.membershipType}</p>}<p className={styles.idLabel}>MEMBERSHIP ID</p><p className={styles.idValue}>{card.membershipNumber}</p><div className={styles.dates}><span>VALID FROM <b>{dateLabel(card.startDate)}</b></span><span>VALID UNTIL <b>{dateLabel(card.endDate)}</b></span></div></div>
           <div className={styles.qrSide}><div className={styles.qrFrame}><QRCodeSVG value={verifyUrl} size={132} level="M" includeMargin={false} bgColor="#FFFFFF" fgColor="#0A3258" /></div><span>SCAN TO VERIFY</span></div>
         </div>
-        <footer className={styles.cardFooter}><span>{s.footer_text}</span><span className={styles.footerSeal}>● VERIFIED ONLINE</span></footer>
+        <footer className={styles.cardFooter}><span>{s.footer_text}</span><span className={styles.footerSeal}>● VERIFY ONLINE</span></footer>
       </article>
     </section>
     <p className={styles.note}>Your membership ID is issued by MPA and cannot be edited from this page. The QR code checks the current record online; a printed card is not proof of active status if the membership has expired, been suspended, or been revoked.</p>
