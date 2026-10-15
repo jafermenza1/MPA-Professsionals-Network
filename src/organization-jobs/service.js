@@ -310,9 +310,10 @@ export async function listJobs(filters={},viewerId=null){
  }
  if(filters.industryReferenceItemId){args.push(filters.industryReferenceItemId);where.push("j.industry_reference_item_id=$"+args.length);}
  if(filters.occupationReferenceItemId){args.push(filters.occupationReferenceItemId);where.push("j.occupation_reference_item_id=$"+args.length);}
+ const limit=Math.min(Math.max(Number(filters.limit)||20,1),50),offset=Math.max(Number(filters.offset)||0,0);
  const rows=(await db.query("select j.id,j.title,j.description,j.employment_type,j.work_mode,j.location_label,j.visibility,j.posting_scope,j.department,j.seniority_level,j.positions_count,j.salary_min,j.salary_max,j.salary_currency,j.application_deadline,j.published_at,o.id organization_id,o.display_name organization_name from job j join organization o on o.id=j.organization_id where "+where.join(" and ")+" order by j.published_at desc",[...args])).rows;
  const visible=[]; for(const row of rows){ if(await jobScopeAllowed(db,row,viewerId)) visible.push(row); }
- return {items:visible};
+ return {items:visible.slice(offset,offset+limit),limit,offset,total:visible.length,hasMore:offset+limit<visible.length};
 }
 
 export async function getJob(jobId,viewerId=null){
