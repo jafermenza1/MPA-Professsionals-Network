@@ -45,6 +45,18 @@ export async function registerOrganization(userId,input,requestId){
  });
 }
 
+export async function listPublicOrganizations(filters={}) {
+ const db=getPool();const args=[];const where=["o.public_visible=true","o.verification_status='verified'"];
+ if(filters.q){args.push("%"+String(filters.q).trim()+"%");where.push("(o.display_name ilike $"+args.length+" or o.legal_name ilike $"+args.length+" or coalesce(o.description,'') ilike $"+args.length+")");}
+ if(filters.organizationType){args.push(String(filters.organizationType));where.push("o.organization_type=$"+args.length);}
+ if(filters.location){args.push("%"+String(filters.location).trim()+"%");where.push("(coalesce(ri.label,'') ilike $"+args.length+" or coalesce(o.address_text,'') ilike $"+args.length+")");}
+ const limit=Math.min(Math.max(Number(filters.limit)||20,1),50),offset=Math.max(Number(filters.offset)||0,0);
+ const base=" from organization o left join reference_item ri on ri.id=o.geography_reference_item_id where "+where.join(" and ");
+ const total=Number((await db.query("select count(*)::int count"+base,args)).rows[0]?.count||0);
+ const rows=(await db.query("select o.id,o.display_name,o.organization_type,o.description,o.website,ri.label location_label,o.created_at"+base+" order by o.display_name limit "+(limit+1)+" offset "+offset,args)).rows;
+ return {items:rows.slice(0,limit),limit,offset,total,hasMore:offset+limit<total};
+}
+
 export async function getOrganization(orgId,viewerId=null){
  const db=getPool();
  const org=(await db.query("select o.*,ri.code geography_code,ri.label geography_label from organization o left join reference_item ri on ri.id=o.geography_reference_item_id where o.id=$1",[orgId])).rows[0];
