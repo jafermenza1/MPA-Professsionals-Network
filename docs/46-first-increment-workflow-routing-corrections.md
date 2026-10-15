@@ -15,7 +15,8 @@ Correct the first increment of the MPA PWA/action-center roadmap before adding i
 - Verification reviewer alerts target active users with the established reviewer roles or `verification.manage` permission. Reviewer assignment eligibility also checks active account status.
 - Verification status-change notifications include transition/request context for deduplication.
 - Organization verification reviewer alerts target active authorized reviewers. Organization verification submission records its persisted submission timestamp as the event version.
-- Organization review decisions notify only active organization owners/administrators and an active creator account.
+- Organization review decisions notify only active organization owners/administrators and an active creator account, with the persisted review timestamp included so a later review cycle is not suppressed.
+- Service-listing and mentor-offer moderation alerts include the persisted submission version for each review cycle.
 - Draft organization registration no longer creates a reviewer-queue notification. Reviewers are notified when the organization verification case is actually submitted, preserving the existing review queue as authoritative.
 - Service/mentor moderation, mentorship support, and service finance reviewer recipient queries exclude inactive accounts while retaining existing role/permission checks.
 - Resubmitted service listings and mentor offers include their persisted update version to allow a later moderation cycle to generate a new actionable notification.
