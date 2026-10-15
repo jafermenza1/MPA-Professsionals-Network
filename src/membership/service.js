@@ -51,7 +51,7 @@ async function notify(db,userId,eventCode,resourceType,resourceId,payload={}){
   const title=String(payload.title||eventCode||"Update").split(/[._-]+/).filter(Boolean).map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(" ");
   const body=String(payload.message||payload.summary||payload.nextAction||payload.next_action||(payload.status?("Status updated: "+String(payload.status).replace(/[_-]+/g," ").toLowerCase()):"There is an update to review in your MPA Network account.")).slice(0,1000);
   const priority=["low","normal","high","urgent"].includes(payload.priority)?payload.priority:"normal";
-  const actionRequired=payload.actionRequired===true||payload.action_required===true;
+  const actionRequired=payload.actionRequired===true||payload.action_required===true||Boolean(payload.nextAction||payload.next_action);
   const actionUrl=notificationActionUrl(payload,resourceType,resourceId);
   const dedupeKey=String(payload.dedupeKey||payload.dedupe_key||"").slice(0,240)||null;
   if(user.in_app_enabled&&user.in_app_categories?.[category]!==false){
