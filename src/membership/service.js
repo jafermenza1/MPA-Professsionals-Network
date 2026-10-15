@@ -392,7 +392,7 @@ export async function respondCorrection(applicationId,userId,input,requestId){
     await audit(db,userId,"membership.correction_responded","membership_application",applicationId,requestId,{correctionId:open.id});
     await notify(db,userId,"membership_correction_submitted","membership_application",applicationId,{message:"Your response to the membership correction request was submitted.",nextAction:"Wait for the reviewer to reassess the updated application.",actionUrl:"/membership"});
     const reviewers=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='members.manage')")).rows;
-    for(const reviewer of reviewers)await notify(db,reviewer.user_id,"membership_correction_received","membership_application",applicationId,{category:"membership",message:"A member responded to a requested correction.",nextAction:"Reopen the membership review queue and review the member's response.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high"});
+    for(const reviewer of reviewers)await notify(db,reviewer.user_id,"membership_correction_received","membership_application",applicationId,{category:"membership",message:"A member responded to a requested correction.",nextAction:"Reopen the membership review queue and review the member's response.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high",eventVersion:open.id});
     return updated;
   });
 }
