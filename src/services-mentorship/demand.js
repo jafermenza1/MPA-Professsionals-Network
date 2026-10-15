@@ -112,16 +112,17 @@ export async function getDemandInterestAssessment(userId,filters={}){
  const rows=(await db.query(`
   select t.demand_type, t.category,
          coalesce(nullif(trim(t.location_label),''),'Not specified') location,
-         coalesce(nullif(trim(t.audience),''),'general') audience,
+         coalesce(nullif(trim(d.audience),''),'general') audience,
          i.interest_level, count(distinct i.user_id)::int participant_count
     from marketplace_demand_interest i
     join marketplace_demand_topic t on t.id=i.topic_id
+    left join marketplace_demand d on d.id=t.source_demand_id
    where ${where.join(" and ")}
    group by t.demand_type,t.category,coalesce(nullif(trim(t.location_label),''),'Not specified'),
-            coalesce(nullif(trim(t.audience),''),'general'),i.interest_level
+            coalesce(nullif(trim(d.audience),''),'general'),i.interest_level
    order by t.demand_type,t.category,location,audience,i.interest_level
  `,args)).rows;
- await audit(db,userId,"marketplace.demand_interest_assessment_viewed","marketplace_demand_topic",null,filters.requestId||null,{type:type||"all",from:filters.from||null,to:filters.to||null,rowCount:rows.length});
+ await audit(db,userId,"marketplace.demand_interest_assessment_viewed","marketplace_demand_topic",null,null,{type:type||"all",from:filters.from||null,to:filters.to||null,rowCount:rows.length});
  return {items:rows,filters:{type:type||"all",from:filters.from||null,to:filters.to||null},generatedAt:new Date().toISOString(),privacy:"aggregate_only"};
 }
 
