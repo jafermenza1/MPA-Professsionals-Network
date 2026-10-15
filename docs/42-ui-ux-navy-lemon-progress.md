@@ -22,11 +22,11 @@ Use navy blue and lemon yellow as the MPA brand foundation. The shared theme tok
 ## Remaining UI/UX work
 
 1. **Admin workspace implementation tranche complete; acceptance pending:** added the responsive administration sidebar, route-aware breadcrumbs, common page-heading rhythm, current-role summary, and navigation to every existing admin destination. A reusable page-header component is used by the overview, member import/export, reference portfolio, marketplace review, reports, email operations, passkey, and membership-card workspaces. Support retains its purpose-built hero and live queue counters. Support Desk accounts see marketplace/support workspaces prioritized, while every destination remains visible; no guessed client-side permission filter hides existing tools. The next queued task is the route-by-route functional audit. No validation was run as part of this implementation tranche.
-2. Review the member, organization, professional, support and admin journeys screen-by-screen for incomplete actions, misleading controls, empty/error/loading states and mobile overflow.
+2. **Route-by-route functional source audit — in progress:** corrected the action center's failed-load/empty-state confusion, made organization registration resilient to unavailable browser draft storage, made service-demand activity feeds fail independently, and prevented application tracking from displaying false zero counts when data is unavailable. Details and outstanding acceptance are tracked in [the high-standard UI/UX audit register](./43-high-standard-ui-ux-audit-register.md).
 3. Verify color contrast, keyboard focus, reduced motion, labels and announcements in light/dark themes and supported languages.
 4. Verify membership-card long names, logo sizing, QR readability and actual-size print output in a browser.
 5. Add or update targeted interaction tests for mobile “More”, signed-out profile, theme contrast behavior and shell navigation.
 
 ## Validation status
 
-Implementation has been committed to the PR branch, but no TypeScript check, lint, production build, automated test suite, browser run, accessibility audit or print/QR verification has been executed for this tranche. Treat validation as pending. Do not merge or deploy; keep PR #3 draft/open. Existing workflows and assertions must not be removed or weakened to make checks pass.
+Source-level route review and fixes are in progress on the PR branch. No TypeScript check, lint, production build, automated test suite, browser run, accessibility audit or print/QR verification has been executed for these changes. Treat validation as pending. Do not merge or deploy; keep PR #3 draft/open. Existing workflows and assertions must not be removed or weakened to make checks pass.
