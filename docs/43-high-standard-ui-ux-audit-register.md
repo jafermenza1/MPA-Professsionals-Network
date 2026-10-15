@@ -67,6 +67,7 @@ The route-by-route source review has started; this is not browser validation and
 - Action center: an initial notification-load failure no longer renders “You’re all caught up”; the empty state appears only after a successful response confirms zero items. Unexpected response shapes are reported as a load failure, and previously loaded items remain visible if a refresh fails.
 - Organization registration: browser storage denial/quota failures no longer abort representative-account creation. The form and verification handoff clearly warn that organization details were not saved and must be re-entered after verification; the existing 24-hour draft behavior remains when storage succeeds.
 - Service-demand activity: the private-request, interest, organization and provider-match feeds now load independently with `Promise.allSettled`. A failed feed no longer prevents successful feeds from updating; failures are surfaced, stale data is identified as potentially incomplete, and empty-state copy avoids asserting there is no activity when loading failed.
+- Application tracking: summary counts now use an unavailable placeholder until a valid tracking response exists instead of showing zero applications after a failed initial load. Unexpected tracking response shapes are handled as errors rather than being rendered as valid data.
 
 These are source-level fixes only. They have not been built, typechecked, tested, or browser-verified. The full route matrix, remaining state/authorization checks, responsive behavior, accessibility and localization are still open.
 
