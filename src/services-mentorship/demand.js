@@ -121,12 +121,17 @@ export async function mergeDemand(duplicateDemandId,targetDemandId,actorId,reque
   await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.duplicate_merged',$3,'closed',$4,$5)",[duplicate.id,actorId,duplicate.status,note,{mergedIntoDemandId:target.id,duplicateDemandId:duplicate.id,targetDemandId:target.id}]);
   await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.duplicate_received',$3,$3,$4,$5)",[target.id,actorId,target.status,"A duplicate request was linked; original request history remains separate.",{duplicateDemandId:duplicate.id}]);
   await audit(db,actorId,"marketplace.demand_duplicate_merged","marketplace_demand",duplicate.id,requestId,{mergedIntoDemandId:target.id,demandType:duplicate.demand_type});
-  const recipients=new Set([duplicate.requester_user_id,target.requester_user_id]);
-  if(duplicate.organization_id){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[duplicate.organization_id,ORG_ROLES])).rows;for(const member of team)recipients.add(member.user_id);}
-  if(target.organization_id){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[target.organization_id,ORG_ROLES])).rows;for(const member of team)recipients.add(member.user_id);}
+  const duplicateRecipients=new Set([duplicate.requester_user_id]);
+  const targetRecipients=new Set([target.requester_user_id]);
+  if(duplicate.organization_id){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[duplicate.organization_id,ORG_ROLES])).rows;for(const member of team)duplicateRecipients.add(member.user_id);}
+  if(target.organization_id){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[target.organization_id,ORG_ROLES])).rows;for(const member of team)targetRecipients.add(member.user_id);}
   const notificationResults=[];
-  for(const recipient of recipients){
-   const event=await notify(db,recipient,"marketplace.demand_duplicate_merged","marketplace_demand",duplicate.id,{message:"The Support Desk identified this request as a duplicate and linked it to an existing request. Your original submission and history remain preserved.",nextAction:"Follow the request status shown in your private activity. Contact the Support Desk if this does not reflect your need.",});
+  for(const recipient of duplicateRecipients){
+   const event=await notify(db,recipient,"marketplace.demand_duplicate_merged","marketplace_demand",duplicate.id,{message:"The Support Desk marked your request as a duplicate of an existing request. Your original submission and history remain preserved. Contact the Support Desk if the retained request does not represent your need.",nextAction:"Review the status in your private activity or contact the Support Desk if the need remains unresolved."});
+   if(event.status==="recorded")notificationResults.push(event);
+  }
+  for(const recipient of targetRecipients){
+   const event=await notify(db,recipient,"marketplace.demand_duplicate_received","marketplace_demand",target.id,{message:"The Support Desk linked a similar request to this request for consolidated review. Your request remains unchanged; private details from the other request are not shared.",nextAction:"Continue following this request's status in your private activity."});
    if(event.status==="recorded")notificationResults.push(event);
   }
   return {...updated,mergedInto:{id:target.id,title:target.title},notificationStatus:"in_app_recorded",notificationCount:notificationResults.length,externalDelivery:"not_configured",nextAction:"The original request is retained in history and linked to the canonical request. In-app status was recorded; email/SMS delivery is not configured."};
