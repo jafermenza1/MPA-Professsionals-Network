@@ -51,7 +51,7 @@ export default function Register(){
    const proof=await api<{token:string}>("/api/v1/auth/human-challenge/verify",{method:"POST",body:JSON.stringify({id:challenge.id,answer:challengeAnswer})});
    if(kind==="organization")saveOrganizationDraft();
    const representativeName=[form.firstName,form.middleName,form.lastName].map(x=>x.trim()).filter(Boolean).join(" ");
-   const payload={email:form.email.trim(),password:form.password,passwordConfirmation:form.passwordConfirm,humanCheckToken:proof.token,firstName:form.firstName.trim(),middleName:form.middleName.trim(),lastName:form.lastName.trim(),displayName:kind==="organization"?representativeName:form.displayName.trim(),phone:kind==="professional"?form.phone.trim():form.orgPhone.trim(),nationality:form.nationality};
+   const payload={accountType:kind==="organization"?"organization":"professional",email:form.email.trim(),password:form.password,passwordConfirmation:form.passwordConfirm,humanCheckToken:proof.token,firstName:form.firstName.trim(),middleName:form.middleName.trim(),lastName:form.lastName.trim(),displayName:kind==="organization"?representativeName:form.displayName.trim(),phone:kind==="professional"?form.phone.trim():form.orgPhone.trim(),nationality:form.nationality};
    const r=await api<any>("/api/v1/auth/register",{method:"POST",body:JSON.stringify(payload)});
    if(r.verificationRequired){
     setVerificationMessage(r.verificationSent?"Your representative account was created. Verify the representative's email before signing in; check your inbox and spam folder.":"Your account was created, but email delivery was not confirmed. Use the resend option on the login page, or use the development link if one is provided.");
