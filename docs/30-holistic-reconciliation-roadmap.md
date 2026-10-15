@@ -277,3 +277,13 @@ Implementation detail: `e2e/homepage-live-feeds.spec.js` was added with three Pl
 - Added an additive notification schema migration; an authenticated inbox service with counts, filtering, read/read-all/archive and audit events; API routes; a notification inbox page; a shared-shell unread badge; and category/title/body/action metadata for membership-generated notifications. Existing email operations and the notification outbox are retained.
 - Added storage/API support for per-category in-app preferences and an optional digest preference. The membership workflow notifier and shared workflow-email notifier now honor global/category in-app preferences; the inbox and unread counts apply the same preference filter. Scheduled digest delivery is not implemented. Complete producer-inventory and preference behavior tests remain required.
 - **Acceptance NOT RUN.** No tests, typecheck, production build, migration execution/rerun, browser or accessibility review is claimed. Workflow wiring across every category, administrator intervention aggregation, category preference enforcement across all producers, and cross-role privacy proof remain explicit follow-up. Keep PR #3 draft/open; do not merge or deploy.
+
+
+
+## Action-center workflow routing increment — 15 October 2026
+
+- Centralized notification category resolution, preference enforcement, safe next-action links, transition-aware deduplication and persisted notification metadata through `src/platform/notifications.js`; `queueWorkflowEmail` now uses the shared in-app policy while retaining the existing email outbox boundary.
+- Wired persisted workflow notifications and recipient resolution across membership/review/payment, verification/appeals, organization verification/access, recruitment/application/offer/interview, mentorship/matching/sessions, services/moderation/delivery/payment, and account-security transitions.
+- Security-critical account notices bypass optional category/global notification preferences and remain visible in inbox/count projections. Reviewer links point to existing authorized queues; no parallel workflow queue was introduced.
+- Events/learning notifications remain unwired because those modules are not deployed. No external calendar/Moodle/SMS/push delivery is claimed.
+- Added `test/platform/workflow-notification-routing.test.js` and `docs/45-workflow-notification-routing.md`. **Tests, migration, build and browser validation have not been run.** Continue acceptance against the current head and preserve PR #3 as draft/open; no merge or deployment.
