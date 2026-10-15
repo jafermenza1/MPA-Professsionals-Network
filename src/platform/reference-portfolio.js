@@ -177,7 +177,7 @@ export async function exportReferenceJson(identity,key){
 }
 
 
-const REFERENCE_IMPORT_COLUMNS=["code","label","description","sort_order","active","parent_code","aliases"];
+const REFERENCE_IMPORT_COLUMNS=["code","label","description","sort_order","active","parent_code","aliases","short_label","metadata","effective_from","effective_to"];
 function normalizeXlsxImport(input,mapping={}){
  const parsed=parseXlsxRows(Buffer.from(String(input||""),"base64"));
  const selected={};
@@ -210,7 +210,6 @@ export async function exportReferenceXlsx(identity,key){
 
 export async function exportReferenceCsv(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
- const rows=(await db.query("select code,label,coalesce(description,'') description,sort_order,active from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
  const rows=(await db.query("select child.code,child.label,coalesce(child.description,'') description,child.sort_order,child.active,parent.code parent_code,child.aliases,child.short_label,child.metadata,child.effective_from,child.effective_to from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1 order by child.sort_order,child.label",[version.id])).rows;
  const headers=["code","label","description","sort_order","active","parent_code","aliases","short_label","metadata","effective_from","effective_to"];
  return {filename:key+".csv",csv:[headers.join(","),...rows.map(row=>headers.map(header=>{const value=row[header];return csvEscape(value&&typeof value==="object"?JSON.stringify(value):Array.isArray(value)?value.join(";"):value??"");}).join(","))].join("\r\n")};
