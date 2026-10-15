@@ -35,7 +35,7 @@ The contract is broader than file-format support. GAP-007 consumer-by-consumer r
 ## Final-gate validation required (not run in this increment)
 
 1. Run the existing P0 identity and membership tests without removing or relaxing any assertions.
-2. Run the new payment-ordering/reversal journey, including refund/reversal retry and expiry access checks.
+2. Run the new payment-ordering/reversal journey, including refund/reversal retry, expiry access checks, and immutable fee snapshots after a future plan version is introduced.
 3. Run the full reference-portfolio test suite, including CSV/JSON/XLSX round trips, invalid file rejection, duplicate code, unknown parent, hierarchy cycle, metadata/date validation, and no partial writes.
 4. Run typecheck, server tests, web build, API authorization checks and browser workflows on the exact resulting head.
 5. Record the exact passing SHA and any remaining failures before closing the gap register.
