@@ -25,6 +25,8 @@ type Inquiry = {
 };
 type Organization = {
   id: string;
+  tracking_reference?: string;
+  updated_at?: string;
   legal_name: string;
   display_name: string;
   organization_type?: string;
@@ -693,6 +695,8 @@ export default function Organizations() {
                       <div className="muted">
                         {org.legal_name}
                         {org.role_code ? " · " + org.role_code : ""}
+                        <div className="muted">Application reference: {org.tracking_reference || "Pending"} · Last updated: {org.updated_at ? new Date(org.updated_at).toLocaleString() : "Not yet recorded"}</div>
+                        <div className="muted">Next action: {org.verification_case_status === "correction_required" ? "Provide the requested corrections" : org.verification_case_status === "submitted" || org.verification_status === "pending" ? "Await organization review" : org.verification_status === "verified" ? "Manage approved organization activities" : "Complete required evidence and submit for verification"}</div>
                       </div>
                     </div>
                     <Badge>
