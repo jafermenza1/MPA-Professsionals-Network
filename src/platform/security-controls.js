@@ -19,8 +19,10 @@ export async function enforcePersistentRateLimit(req, action, limit = 10, window
     throw new TypeError("Invalid rate-limit policy.");
   }
   const address = clientAddress(req);
-  const keys = [sha256([action, address].join(":"))];
-  if (identity) keys.push(sha256([action, address, String(identity).toLowerCase()].join(":")));
+  const keys = [sha256([action, "address", address].join(":"))];
+  // Identity buckets are independent of the caller IP so rotating addresses cannot
+  // bypass per-account/per-email controls. Hashing keeps raw identifiers out of storage.
+  if (identity) keys.push(sha256([action, "identity", String(identity).trim().toLowerCase()].join(":")));
   const db = getPool();
   for (const key of keys) {
     const result = await db.query(`
@@ -45,8 +47,10 @@ export async function enforcePersistentRateLimit(req, action, limit = 10, window
 }
 
 export async function issueHumanChallenge() {
-  const a = randomInt(2, 10), b = randomInt(2, 10);
+  let a = randomInt(2, 10), b = randomInt(2, 10);
   const operation = randomInt(0, 2) ? "+" : "−";
+  // Keep subtraction answers non-negative so mobile numeric keyboards can answer reliably.
+  if (operation === "−" && a < b) [a, b] = [b, a];
   const answer = operation === "+" ? a + b : a - b;
   const question = `Confirm you are human: ${a} ${operation} ${b} = ?`;
   const row = (await getPool().query(
