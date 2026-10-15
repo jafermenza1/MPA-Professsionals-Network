@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getPool, withTransaction } from "./db.js";
+import { parseXlsxRows, createXlsx } from "./xlsx.js";
 
 function fail(status,message,code="BUSINESS_RULE"){return Object.assign(new Error(message),{statusCode:status,code});}
 const ADMIN_ROLES=["system_admin","admin","platform_admin"];
@@ -173,6 +174,36 @@ export async function exportReferenceJson(identity,key){
  const rows=(await db.query("select id,code,label,description,sort_order,active,parent_item_id,aliases,metadata,effective_from,effective_to from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
  const byId=new Map(rows.map(row=>[row.id,row.code]));
  return {filename:key+".json",json:JSON.stringify({datasetKey:key,version:version.version_label,items:rows.map(({parent_item_id,...row})=>({...row,parent_code:byId.get(parent_item_id)||null}))},null,2)};
+}
+
+
+const REFERENCE_IMPORT_COLUMNS=["code","label","description","sort_order","active","parent_code","aliases"];
+function normalizeXlsxImport(input,mapping={}){
+ const parsed=parseXlsxRows(Buffer.from(String(input||""),"base64"));
+ const selected={};
+ for(const target of REFERENCE_IMPORT_COLUMNS){
+  if(mapping[target]&&parsed.headers.includes(String(mapping[target])))selected[target]=String(mapping[target]);
+  else selected[target]=parsed.headers.find(header=>header.trim().toLowerCase()===target)||parsed.headers.find(header=>header.trim().toLowerCase()===target.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase()))||"";
+ }
+ const rows=parsed.rows.map(row=>Object.fromEntries(REFERENCE_IMPORT_COLUMNS.map(target=>[target,selected[target]?row[selected[target]]??"": ""])));
+ return {headers:parsed.headers,mapping:selected,rows};
+}
+export async function previewReferenceXlsx(identity,key,filename,xlsxBase64,mapping={}){
+ assertReferenceAdmin(identity);
+ const parsed=normalizeXlsxImport(xlsxBase64,mapping);
+ const result=await previewReferenceJson(identity,key,filename,JSON.stringify(parsed.rows),{});
+ return {...result,headers:parsed.headers,mapping:parsed.mapping,filename:clean(filename,180)};
+}
+export async function importReferenceXlsx(identity,key,filename,xlsxBase64,mapping={}){
+ assertReferenceAdmin(identity);
+ const parsed=normalizeXlsxImport(xlsxBase64,mapping);
+ return importReferenceJson(identity,key,filename,JSON.stringify(parsed.rows),{});
+}
+export async function exportReferenceXlsx(identity,key){
+ assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
+ const rows=(await db.query("select child.code,child.label,coalesce(child.description,'') description,child.sort_order,child.active,parent.code parent_code,child.aliases,child.metadata,child.effective_from,child.effective_to from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1 order by child.sort_order,child.label",[version.id])).rows;
+ const headers=["code","label","description","sort_order","active","parent_code","aliases","metadata","effective_from","effective_to"];
+ return {filename:key+".xlsx",xlsxBase64:createXlsx(rows,headers).toString("base64")};
 }
 
 export async function exportReferenceCsv(identity,key){
