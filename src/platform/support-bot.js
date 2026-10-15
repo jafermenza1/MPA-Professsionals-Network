@@ -22,8 +22,18 @@ async function logAudit(db,actorId,action,resourceId,requestId){
 export async function answerPublicQuestion(input,context={}){
  const question=clean(input.question,2000);
  if(question.length<2)throw httpError("Please enter a question with at least two characters.");
+ const rawVisitorKey=clean(context.visitorKey||"",200);
+ if(rawVisitorKey.length<16)throw httpError("Refresh the page and try sending your question again.","400","VISITOR_SESSION_REQUIRED");
+ const contactName=clean(input.contactName,160)||null;
+ const contactEmail=clean(input.contactEmail,254).toLowerCase()||null;
+ const contactPhone=clean(input.contactPhone,40)||null;
+ const consentToContact=input.consentToContact===true;
+ const preferredContact=["email","phone","none"].includes(input.preferredContact)?input.preferredContact:"email";
+ if(contactEmail&&!emailPattern.test(contactEmail))throw httpError("Enter a valid email address or leave it blank.");
+ if(contactPhone&&!/^[+0-9() .-]{6,40}$/.test(contactPhone))throw httpError("Enter a valid phone number or leave it blank.");
+ if(consentToContact&&!contactEmail&&!contactPhone)throw httpError("Add an email address or phone number to request follow-up.");
  const db=getPool();
- const visitorKey=sha(clean(context.visitorKey||"",200));
+ const visitorKey=sha(rawVisitorKey);
  const pagePath=clean(context.pagePath||"/",500)||"/";
  let conversationId=null;
  const suppliedRef=clean(input.conversationRef,32);
@@ -36,14 +46,6 @@ export async function answerPublicQuestion(input,context={}){
    [publicRef(),visitorKey,context.userId||null,pagePath,question]);
    conversationId=created.rows[0].id;
  }
- const contactName=clean(input.contactName,160)||null;
- const contactEmail=clean(input.contactEmail,254).toLowerCase()||null;
- const contactPhone=clean(input.contactPhone,40)||null;
- const consentToContact=input.consentToContact===true;
- const preferredContact=["email","phone","none"].includes(input.preferredContact)?input.preferredContact:"email";
- if(contactEmail&&!emailPattern.test(contactEmail))throw httpError("Enter a valid email address or leave it blank.");
- if(contactPhone&&!/^[+0-9() .-]{6,40}$/.test(contactPhone))throw httpError("Enter a valid phone number or leave it blank.");
- if(consentToContact&&!contactEmail&&!contactPhone)throw httpError("Add an email address or phone number to request follow-up.");
  const visitor=await db.query("insert into support_message(conversation_id,sender_type,message_text) values($1,'visitor',$2) returning id",[conversationId,question]);
  const articles=await db.query(`select a.*,c.name as category_name,c.id as category_id from support_knowledge_article a join support_knowledge_category c on c.id=a.category_id where a.is_published=true and c.is_active=true order by a.sort_order,a.updated_at desc limit 300`);
  const ranked=articles.rows.map(article=>({article,score:matchScore(question,article)})).sort((a,b)=>b.score-a.score);
