@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, type CSSProperties } from "react";
+import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
@@ -16,6 +17,8 @@ type MembershipCard = {
 function dateLabel(value:string|null){ if(!value) return "No expiry"; const date=new Date(value); return Number.isNaN(date.getTime())?value:date.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"2-digit",timeZone:"UTC"}); }
 export default function MembershipCardPage(){
   const token=useUiStore(s=>s.token),hydrateToken=useUiStore(s=>s.hydrateToken);
+  const params=useSearchParams();
+  const membershipNumber=params.get("membershipNumber")||"";
   const [origin,setOrigin]=useState("");
   useEffect(()=>{hydrateToken();},[hydrateToken]);
   useEffect(()=>{setOrigin(window.location.origin);},[]);
@@ -27,9 +30,10 @@ export default function MembershipCardPage(){
     let cancelled=false;
     if(!token){setLoading(false);return;}
     setLoading(true);
-    void api<MembershipCard>("/api/v1/membership/card",{},token).then(value=>{if(!cancelled)setCard(value);}).catch(e=>{if(!cancelled)setError(e instanceof ApiError?e.message:"We couldn't load your membership card.");}).finally(()=>{if(!cancelled)setLoading(false);});
+    const path=membershipNumber?"/api/v1/admin/membership-card?membershipNumber="+encodeURIComponent(membershipNumber):"/api/v1/membership/card";
+    void api<MembershipCard>(path,{},token).then(value=>{if(!cancelled)setCard(value);}).catch(e=>{if(!cancelled)setError(e instanceof ApiError?e.message:"We couldn't load your membership card.");}).finally(()=>{if(!cancelled)setLoading(false);});
     return ()=>{cancelled=true;};
-  },[token]);
+  },[token,membershipNumber]);
   useEffect(()=>{
     if(!token||!card?.profilePictureFileId){setPhoto("");return;}
     let url="";
