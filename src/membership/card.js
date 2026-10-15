@@ -177,7 +177,7 @@ export async function verifyMembershipCard(recordId,token){
     where m.id=$1 limit 1`,[recordId])).rows[0];
   if(!row||!tokenMatches(tokenFor(row.id,row.card_token_version),token))
     return {valid:false,status:"invalid",message:"This membership ID could not be verified."};
-  const status=currentStatus(row);
+  const status=getMembershipCardStatus(row);
   return {
     valid:status==="active",
     status,
