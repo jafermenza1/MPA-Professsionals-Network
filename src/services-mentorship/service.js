@@ -142,6 +142,9 @@ export async function changeServiceListingStatus(listingId,userId,status,request
       if(!row.organization_id && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to submit a service listing.","MEMBERSHIP_REQUIRED");
       const submitted=(await db.query("update service_listing set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,updated_at=now() where id=$1 returning *",[listingId])).rows[0];
       await audit(db,userId,"service.listing_submitted_for_review","service_listing",listingId,requestId,{from:row.status,to:"draft"});
+      await notify(db,userId,"service.listing_submitted_for_review","service_listing",listingId,{message:"Your service listing was submitted for moderation.",nextAction:"Monitor the listing for the moderator's decision or requested changes.",actionUrl:"/services"});
+      const moderators=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('supporting_staff','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='marketplace.moderate')")).rows;
+      for(const moderator of moderators)await notify(db,moderator.user_id,"service.listing_review_required","service_listing",listingId,{message:"A professional service listing is awaiting moderation.",nextAction:"Review the listing in the existing marketplace moderation queue and approve or reject it with a reason.",actionUrl:"/admin/marketplace",reviewerQueue:true,actionRequired:true,priority:"high"});
       return submitted;
     }
     if(status==="published" && row.organization_id && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
@@ -267,6 +270,9 @@ export async function submitServicePayment(requestId,userId,input,requestIdHeade
     }
     const row=(await db.query("insert into service_payment(request_id,payment_transaction_id,payer_user_id,provider_user_id,amount,currency,channel,evidence_file_id,submitted_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *",[requestId,p.id,userId,r.provider_user_id,amount,currency,channel,input.evidenceFileId||null,userId])).rows[0];
     await audit(db,userId,"service.payment_submitted","service_payment",row.id,requestIdHeader,{requestId,channel});
+    await notify(db,r.provider_user_id,"service.payment_review_required","service_payment",row.id,{message:"A requester submitted payment for your service engagement.",nextAction:"Track finance verification before treating the payment as settled.",actionUrl:"/services",actionRequired:false});
+    const financeUsers=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role ar on ar.id=ur.role_id where ur.user_id=u.id and ar.role_code in ('finance_officer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='finance.manage')")).rows;
+    for(const finance of financeUsers)await notify(db,finance.user_id,"service.payment_review_required","service_payment",row.id,{message:"A service payment is awaiting finance verification.",nextAction:"Review payment evidence and record a reasoned decision in the existing finance queue.",actionUrl:"/dashboard",reviewerQueue:true,actionRequired:true,priority:"high"});
     return row;
   });
 }
@@ -342,6 +348,7 @@ export async function submitServiceDelivery(requestId,userId,input,requestIdHead
     }
     const row=(await db.query("insert into service_request_delivery(request_id,milestone_id,submitted_by,description,file_object_id) values($1,$2,$3,$4,$5) returning *",[requestId,input.milestoneId||null,userId,input.description,input.fileObjectId||null])).rows[0];
     await audit(db,userId,"service.delivery_submitted","service_request_delivery",row.id,requestIdHeader,{requestId});
+    await notify(db,r.requester_user_id,"service.delivery_submitted","service_request_delivery",row.id,{message:"The provider submitted a delivery for your service engagement.",nextAction:"Review the delivery and accept it or request a revision with a clear explanation.",actionUrl:"/services",actionRequired:true,priority:"high"});
     return row;
   });
 }
@@ -390,6 +397,9 @@ export async function verifyServicePayment(servicePaymentId,verifierId,input,req
   const updated=(await db.query("update service_payment set status=$1,verified_by=$2,verified_at=case when $1<>'pending' then now() else null end,verification_note=$3,updated_at=now() where id=$4 returning *",[next,verifierId,input.note||null,servicePaymentId])).rows[0];
   await db.query("update payment_transaction set status=$1,verified_by=$2,verified_at=now(),verification_note=$3,completed_at=case when $1 in ('succeeded','failed') then now() else completed_at end,updated_at=now() where id=$4",[next,verifierId,input.note||null,row.payment_transaction_id]);
   await audit(db,verifierId,"service.payment_verified","service_payment",servicePaymentId,requestIdHeader,{decision:input.decision,requestId:row.request_id});
+  const approved=input.decision==="approved", correction=input.decision==="needs_correction";
+  await notify(db,row.payer_user_id,"service.payment_decision","service_payment",servicePaymentId,{message:approved?"Your service payment was verified.":correction?"Finance needs additional information about your service payment.":"Your service payment was not approved.",nextAction:approved?"Continue with the service workflow; paid completion still requires the matching verified amount and currency.":correction?"Review the finance note and provide corrected payment evidence.":"Review the finance note and contact support if you believe the decision is incorrect.",actionUrl:"/services",actionRequired:!approved,priority:correction?"high":"normal"});
+  if(row.provider_user_id&&row.provider_user_id!==row.payer_user_id)await notify(db,row.provider_user_id,"service.payment_decision","service_payment",servicePaymentId,{message:approved?"The service payment was verified by finance.":correction?"Finance requested additional information for the service payment.":"The service payment was not approved.",nextAction:approved?"Continue the engagement according to the agreed delivery terms.":"Coordinate with the requester and finance to resolve the payment status.",actionUrl:"/services",actionRequired:correction,priority:correction?"high":"normal"});
   return updated;
  });
 }
