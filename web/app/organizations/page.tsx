@@ -701,10 +701,7 @@ export default function Organizations() {
                       </div>
                     </div>
                     <Badge>
-                      {(org.verification_status || "unverified").replaceAll(
-                        "_",
-                        " ",
-                      )}
+                      {org.verification_case_status === "submitted" || org.verification_case_status === "pending" || org.verification_status === "pending" ? "Awaiting review" : org.verification_case_status === "correction_required" ? "Correction required" : org.verification_status === "verified" ? "Completed" : (org.verification_case_status || org.verification_status || "unverified").replaceAll("_", " ")}
                     </Badge>
                   </div>
                   <p className="muted">
