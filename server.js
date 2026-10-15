@@ -171,7 +171,8 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && p==="api/v1/auth/register") { const b=await body(req); await enforcePersistentRateLimit(req,"register",5,60000,String(b.email||"").trim().toLowerCase()); return ok(res,await membership.register(b,requestId),requestId,201); }
     if(req.method==="GET" && p==="api/v1/membership/products") return ok(res,await membership.listMembershipProducts(),requestId);
     if(req.method==="GET" && p==="api/v1/admin/membership/products") {
-      const identity=await auth(req);
+     if(req.method==="GET" && p==="api/v1/public/organizations") { const q=query(req.url); return ok(res,await organizationJobs.listPublicOrganizations({q:q.get("q"),organizationType:q.get("organizationType"),location:q.get("location"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
+     const identity=await auth(req);
       anyRoleOrPermission(identity,["system_admin","reviewer"],["members.view","members.manage"]);
       return ok(res,await membership.listMembershipProductsForAdmin(),requestId);
     }
@@ -246,7 +247,6 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/experience/guides/")) { return ok(res,await experience.updateGuide(parts[5],identity.sub,await body(req),requestId),requestId); }
 
     if(req.method==="POST" && p==="api/v1/organizations") return ok(res,await organizationJobs.registerOrganization(identity.sub,await body(req),requestId),requestId,201);
-    if(req.method==="GET" && p==="api/v1/public/organizations") { const q=query(req.url); return ok(res,await organizationJobs.listPublicOrganizations({q:q.get("q"),organizationType:q.get("organizationType"),location:q.get("location"),limit:q.get("limit"),offset:q.get("offset")}),requestId); }
      if(req.method==="GET" && p==="api/v1/organizations") return ok(res,await organizationJobs.listMyOrganizations(identity.sub),requestId);
     if(req.method==="GET" && parts.length===4 && p.startsWith("api/v1/organizations/")) return ok(res,await organizationJobs.getOrganization(parts[3],identity.sub),requestId);
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/organizations/") && parts[4]==="verification-evidence") return ok(res,await organizationJobs.addVerificationEvidence(parts[3],identity.sub,await body(req),requestId),requestId,201);
