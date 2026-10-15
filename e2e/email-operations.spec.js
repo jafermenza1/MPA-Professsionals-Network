@@ -42,7 +42,7 @@ test("email verification shows the returned registration reference only after ve
 test("organization registration persists the draft under the key restored after verification",async({page})=>{
  await page.route("**/api/v1/auth/human-challenge",route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({id:"draft-challenge",question:"What is 1 + 1?",expiresAt:new Date(Date.now()+300000).toISOString()})}));
  await page.route("**/api/v1/auth/human-challenge/verify",route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({token:"human-check-token-12345678901234567890"})}));
- await page.route("**/api/v1/auth/register",route=>route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({verificationRequired:true,verificationSent:true,registrationReference:"MPA-MEM-26-000123"})}));
+ await page.route("**/api/v1/auth/register",async route=>{const body=route.request().postDataJSON();expect(body.accountType).toBe("organization");expect(body.passwordConfirmation).toBe("StrongPassword123!");await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({verificationRequired:true,verificationSent:true,registrationReference:"MPA-MEM-26-000123"})});});
  await page.goto("/register");
  await page.getByRole("button",{name:/Organization/}).click();
  await page.getByLabel("First name").fill("Amina");
