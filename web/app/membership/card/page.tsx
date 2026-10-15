@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState, type CSSProperties } from "react";
-import { useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
@@ -17,8 +16,9 @@ type MembershipCard = {
 function dateLabel(value:string|null){ if(!value) return "No expiry"; const date=new Date(value); return Number.isNaN(date.getTime())?value:date.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"2-digit",timeZone:"UTC"}); }
 export default function MembershipCardPage(){
   const token=useUiStore(s=>s.token),hydrateToken=useUiStore(s=>s.hydrateToken);
-  const params=useSearchParams();
-  const membershipNumber=params.get("membershipNumber")||"";
+  const [membershipNumber,setMembershipNumber]=useState("");
+  const [queryReady,setQueryReady]=useState(false);
+  useEffect(()=>{setMembershipNumber(new URLSearchParams(window.location.search).get("membershipNumber")||"");setQueryReady(true);},[]);
   const [origin,setOrigin]=useState("");
   useEffect(()=>{hydrateToken();},[hydrateToken]);
   useEffect(()=>{setOrigin(window.location.origin);},[]);
@@ -28,12 +28,13 @@ export default function MembershipCardPage(){
   const [loading,setLoading]=useState(true);
   useEffect(()=>{
     let cancelled=false;
+    if(!queryReady)return;
     if(!token){setLoading(false);return;}
     setLoading(true);
     const path=membershipNumber?"/api/v1/admin/membership-card?membershipNumber="+encodeURIComponent(membershipNumber):"/api/v1/membership/card";
     void api<MembershipCard>(path,{},token).then(value=>{if(!cancelled)setCard(value);}).catch(e=>{if(!cancelled)setError(e instanceof ApiError?e.message:"We couldn't load your membership card.");}).finally(()=>{if(!cancelled)setLoading(false);});
     return ()=>{cancelled=true;};
-  },[token,membershipNumber]);
+  },[token,membershipNumber,queryReady]);
   useEffect(()=>{
     if(!token||!card?.profilePictureFileId){setPhoto("");return;}
     let url="";
@@ -43,7 +44,7 @@ export default function MembershipCardPage(){
       .catch(()=>{if(!cancelled)setPhoto("");});
     return ()=>{cancelled=true;if(url)URL.revokeObjectURL(url);};
   },[token,card?.profilePictureFileId]);
-  if(!token) return <main className={styles.shell}><section className={styles.panel}><h1>Membership ID</h1><p>Sign in with your member account to view and print your card.</p><a className={styles.primary} href="/login?next=%2Fmembership%2Fcard">Sign in</a></section></main>;
+  if(!token) return <main className={styles.shell}><section className={styles.panel}><h1>Membership ID</h1><p>Sign in with your member account to view and print your card.</p><a className={styles.primary} href={"/login?next="+encodeURIComponent(membershipNumber?"/membership/card?membershipNumber="+membershipNumber:"/membership/card")}>Sign in</a></section></main>;
   if(loading) return <main className={styles.shell}><p role="status">Loading membership card…</p></main>;
   if(error||!card) return <main className={styles.shell}><section className={styles.panel}><h1>Membership card unavailable</h1><p role="alert">{error||"No membership record is available for this account."}</p><a href="/membership">Open membership</a></section></main>;
   const s=card.settings;
