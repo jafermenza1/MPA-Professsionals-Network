@@ -46,11 +46,12 @@ export default function Register(){
  const [verificationUrl,setVerificationUrl]=useState("");
  const [draftWarning,setDraftWarning]=useState(false);
  const [draftHydrated,setDraftHydrated]=useState(false);
+ const [draftPaused,setDraftPaused]=useState(false);
  const [draftSavedAt,setDraftSavedAt]=useState(0);
  const [draftConflict,setDraftConflict]=useState<OrganizationDraft|null>(null);
  const [draftStorageError,setDraftStorageError]=useState("");
  const [draftStatus,setDraftStatus]=useState("");
- const set=(k:keyof RegistrationForm,v:string)=>setForm(f=>({...f,[k]:v}));
+ const set=(k:keyof RegistrationForm,v:string)=>{setForm(f=>({...f,[k]:v}));if(kind==="organization"&&k!=="password"&&k!=="passwordConfirm")setDraftPaused(false);};
 
  async function loadChallenge(){
   setChallengeBusy(true);setChallengeAnswer("");setChallenge(null);
@@ -79,7 +80,7 @@ export default function Register(){
 
  function applyOrganizationDraft(draft:OrganizationDraft){
   setForm(current=>({...current,...draft.form,password:"",passwordConfirm:""}));
-  setKind("organization");setDraftSavedAt(draft.savedAt);setDraftConflict(null);setDraftStorageError("");
+  setKind("organization");setDraftSavedAt(draft.savedAt);setDraftConflict(null);setDraftStorageError("");setDraftPaused(false);
   setDraftStatus("Saved organization details restored. Review them before submitting; passwords and human-check answers were not restored.");
  }
 
@@ -95,12 +96,12 @@ export default function Register(){
  },[]);
 
  useEffect(()=>{
-  if(!draftHydrated||kind!=="organization"||draftConflict)return;
+  if(!draftHydrated||kind!=="organization"||draftConflict||draftPaused)return;
   const snapshot=organizationDraftForm();
   if(!draftHasContent(snapshot))return;
   const timer=window.setTimeout(()=>{writeOrganizationDraft();},500);
   return()=>window.clearTimeout(timer);
- },[form,kind,draftHydrated,draftConflict]);
+ },[form,kind,draftHydrated,draftConflict,draftPaused]);
 
  useEffect(()=>{
   function onStorage(event:StorageEvent){
@@ -116,9 +117,9 @@ export default function Register(){
   return()=>window.removeEventListener("storage",onStorage);
  },[draftSavedAt]);
 
- function retrySaveDraft(){writeOrganizationDraft();}
+ function retrySaveDraft(){setDraftPaused(false);writeOrganizationDraft();}
  function clearOrganizationDraft(){
-  try{localStorage.removeItem(ORGANIZATION_DRAFT_KEY);setDraftSavedAt(0);setDraftConflict(null);setDraftStorageError("");setDraftStatus("Saved draft cleared from this device.");}
+  try{localStorage.removeItem(ORGANIZATION_DRAFT_KEY);setDraftSavedAt(0);setDraftConflict(null);setDraftStorageError("");setDraftPaused(true);setDraftStatus("Saved draft cleared from this device. Editing organization fields will resume draft saving.");}
   catch{setDraftStorageError("This browser could not clear the saved draft. Clear site data from browser settings if necessary.");}
  }
 
