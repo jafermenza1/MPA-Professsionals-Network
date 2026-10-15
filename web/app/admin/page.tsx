@@ -460,6 +460,7 @@ export default function AdminPage() {
             token={token}
             onChanged={load}
             onError={setError}
+            usersLoadFailed={sectionErrors.includes('users')}
           />
         </Card>
       )}
