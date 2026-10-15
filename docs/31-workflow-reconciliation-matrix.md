@@ -258,3 +258,19 @@ Do not mark this workflow accepted until migration, API tests, admin-role negati
 | Journey / screen | API evidence observed on branch | Service / persistence boundary | Current UI evidence | Status / required proof |
 |---|---|---|---|---|
 | In-app notification action center | `GET /api/v1/notifications`, `PATCH /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/read-all`, `PATCH /api/v1/notifications/{id}/archive`, existing `GET/PATCH /api/v1/notifications/preferences` | Existing `notification_event` ledger extended additively by `20261015200000_in_app_action_center.sql`; `src/platform/notifications.js`; existing notification preference and email outbox boundaries | `/notifications` inbox with unread/action-required counts, category/unread/action-required filters, read-all, per-item read/archive, retry/error/empty/loading states; shell bell with unread badge | **CODE COMMITTED — NOT TESTED.** Must run migration fresh/upgrade/rerun checks on disposable PostgreSQL; add and execute own-user/cross-user authorization, filter, idempotency, preferences, dedupe and audit tests; verify workflow recipient/action mapping, responsive/accessibility behavior, badge persistence and administrator attention integration. Do not claim all seven categories are fully wired. Keep PR draft/open. |
+
+
+
+## Workflow notification routing — Increment 2 (CODE COMMITTED, NOT TESTED)
+
+| Workflow area | Persisted transition notification wiring | Recipient/queue rule | Status / evidence still required |
+|---|---|---|---|
+| Membership and payment | Application submit/review/correction, payment submit/decision/reversal, activation | Applicant plus authorized membership/finance reviewers for pending queue work | Code committed; execute focused tests and verify persistence, repeated correction cycles and recipient scopes |
+| Professional verification and appeals | Case open/assignment/status, decision, member response, appeal submit/decision | Subject, assigned reviewer and independent appeal reviewers; reviewer queues remain authoritative | Code committed; prove assignment/independence rules and cross-member privacy in API/E2E |
+| Organization verification/access | Registration/submission/decision and organization membership changes | Creator and active owner/admin; reviewers resolved by roles or `organizations.review` permission | Code committed; prove cross-organization denial and reviewer-conflict behavior |
+| Recruitment | Formal application submission/status, offer approval/response, interview scheduling/response | Candidate, active organization team and designated offer approvers | Code committed; prove all candidate/employer visibility and interview participants |
+| Mentorship and services | Matching, moderation submission, sessions, service request/delivery/completion/payment | Participants and current authorized organization team; support/moderation/finance reviewers use existing queues | Code committed; prove transitions, duplicate/retry, privacy and queue navigation |
+| Account security | Credential changes, admin reset/access changes, session revocation, recovery link issue/redemption | Affected account holder; critical notices bypass ordinary preference toggles | Code committed; verify alerts persist and remain visible when preferences are disabled |
+| Events and learning | Not wired | Modules not deployed | Explicitly out of scope; do not claim calendar, Moodle, SMS or push delivery |
+
+Shared routing tests exist at `test/platform/workflow-notification-routing.test.js`. **No test/build/migration/browser result is claimed** until run on the current head. The full implementation and acceptance plan is in [docs/45-workflow-notification-routing.md](45-workflow-notification-routing.md).
