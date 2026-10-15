@@ -4,7 +4,7 @@ import { api,ApiError } from "../../../lib/api";
 import { useUiStore } from "../../../lib/store";
 import styles from "./settings.module.css";
 type Settings={header_text:string;subtitle_text:string;footer_text:string;background_style:"geometric"|"gradient"|"midnight";background_start:string;background_end:string;accent_color:string;text_color:string;show_membership_type:boolean};
-const defaults:Settings={header_text:"Muslim Professionals Association",subtitle_text:"Membership ID",footer_text:"Verify membership using the QR code",background_style:"geometric",background_start:"#0A3258",background_end:"#174A78",accent_color:"#97C024",text_color:"#FFFFFF",show_membership_type:true};
+const defaults:Settings={header_text:"Muslim Professionals Association",subtitle_text:"Membership ID",footer_text:"Verify membership using the QR code",background_style:"geometric",background_start:"#0A3258",background_end:"#174A78",accent_color:"#E5F044",text_color:"#FFFFFF",show_membership_type:true};
 export default function MembershipCardSettingsPage(){
  const token=useUiStore(s=>s.token),hydrateToken=useUiStore(s=>s.hydrateToken);
  const [form,setForm]=useState<Settings>(defaults);
