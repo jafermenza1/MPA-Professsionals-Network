@@ -1,12 +1,13 @@
 "use client";
 import { FormFeedback } from "../../../components/form-feedback";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api, ApiError } from "../../../lib/api";
 import { Card, Badge } from "../../../components/ui";
 
 type Inquiry = { id: string; public_reference: string; continuationToken: string; nextStep?: string };
 type ConsentResult = { employer_sharing_consent: boolean; nextStep?: string };
 type ShareHistory = { shareId: string; organizationName: string; sharedFields: string[]; sharedAt: string; revokedAt?: string | null; status: string };
+type SharingOrganization = { id: string; display_name?: string | null; legal_name?: string | null };
 
 function labelsForHistory(field: string) { return ({ targetRole: "Target role", skills: "Skills", experience: "Experience", location: "Location", workMode: "Work mode", availability: "Availability", professionalSummary: "Professional summary", education: "Education", intent: "Applicant introduction", contactName: "Name", contactEmail: "Email address", contactPhone: "Phone number" } as Record<string,string>)[field] || field; }
 
@@ -27,6 +28,10 @@ export default function JobInterestPage() {
   const [lookupBusy, setLookupBusy] = useState(false);
   const [processingConsent, setProcessingConsent] = useState(false);
   const [shareFields, setShareFields] = useState<string[]>(["targetRole", "skills"]);
+  const [sharingOrganizations, setSharingOrganizations] = useState<SharingOrganization[]>([]);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [sharingOrganizationsLoading, setSharingOrganizationsLoading] = useState(false);
+  const [sharingOrganizationsError, setSharingOrganizationsError] = useState("");
   const [consentToProcess, setConsentToProcess] = useState(false);
   const [shareWithEmployers, setShareWithEmployers] = useState(false);
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
@@ -38,6 +43,17 @@ export default function JobInterestPage() {
   const [notice, setNotice] = useState("");
 
   function update(key: keyof typeof form, value: string) { setForm(current => ({ ...current, [key]: value })); }
+  useEffect(() => {
+    if (!shareWithEmployers) return;
+    let active = true;
+    setSharingOrganizationsLoading(true);
+    setSharingOrganizationsError("");
+    api<SharingOrganization[]>("/api/v1/public/opportunity-sharing-organizations")
+      .then(rows => { if (active) setSharingOrganizations(Array.isArray(rows) ? rows : []); })
+      .catch(e => { if (active) setSharingOrganizationsError(e instanceof ApiError ? e.message : "Verified organizations could not be loaded. Retry before saving consent."); })
+      .finally(() => { if (active) setSharingOrganizationsLoading(false); });
+    return () => { active = false; };
+  }, [shareWithEmployers]);
   function toggleField(field: string, checked: boolean) {
     setShareFields(current => checked ? [...new Set([...current, field])] : current.filter(item => item !== field));
   }
@@ -61,6 +77,7 @@ export default function JobInterestPage() {
       const fields = Array.isArray(record.employerSharingFields) ? record.employerSharingFields : [];
       setShareFields(fields.length ? fields : ["targetRole", "skills"]);
       setShareWithEmployers(record.employerSharingConsent === true);
+      setSelectedOrganizationId(record.employerSharingOrganizationId || "");
       setConsentSaved(record.employerSharingConsent === true && !record.employerSharingRevokedAt);
       setNotice("Your request was recovered. Check the sharing status and history below.");
       await refreshSharingHistory(recovered);
@@ -92,11 +109,17 @@ export default function JobInterestPage() {
       setInquiry(created);
       void refreshSharingHistory(created);
       if (shareWithEmployers) {
+        if (!selectedOrganizationId) {
+          setNotice("Your job-interest request was submitted privately. Select a verified organization before saving named-employer consent.");
+          setError("Choose the specific verified organization you authorize. No employer sharing is enabled yet.");
+          setBusy(false);
+          return;
+        }
         setProcessingConsent(true);
         try {
           await api<ConsentResult>("/api/v1/public/opportunity-inquiries/" + encodeURIComponent(created.public_reference) + "/sharing-consent", {
             method: "POST",
-            body: JSON.stringify({ token: created.continuationToken, employerSharingConsent: true, scope: "named_employer", fields: shareFields })
+            body: JSON.stringify({ token: created.continuationToken, employerSharingConsent: true, scope: "named_employer", organizationId: selectedOrganizationId, fields: shareFields })
           });
           setConsentSaved(true);
           await refreshSharingHistory(created);
@@ -114,11 +137,13 @@ export default function JobInterestPage() {
   }
   async function retryConsent() {
     if (!inquiry) return;
+    if (!selectedOrganizationId) { setError("Choose the specific verified organization you authorize. No employer sharing is enabled yet."); return; }
+    if (!sharingOrganizations.some(org => org.id === selectedOrganizationId)) { setError("Choose an organization from the current verified-organization list, then retry."); return; }
     setProcessingConsent(true); setError(""); setNotice("");
     try {
       await api<ConsentResult>("/api/v1/public/opportunity-inquiries/" + encodeURIComponent(inquiry.public_reference) + "/sharing-consent", {
         method: "POST",
-        body: JSON.stringify({ token: inquiry.continuationToken, employerSharingConsent: true, scope: "named_employer", fields: shareFields })
+        body: JSON.stringify({ token: inquiry.continuationToken, employerSharingConsent: true, scope: "named_employer", organizationId: selectedOrganizationId, fields: shareFields })
       });
       setConsentSaved(true);
       await refreshSharingHistory(inquiry);
@@ -141,6 +166,8 @@ export default function JobInterestPage() {
     } catch (e) { setError(e instanceof ApiError ? e.message : "We couldn't confirm consent revocation. Please retry."); }
     finally { setProcessingConsent(false); }
   }
+
+  const organizationOptions = sharingOrganizations.map(org => ({ id: org.id, label: org.display_name || org.legal_name || "Verified organization" }));
 
   return <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gap: 18 }}>
     <div>
@@ -166,7 +193,7 @@ export default function JobInterestPage() {
       {error ? <FormFeedback kind="error" message={error}/> : null}
       {!consentSaved ? <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><input type="checkbox" checked={shareWithEmployers} onChange={e => setShareWithEmployers(e.target.checked)} />I explicitly opt in to named-employer sharing now. This is optional and separate from submitting my request.</label>
-        {shareWithEmployers ? <div style={{ display: "grid", gap: 8 }}>{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}<button className="btn btn-primary" type="button" disabled={processingConsent || !shareFields.length} onClick={() => void retryConsent()}>{processingConsent ? "Saving consent…" : "Save explicit sharing consent"}</button></div> : <p className="muted">Your request remains private. No employer can access it.</p>}
+        {shareWithEmployers ? <div style={{ display: "grid", gap: 8 }}><label>Specific verified organization authorized to receive selected fields<select required value={selectedOrganizationId} onChange={e => setSelectedOrganizationId(e.target.value)} disabled={sharingOrganizationsLoading || processingConsent}><option value="">Choose a verified organization</option>{organizationOptions.map(org => <option key={org.id} value={org.id}>{org.label}</option>)}</select></label>{sharingOrganizationsLoading ? <p role="status" className="muted">Loading verified organizations…</p> : null}{sharingOrganizationsError ? <FormFeedback kind="error" message={sharingOrganizationsError} onRetry={() => { setShareWithEmployers(false); setTimeout(() => setShareWithEmployers(true), 0); }} /> : null}{!sharingOrganizationsLoading && !sharingOrganizationsError && !sharingOrganizations.length ? <p role="alert" className="muted">No public verified organizations are currently available. Your request remains private; consent cannot be saved until an eligible organization is available.</p> : null}{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}<button className="btn btn-primary" type="button" disabled={processingConsent || sharingOrganizationsLoading || Boolean(sharingOrganizationsError) || !organizationOptions.some(org => org.id === selectedOrganizationId) || !shareFields.length} onClick={() => void retryConsent()}>{processingConsent ? "Saving consent…" : "Save explicit sharing consent"}</button></div> : <p className="muted">Your request remains private. No employer can access it.</p>}
       </div> : <button className="btn btn-ghost" type="button" disabled={processingConsent} onClick={() => void revokeConsent()}>{processingConsent ? "Updating…" : "Revoke employer-sharing consent"}</button>}
       <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><h3 className="h2">Employer sharing history</h3><button className="btn btn-ghost" type="button" onClick={() => void refreshSharingHistory(inquiry)}>Refresh history</button></div>
@@ -194,12 +221,12 @@ export default function JobInterestPage() {
           <h3 className="h2">Optional: consent to named-employer sharing</h3>
           <p className="muted">Off by default. If selected, MPA Support Desk may share only the fields you choose with a specific verified organization after review. Contact details are not selected by default.</p>
           <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><input type="checkbox" checked={shareWithEmployers} onChange={e => setShareWithEmployers(e.target.checked)} />I explicitly opt in to sharing selected information with a named, verified employer after MPA Support Desk review.</label>
-          {shareWithEmployers ? <div style={{ display: "grid", gap: 8, marginTop: 10 }}>{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}</div> : null}
+          {shareWithEmployers ? <div style={{ display: "grid", gap: 8, marginTop: 10 }}><label>Specific verified organization authorized to receive selected fields<select required value={selectedOrganizationId} onChange={e => setSelectedOrganizationId(e.target.value)} disabled={sharingOrganizationsLoading || busy || processingConsent}><option value="">Choose a verified organization</option>{organizationOptions.map(org => <option key={org.id} value={org.id}>{org.label}</option>)}</select></label>{sharingOrganizationsLoading ? <p role="status" className="muted">Loading verified organizations…</p> : null}{sharingOrganizationsError ? <p role="alert" className="muted">{sharingOrganizationsError}</p> : null}{!sharingOrganizationsLoading && !sharingOrganizationsError && !sharingOrganizations.length ? <p role="alert" className="muted">No public verified organizations are currently available. You can still submit your request privately; employer-sharing consent will remain off.</p> : null}{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}</div> : null}
         </Card>
         {error ? <p role="alert" style={{ color: "var(--danger, #b91c1c)" }}>{error}</p> : null}
         {notice ? <FormFeedback kind="success" message={notice}>{inquiry?.public_reference ? <p>Keep this reference to check your request later: <strong>{inquiry.public_reference}</strong></p> : null}</FormFeedback> : null}
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-          <button className="btn btn-primary" type="submit" disabled={busy || processingConsent}>{busy ? "Submitting…" : "Submit job-interest request"}</button>
+          <button className="btn btn-primary" type="submit" disabled={busy || processingConsent || (shareWithEmployers && (sharingOrganizationsLoading || Boolean(sharingOrganizationsError) || !organizationOptions.some(org => org.id === selectedOrganizationId) || !shareFields.length))}>{busy ? "Submitting…" : "Submit job-interest request"}</button>
           <a className="btn btn-ghost" href="/jobs">Return to listed jobs</a>
         </div>
       </form>
