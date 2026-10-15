@@ -538,7 +538,7 @@ export async function listMentors(viewerId,filters={}){
   // The public endpoint must not disclose member-only mentor profiles. $1 is
   // always bound so the query is valid with or without optional filters.
   const args=[viewerId||null];
-  const where=["mp.status='active'","mp.moderation_status='approved'","m.status='active'","m.start_date<=current_date","(m.end_date is null or m.end_date>=current_date)","(mp.visibility='public' or ($1::uuid is not null and mp.visibility='members'))"];
+  const where=["mp.status='active'","mp.moderation_status='approved'","m.status='active'","m.start_date<=current_date","(m.end_date is null or m.end_date>=current_date)","(mp.visibility='public' or (mp.visibility='members' and $1::uuid is not null and exists(select 1 from membership_record vm where vm.user_id=$1::uuid and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))"];
   if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(mp.headline ilike $"+args.length+" or mp.bio ilike $"+args.length+")"); }
   if(filters.topic){ args.push("%"+String(filters.topic).trim().toLowerCase()+"%"); where.push("mp.expertise::text ilike $"+args.length); }
   const limit=Math.min(Math.max(Number(filters.limit)||20,1),50),offset=Math.max(Number(filters.offset)||0,0);
