@@ -24,6 +24,12 @@ async function requirePersonalProfessionalCapability(db,userId){
     throw error(cause.statusCode||403,cause.message,cause.code||"BUSINESS_RULE");
   }
 }
+async function serviceProviderRecipients(db,requestId){
+ const request=(await db.query("select sr.provider_user_id,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1",[requestId])).rows[0];
+ if(!request)return [];
+ if(request.organization_id)return (await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[request.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id);
+ return request.provider_user_id?[request.provider_user_id]:[];
+}
 async function isServiceProviderActor(db,requestId,userId){
  const request=(await db.query("select sr.provider_user_id,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1",[requestId])).rows[0];
  if(!request)return false;
@@ -241,7 +247,7 @@ export async function changeServiceRequestStatus(requestId,userId,status,note,re
     await audit(db,userId,"service.request_status_changed","service_request",requestId,requestIdHeader,{from:r.status,to:status});
     const message=status==="accepted"?"Your service request was accepted. Agree the start date and delivery scope.":status==="declined"?"Your service request was declined. Review the explanation or choose another provider.":status==="in_progress"?"Service delivery has started. Track milestones and submitted work.":status==="disputed"?"A concern was raised. Review the note and agree the next step or contact Support Desk.":"The service request was cancelled. Review the explanation before creating a new request.";
     const nextAction=status==="accepted"?"Confirm scope, timing and milestones.":status==="in_progress"?"Track delivery and submit/review milestones.":status==="disputed"?"Respond to the concern and document the resolution.":status==="declined"?"Choose another provider or submit a revised request.":"Create a new request only if the need remains."; 
-    for(const recipient of new Set([r.requester_user_id,r.provider_user_id])) if(recipient&&recipient!==userId) await notify(db,recipient,"service.request_status_changed","service_request",requestId,{from:r.status,to:status,message,nextAction});
+    for(const recipient of new Set([r.requester_user_id,...await serviceProviderRecipients(db,requestId)])) if(recipient&&recipient!==userId) await notify(db,recipient,"service.request_status_changed","service_request",requestId,{from:r.status,to:status,message,nextAction,actionRequired:["accepted","disputed"].includes(status),priority:status==="disputed"?"high":"normal"});
     return {...updated,nextAction};
   });
 }
@@ -294,7 +300,7 @@ export async function acceptServiceCompletion(requestId,userId,note,requestIdHea
     const row=(await db.query("update service_request set requester_accepted_at=now(),status='completed',outcome_summary=$1,completed_at=now(),updated_at=now() where id=$2 returning *",[outcome,requestId])).rows[0];
     await db.query("insert into service_request_event(request_id,actor_user_id,from_status,to_status,note) values($1,$2,'in_progress','completed',$3)",[requestId,userId,outcome]);
     await audit(db,userId,"service.request_completion_accepted","service_request",requestId,requestIdHeader);
-    if(row.provider_user_id&&row.provider_user_id!==userId) await notify(db,row.provider_user_id,"service.completion_accepted","service_request",requestId,{message:"The requester accepted the delivered outcome.",nextAction:"The engagement is complete. You may request feedback or review the final record."});
+    for(const recipient of await serviceProviderRecipients(db,requestId))if(recipient&&recipient!==userId)await notify(db,recipient,"service.completion_accepted","service_request",requestId,{message:"The requester accepted the delivered outcome.",nextAction:"The engagement is complete. You may request feedback or review the final record.",actionUrl:"/services"});
     return {...row,nextAction:"The engagement is complete. You can now leave feedback or view the outcome record."};
   });
 }
@@ -364,7 +370,7 @@ export async function reviewServiceDelivery(deliveryId,userId,input,requestIdHea
     const row=(await db.query("update service_request_delivery set status=$1,reviewer_note=$2,reviewed_by=$3,reviewed_at=now() where id=$4 returning *",[input.status,input.note||null,userId,deliveryId])).rows[0];
     if(d.milestone_id) await db.query("update service_request_milestone set status=$1,completed_at=case when $1='completed' then now() else completed_at end,updated_at=now() where id=$2",[input.status==="accepted"?"completed":"revision_requested",d.milestone_id]);
     await audit(db,userId,"service.delivery_reviewed","service_request_delivery",deliveryId,requestIdHeader,{status:input.status});
-    if(d.provider_user_id&&d.provider_user_id!==userId) await notify(db,d.provider_user_id,input.status==="accepted"?"service.delivery_accepted":"service.delivery_revision_requested","service_request_delivery",deliveryId,{message:input.status==="accepted"?"The requester accepted your delivery.":"The requester requested a revision.",note:input.note||null,nextAction:input.status==="accepted"?"Continue with the next milestone or submit completion when all work is ready.":"Review the requester's note and submit a revised delivery."});
+    for(const recipient of await serviceProviderRecipients(db,d.request_id))if(recipient&&recipient!==userId)await notify(db,recipient,input.status==="accepted"?"service.delivery_accepted":"service.delivery_revision_requested","service_request_delivery",deliveryId,{message:input.status==="accepted"?"The requester accepted your delivery.":"The requester requested a revision.",note:input.note||null,nextAction:input.status==="accepted"?"Continue with the next milestone or submit completion when all work is ready.":"Review the requester's note and submit a revised delivery.",actionUrl:"/services",actionRequired:input.status==="revision_requested",priority:input.status==="revision_requested"?"high":"normal"});
     return {...row,nextAction:input.status==="accepted"?"Continue with the next milestone or submit completion when all work is ready.":"Review the note and submit a revised delivery."};
   });
 }
