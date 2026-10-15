@@ -63,7 +63,7 @@ The route-by-route source review has started; this is not browser validation and
 - Email operations no longer displays “No messages in this folder” after a failed folder request, and passkey management no longer claims there are no registered passkeys when the last request failed.
 - Admin overview list helpers now treat malformed list payloads as section failures instead of silently converting them to empty arrays; the user table suppresses its “No accounts match” row when the users query failed.
 - Service provider listings and request history, organization job inquiries, and organization mentorship programs no longer claim to be empty when the shared workspace has a load error.
-- Organization registration drafts now carry an explicit 24-hour expiry, and the organization workspace honors that expiry while remaining backward-compatible with existing drafts that only have a saved-at timestamp.
+- Organization registration drafts now carry an explicit 24-hour expiry, and the organization workspace honors that expiry while remaining backward-compatible with existing drafts that only have a saved-at timestamp. Drafts are now bound to the representative email and are only restored after the signed-in account is confirmed; mismatched or legacy unbound drafts are discarded rather than prefilled into another account.
 
 These are source-level fixes only. They have not been built, typechecked, tested, or browser-verified. The full route matrix, remaining state/authorization checks, responsive behavior, accessibility and localization are still open.
 
