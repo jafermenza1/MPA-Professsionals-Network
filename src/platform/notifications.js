@@ -19,8 +19,8 @@ function present(row){
 const NOTIFICATION_CATEGORIES=new Set(["membership","verification","opportunities","recruitment","organizations","mentorship","services","events_learning","security","system"]);
 export function notificationCategoryFor(eventCode,resourceType,payload={}){
  const code=String(eventCode||"").toLowerCase(),type=String(resourceType||"").toLowerCase();
- if(payload.category&&NOTIFICATION_CATEGORIES.has(payload.category))return payload.category;
  if(code.startsWith("security.")||code.startsWith("security_")||type==="security_event"||type==="auth_session"||type==="one_time_session_link")return "security";
+ if(payload.category&&NOTIFICATION_CATEGORIES.has(payload.category))return payload.category;
  if(code.startsWith("membership.")||code.startsWith("membership_")||type.startsWith("membership_")||type==="membership_record"||type==="payment_transaction")return "membership";
  if(code.startsWith("verification.")||code.startsWith("verification_")||type.startsWith("verification_")||type==="verification_case"||type==="verification_claim"||type==="verification_decision"||type==="verification_appeal")return "verification";
  if(code.startsWith("opportunity.")||code.startsWith("opportunity_"))return "opportunities";
