@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import {BriefcaseBusiness,Home,LogOut,Moon,Network,Sun,UserRound,LayoutDashboard,ShieldCheck,KeyRound,Building2,MessageSquareText,MoreHorizontal,Bell,Download,WifiOff,X,CheckCircle2} from "lucide-react";
+import {BriefcaseBusiness,Home,LogOut,Moon,Network,Sun,UserRound,LayoutDashboard,ShieldCheck,KeyRound,Building2,MessageSquareText,MoreHorizontal,Bell,Download,WifiOff,X,CheckCircle2,Bookmark} from "lucide-react";
 import {usePathname,useRouter} from "next/navigation";
 import {useUiStore} from "../lib/store";
 import {useEffect,useState} from "react";
