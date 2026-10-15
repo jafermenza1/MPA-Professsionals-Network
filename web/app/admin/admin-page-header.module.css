@@ -1,0 +1,8 @@
+.header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;min-width:0}
+.copy{flex:1 1 420px;min-width:0}
+.eyebrow{font-size:11px;line-height:1.5;letter-spacing:.12em;text-transform:uppercase;font-weight:850;color:var(--primary);margin:0 0 7px}
+.copy h1{font-size:clamp(1.8rem,3vw,2.55rem);line-height:1.1;letter-spacing:-.04em;font-weight:800;overflow-wrap:anywhere;margin:0 0 10px}
+.description{max-width:78ch;color:var(--muted);font-size:14px;line-height:1.65;margin:0}
+.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:100%}
+.actions :global(.btn){min-height:40px;white-space:normal;text-align:center}
+@media(max-width:600px){.copy{flex-basis:100%}.actions{width:100%}.actions :global(.btn){flex:1 1 auto}}
