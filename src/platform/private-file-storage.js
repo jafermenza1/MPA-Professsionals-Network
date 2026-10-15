@@ -97,7 +97,8 @@ export async function readAuthorizedPrivateFile(userId,fileId,roles=[],requestId
     }
     if(!allowed&&canReviewMembership){
       const membershipEvidence=await db.query("select 1 from membership_application_attachment aa join membership_application a on a.id=aa.application_id where aa.file_object_id=$1 and a.user_id=$2 limit 1",[fileId,f.created_by]);
-      allowed=membershipEvidence.rowCount>0;
+      const membershipCardPhoto=await db.query("select 1 from professional_profile pp join person p on p.id=pp.person_id where pp.profile_picture_file_id=$1 limit 1",[fileId]);
+      allowed=membershipEvidence.rowCount>0||membershipCardPhoto.rowCount>0;
     }
   }
   if(!allowed) throw fail(403,"You do not have permission to read this private file.","FORBIDDEN");
