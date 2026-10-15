@@ -204,7 +204,7 @@ export async function importReferenceXlsx(identity,key,filename,xlsxBase64,mappi
 }
 export async function exportReferenceXlsx(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
- const rows=(await db.query("select child.code,child.label,coalesce(child.description,'') description,child.sort_order,child.active,parent.code parent_code,child.aliases,child.metadata,child.effective_from,child.effective_to from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1 order by child.sort_order,child.label",[version.id])).rows;
+ const rows=(await db.query("select child.code,child.label,coalesce(child.description,'') description,child.sort_order,child.active,parent.code parent_code,child.aliases,child.short_label,child.metadata,child.effective_from,child.effective_to from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1 order by child.sort_order,child.label",[version.id])).rows;
  const headers=["code","label","description","sort_order","active","parent_code","aliases","metadata","effective_from","effective_to"];
  const workbookRows=rows.map(row=>({...row,aliases:Array.isArray(row.aliases)?row.aliases.join(";"):row.aliases,metadata:row.metadata&&typeof row.metadata==="object"?JSON.stringify(row.metadata):row.metadata}));
  return {filename:key+".xlsx",xlsxBase64:createXlsx(workbookRows,headers).toString("base64")};
