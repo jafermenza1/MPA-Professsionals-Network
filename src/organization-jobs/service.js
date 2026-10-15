@@ -356,7 +356,7 @@ export async function updateApplicationDraft(applicationId,userId,input={},reque
 
 export async function submitApplication(applicationId,userId,input={},requestId){
  return withTransaction(async db=>{
-  const a=(await db.query("select a.*,j.visibility,j.status job_status,j.application_deadline from job_application a join job j on j.id=a.job_id where a.id=$1 for update",[applicationId])).rows[0]; if(!a) throw error(404,"Application not found.","NOT_FOUND");
+  const a=(await db.query("select a.*,j.visibility,j.status job_status,j.application_deadline,j.title job_title,j.organization_id from job_application a join job j on j.id=a.job_id where a.id=$1 for update",[applicationId])).rows[0]; if(!a) throw error(404,"Application not found.","NOT_FOUND");
   if(a.applicant_user_id!==userId) throw error(403,"Only the applicant can submit this application.","FORBIDDEN");
   if(a.status!=="draft") throw error(409,"Only draft applications can be submitted.","INVALID_STATE");
   if(a.job_status!=="published" || (a.application_deadline&&new Date(a.application_deadline)<=new Date())) throw error(409,"This job is not accepting applications.","JOB_NOT_OPEN");
@@ -367,6 +367,9 @@ export async function submitApplication(applicationId,userId,input={},requestId)
   const updated=(await db.query("update job_application set status='submitted',cover_letter=coalesce($1,cover_letter),profile_snapshot=$2,eligibility_snapshot=$3,submitted_at=now(),updated_at=now() where id=$4 returning *",[input.coverLetter??null,snapshot,eligibility,applicationId])).rows[0];
   await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,'draft','submitted',$3)",[applicationId,userId,input.note||null]);
   await audit(db,userId,"job.application_submitted","job_application",applicationId,requestId,{jobId:a.job_id});
+  await queueWorkflowEmail(db,userId,"professional.workflow_update",{status:"submitted",jobTitle:a.job_title||"job application",nextAction:"Monitor the application timeline for employer updates",registrationReference:updated.tracking_reference||""},"job_application",applicationId);
+  const employers=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+  for(const employer of employers) await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{jobTitle:a.job_title||"job",status:"New candidate application",nextAction:"Review the candidate in the recruitment workspace"},"job_application",applicationId);
   return updated;
  });
 }
