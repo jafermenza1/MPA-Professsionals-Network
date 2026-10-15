@@ -345,6 +345,7 @@ export async function reviewServiceDelivery(deliveryId,userId,input,requestIdHea
     if(!d) throw error(404,"Service delivery not found.","NOT_FOUND");
     if(d.requester_user_id!==userId) throw error(403,"Only the requester can review a delivery.","FORBIDDEN");
     if(!["accepted","revision_requested"].includes(input.status)) throw error(400,"Delivery review must be accepted or revision_requested.","VALIDATION_ERROR");
+    if(input.status==="revision_requested"&&String(input.note||"").trim().length<4)throw error(400,"Explain what needs to change before requesting a revision.","REVISION_NOTE_REQUIRED");
     if(d.status===input.status)return {...d,idempotent:true,nextAction:input.status==="accepted"?"This delivery is accepted.":"This revision request is already recorded."};
     const row=(await db.query("update service_request_delivery set status=$1,reviewer_note=$2,reviewed_by=$3,reviewed_at=now() where id=$4 returning *",[input.status,input.note||null,userId,deliveryId])).rows[0];
     if(d.milestone_id) await db.query("update service_request_milestone set status=$1,completed_at=case when $1='completed' then now() else completed_at end,updated_at=now() where id=$2",[input.status==="accepted"?"completed":"revision_requested",d.milestone_id]);
