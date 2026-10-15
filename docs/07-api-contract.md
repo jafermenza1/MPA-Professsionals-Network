@@ -232,3 +232,22 @@ Sign-in accepts either the account's email address or username. Username changes
 - The card is designed for landscape ATM-card dimensions (85.6 × 53.98 mm). Photograph/placeholder occupies one side and the QR code occupies the opposite side. Printing/saving as PDF uses the browser print dialog; online verification remains authoritative for status.
 - The tracking-reference utility and its `MPA-MEM-YY-NNNNNN` format remain separate and unchanged. Membership activation continues to generate canonical member IDs as `MPA-YYYY-XXXXXXXX`; existing imported IDs are preserved until a separately approved migration policy is defined.
 - **Acceptance pending:** run the migration and focused tests against a disposable PostgreSQL database, verify photo ownership and role-negative cases, scan generated QR codes, exercise token rotation and every status, confirm print/PDF dimensions, and run the web production build. No acceptance is claimed until those checks are recorded at the exact head.
+
+
+## 13. Public support assistant and knowledge base
+
+- POST /api/v1/public/support-bot/message accepts a visitor question, opaque browser-session key, current page path, optional contact details, preferred contact method and explicit contact consent. The response identifies whether the answer came from a published knowledge entry, returns the conversation reference, and explains whether human follow-up is needed.
+- GET /api/v1/admin/support/knowledge lists categorized entries for authorized support staff; POST /api/v1/admin/support/knowledge/categories and POST /api/v1/admin/support/knowledge/articles create/update categories and answers. Draft articles are not eligible for bot responses; only published entries in active categories are searched.
+- GET /api/v1/admin/support/inquiries?status=open lists support inquiries and messages. PATCH /api/v1/admin/support/inquiries/{id} updates the inquiry status/assignment, and POST /api/v1/admin/support/inquiries/{id}/reply records an internal support follow-up note.
+- Support inbox endpoints require current database roles (system_admin, admin, or supporting_staff) or the matching support.inquiries.view / support.inquiries.manage permissions. Knowledge authoring is limited to system_admin, admin, or support.knowledge.manage.
+- The bot must not invent answers: no confident knowledge match means it says no verified answer is available and records the question for human review. Never include passwords or identity documents in the conversation.
+- Contact details are visible to authorized MPA support staff. Contact details may be saved with an inquiry, but outbound contact is allowed only where the visitor explicitly checked the consent box. Public APIs are rate-limited. The opaque session key is hashed at rest and binds follow-up messages to the same browser session.
+- Database migration: 20261015133000_public_support_bot.sql. This migration creates support_knowledge_category, support_knowledge_article, support_conversation, and support_message and seeds categorized starter topics plus one general support answer. MPA administrators must review and confirm starter content before treating it as official policy.
+
+## 14. MPA brand assets
+
+- Shared SVG assets live in web/public/brand/: mpa-logo-light.svg, mpa-logo-dark.svg, mpa-favicon-light.svg, and mpa-favicon-dark.svg. The logo is a P inside a mosque arch; light/dark variants use the MPA navy and green palette.
+- The global shell selects the theme-appropriate logo and animates it on page load while respecting reduced-motion preferences. Metadata selects a light/dark favicon. Membership ID cards load the logo from this folder so brand changes do not require editing the card markup.
+- The support assistant is mounted in the shared app shell and is available on public and authenticated pages. Admin support workspace: /admin/support.
+
+Acceptance remains pending until the migration is applied in a test database, the server and Next.js build run, public knowledge answers and fallback behavior are exercised, role/permission denials are tested, contact consent/privacy and rate limiting are verified, and the widget is checked across public/authenticated routes and light/dark themes.
