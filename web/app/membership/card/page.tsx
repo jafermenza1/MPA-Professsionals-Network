@@ -15,7 +15,10 @@ type MembershipCard = {
 };
 function dateLabel(value:string|null){ if(!value) return "No expiry"; const date=new Date(value); return Number.isNaN(date.getTime())?value:date.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"2-digit",timeZone:"UTC"}); }
 export default function MembershipCardPage(){
-  const token=useUiStore(s=>s.token);
+  const token=useUiStore(s=>s.token),hydrateToken=useUiStore(s=>s.hydrateToken);
+  const [origin,setOrigin]=useState("");
+  useEffect(()=>{hydrateToken();},[hydrateToken]);
+  useEffect(()=>{setOrigin(window.location.origin);},[]);
   const [card,setCard]=useState<MembershipCard|null>(null);
   const [photo,setPhoto]=useState("");
   const [error,setError]=useState("");
@@ -40,7 +43,7 @@ export default function MembershipCardPage(){
   if(loading) return <main className={styles.shell}><p role="status">Loading membership card…</p></main>;
   if(error||!card) return <main className={styles.shell}><section className={styles.panel}><h1>Membership card unavailable</h1><p role="alert">{error||"No membership record is available for this account."}</p><a href="/membership">Open membership</a></section></main>;
   const s=card.settings;
-  const verifyUrl=typeof window!=="undefined"?window.location.origin+card.verificationPath:card.verificationPath;
+  const verifyUrl=origin+card.verificationPath;
   const cardStyle={background:`linear-gradient(125deg,${s.background_start},${s.background_end})`,color:s.text_color,"--card-accent":s.accent_color} as CSSProperties;
   return <main className={styles.shell}>
     <div className={styles.toolbar}><div><p className={styles.eyebrow}>OFFICIAL MEMBER CREDENTIAL</p><h1>Membership ID</h1><p>ATM-size landscape card · 85.6 × 53.98 mm · Print or save as PDF</p></div><div className={styles.actions}><a href="/profile" className={styles.secondary}>Profile & photo</a><button type="button" onClick={()=>window.print()} className={styles.primary}>Print / Save PDF</button></div></div>
