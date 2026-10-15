@@ -62,7 +62,7 @@ export async function answerPublicQuestion(input,context={}){
  await db.query(`update support_conversation set user_id=coalesce($2,user_id),contact_name=coalesce($3,contact_name),contact_email=coalesce($4,contact_email),contact_phone=coalesce($5,contact_phone),preferred_contact=$6,consent_to_contact=$7,page_path=$8,status=case when $9 then 'open' when status='open' then 'resolved' else status end,category_id=coalesce($10,category_id),last_question=$11,updated_at=now() where id=$1`,
  [conversationId,context.userId||null,contactName,contactEmail,contactPhone,preferredContact,contactable,pagePath,Boolean(!best||contactable),categoryId,question]);
  await db.query("insert into support_message(conversation_id,sender_type,message_text,knowledge_article_id) values($1,'bot',$2,$3)",[conversationId,answer,best?.id||null]);
- return {conversationRef:conversationReference,answer,answeredFromKnowledgeBase:Boolean(best),articleTitle:best?.title||null,needsHumanFollowUp:!best||contactable,contactSaved:Boolean(contactable),privacyNotice:"Your inquiry is visible to authorized MPA support staff. Contact details are used for follow-up only when you ask MPA to contact you."};
+ return {conversationRef:conversationReference,answer,answeredFromKnowledgeBase:Boolean(best),articleTitle:best?.title||null,needsHumanFollowUp:!best||contactable,contactSaved:Boolean(contactName||contactEmail||contactPhone),privacyNotice:"Your inquiry is visible to authorized MPA support staff. Contact details are used for follow-up only when you ask MPA to contact you."};
 }
 export async function listPublicKnowledge(){
  const db=getPool();
