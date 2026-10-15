@@ -153,3 +153,20 @@ Remaining acceptance work:
 5. Exercise configured email delivery, provider failure, resend invalidation, expiry/replay, and verification-required login/session enforcement using a controlled test sender.
 
 Keep PR #3 open and draft until those remaining checks are completed and their results are recorded against the exact branch-head SHA.
+
+## Registration, organization status, and email operations follow-up — 15 October 2026
+
+Changes committed on the MPA destination branch after the previous inventory:
+
+- web/app/register/page.tsx now switches fields by selected account type. Professional registration keeps its personal display name/phone path; organization registration collects representative names and work email plus required legal/display name, type, registered address, organization contact email/phone, and optional website/description. Password confirmation remains in both paths.
+- db/migrations/20261015180000_account_type.sql adds app_user.account_type with a safe default for existing rows and the organization_representative role. src/membership/service.js now persists the selected account type and does not create a professional profile/member role for organization-only accounts. Existing professional registration remains the default when account type is omitted.
+- Organization draft storage now uses the same key in registration, verification, and organization workspace. The draft excludes passwords, is accepted only when its timestamp is valid and within 24 hours, and is restored after verification/sign-in. Organization profile submission still uses the existing service, which links the authenticated representative as owner.
+- The email-verification API returns the persisted account registration reference only after consuming a valid one-time verification token. The pre-verification screen no longer displays the reference; the verification-complete screen displays the server-returned value.
+- Organization workspace status/reference messages use tracking_reference rather than the internal organization UUID. Awaiting-review, correction-required, and completed states are distinct; missing-evidence messaging and resubmission controls are suppressed while the case is awaiting review. The unified application tracker uses an explicit organization review label.
+- HTML email-template substitutions are HTML-escaped before dispatch. Added docs/email-operations-center.md as an operator-facing setup guide and updated docs/39-email-operations-center.md.
+- Added/updated tests in test/platform/security-auth.test.js and e2e/email-operations.spec.js for the verification response reference, organization-only account boundary, selected account type, organization draft persistence, and post-verification reference display.
+
+### Validation status for this follow-up
+
+**IMPLEMENTED IN SOURCE; NOT ACCEPTED BY TEST EXECUTION.** These changes have not been run through the Node test suite, Playwright, TypeScript check, production build, or database migration/rerun tests. The inspected GitHub workflow-run lookup returned no runs for the inspected earlier commit; the latest head must be checked again before acceptance. In particular, validate the new account-type migration against clean and legacy-baseline databases, organization account profile denial, owner registration/submission, draft expiry/restoration, and real email delivery before enabling production verification or merging.
+
