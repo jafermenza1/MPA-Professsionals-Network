@@ -98,3 +98,7 @@ Relevant destination commits added after the initial port head:
 - Confirm production `HUMAN_CHALLENGE_REQUIRED` is enabled and verify the passkey enforcement policy before any deployment.
 - Execute registration success/failure/retry, token expiry/reuse, login denial before verification, existing-session denial, organization draft restoration, migration baseline/rerun, security, integration and browser checks at the agreed final gate.
 - Record actual results against the exact final destination SHA. No tests or builds are claimed as passed by this follow-up.
+
+
+- `7e3f267aa618476cf96e1cfa2539416ce348264d` — default the human-check requirement on in production, even if the environment flag is omitted.
+- Existing accounts may have `email_verified_at IS NULL` after the additive migration. Before enabling required verification for an existing installation, plan a user-safe verification rollout and delivery checks. Do not mark existing addresses verified without trusted evidence; the flag will intentionally block unverified login and API sessions.
