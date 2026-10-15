@@ -145,6 +145,36 @@ export async function publishReferenceDataset(identity,key,reason=""){
   });
 }
 
+
+function jsonReferenceRows(source){
+ let parsed;
+ try{parsed=JSON.parse(String(source||""));}catch{throw fail(400,"JSON import must be valid JSON.","JSON_INVALID");}
+ const rows=Array.isArray(parsed)?parsed:parsed&&Array.isArray(parsed.items)?parsed.items:null;
+ if(!rows||!rows.length||rows.some(row=>!row||typeof row!=="object"||Array.isArray(row)))throw fail(400,"JSON import must be a non-empty array of reference item objects or an object with an items array.","JSON_SHAPE_INVALID");
+ const allowed=["code","label","description","sort_order","active","parent_code","aliases"];
+ return rows.map((row,index)=>{const item={};for(const key of allowed){const camel=key.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase());if(row[key]!==undefined)item[key]=Array.isArray(row[key])?row[key].join(";"):row[key];else if(row[camel]!==undefined)item[key]=Array.isArray(row[camel])?row[camel].join(";"):row[camel];}item.__row=index+2;return item;});
+}
+function referenceRowsToCsv(rows){
+ const headers=["code","label","description","sort_order","active","parent_code","aliases"];
+ return [headers.join(","),...rows.map(row=>headers.map(key=>csvEscape(row[key]??"")).join(","))].join("\r\n");
+}
+export async function previewReferenceJson(identity,key,filename,jsonText,providedMapping={}){
+ assertReferenceAdmin(identity);
+ const rows=jsonReferenceRows(jsonText).map(({__row,...row})=>row);
+ return previewReferenceCsv(identity,key,filename,referenceRowsToCsv(rows),providedMapping);
+}
+export async function importReferenceJson(identity,key,filename,jsonText,providedMapping={}){
+ assertReferenceAdmin(identity);
+ const rows=jsonReferenceRows(jsonText).map(({__row,...row})=>row);
+ return importReferenceCsv(identity,key,filename,referenceRowsToCsv(rows),providedMapping);
+}
+export async function exportReferenceJson(identity,key){
+ assertReferenceAdmin(identity);const db=getPool();const {dataset,version}=await datasetContext(db,key);
+ const rows=(await db.query("select code,label,description,sort_order,active,parent_item_id,aliases,metadata,effective_from,effective_to from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
+ const byId=new Map(rows.map(row=>[row.parent_item_id,row.code]));
+ return {filename:key+".json",json:JSON.stringify({datasetKey:key,version:version.version_label,items:rows.map(({parent_item_id,...row})=>({...row,parent_code:byId.get(parent_item_id)||null}))},null,2)};
+}
+
 export async function exportReferenceCsv(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
  const rows=(await db.query("select code,label,coalesce(description,'') description,sort_order,active from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
