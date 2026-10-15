@@ -71,11 +71,11 @@ export default function Mentorship(){
    const t=topicValue===undefined?lastSearch.current.topic:topicValue;
    lastSearch.current={query:q,topic:t};
    setLoading(true);setError("");
-   const params=new URLSearchParams();if(q.trim())params.set("q",q.trim());if(t.trim())params.set("topic",t.trim());
+   const params=new URLSearchParams();if(q.trim())params.set("q",q.trim());if(t.trim())params.set("topic",t.trim());params.set("limit",String(discoveryPageSize+1));params.set("offset",String(pageIndex*discoveryPageSize));
    try{
-     const result=await api<Mentor[]>(`/api/v1/mentors${params.toString()?"?"+params.toString():""}`,{},token||undefined);
-     setMentors(Array.isArray(result)?result:[]);
-   }catch(e){setMentors([]);setError(e instanceof ApiError?e.message:"We couldn't load mentor profiles right now.");}
+     const result=await api<Mentor[]>(`/api/v1/mentors?${params.toString()}`,{},token||undefined);
+     const rows=Array.isArray(result)?result:[];setMentors(rows.slice(0,discoveryPageSize));setMentorsHasMore(rows.length>discoveryPageSize);setDiscoveryPage(pageIndex);
+   }catch(e){setMentors([]);setMentorsHasMore(false);setError(e instanceof ApiError?e.message:"We couldn't load mentor profiles right now.");}
    finally{setLoading(false);}
  },[token]);
  useEffect(()=>{void load("","")},[load]);
