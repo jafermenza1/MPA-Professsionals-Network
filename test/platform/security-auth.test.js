@@ -68,12 +68,14 @@ test("email verification is one-time and blocks unverified login",async()=>{
   const userId=registered.user.id;createdUsers.push(userId);
   const db=getPool();
   assert.match(registered.registrationReference,/^MPA-MEM-\d{2}-\d{6,}$/);
+  const persistedReference=(await db.query("select registration_reference from app_user where id=$1",[userId])).rows[0]?.registration_reference;
+  assert.equal(persistedReference,registered.registrationReference,"the human-readable reference must persist on the account");
   await db.query("update app_user set email_verified_at=null where id=$1",[userId]);
   const verification=await withTransaction(tx=>createEmailVerification(tx,userId,email,registered.registrationReference));
   const previous=process.env.EMAIL_VERIFICATION_REQUIRED;
   process.env.EMAIL_VERIFICATION_REQUIRED="true";
   try {
-    await assert.rejects(membership.login(email,"Security-email-password-12345","security-email-login"),error=>error.code==="EMAIL_NOT_VERIFIED");
+    await assert.rejects(membership.login(email,"Security-email-password-12345","security-email-login"),error=>error.code==="EMAIL_VERIFICATION_REQUIRED");
   } finally {
     if(previous===undefined)delete process.env.EMAIL_VERIFICATION_REQUIRED;else process.env.EMAIL_VERIFICATION_REQUIRED=previous;
   }
@@ -97,6 +99,47 @@ test("administrator recovery codes are single-use and create a restricted recove
   const session=(await db.query("select auth_method from auth_session where token_hash=$1",[hashSessionToken(recovered.token)])).rows[0];
   assert.equal(session.auth_method,"recovery");
   await assert.rejects(recoverAdminPasskey(email,code,{ip:"198.51.100.24"},"security-auth-test-replay"),error=>error.code==="RECOVERY_INVALID");
+});
+
+
+test("expired human challenges cannot mint tokens",async()=>{
+  const challenge=await issueHumanChallenge();
+  await getPool().query("update security_human_challenge set expires_at=now()-interval '1 second' where id=$1",[challenge.id]);
+  await assert.rejects(verifyHumanChallenge(challenge.id,"0"),error=>error.code==="CHALLENGE_INVALID");
+});
+
+test("production registration rejects a missing human-check token before creating an account",async()=>{
+  const keys=["NODE_ENV","JWT_SECRET","HUMAN_CHALLENGE_REQUIRED"];
+  const previous=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+  process.env.NODE_ENV="production";
+  process.env.JWT_SECRET="security-test-production-secret-with-more-than-32-characters";
+  process.env.HUMAN_CHALLENGE_REQUIRED="false";
+  const email="security-bypass-"+suffix+"@example.test";
+  try {
+    await assert.rejects(membership.register({email,password:"Security-bypass-password-12345",firstName:"Security",lastName:"Bypass"+suffix,phone:"09"+randomUUID().replace(/\D/g,"").slice(0,8)},"security-no-human-token"),error=>error.code==="CHALLENGE_REQUIRED");
+    assert.equal((await getPool().query("select id from app_user where lower(email)=lower($1)",[email])).rows.length,0,"registration must not persist before challenge consumption");
+  } finally {
+    for(const key of keys){if(previous[key]===undefined)delete process.env[key];else process.env[key]=previous[key];}
+  }
+});
+
+test("non-administrators cannot enroll administrator passkeys",async()=>{
+  const email="security-nonadmin-"+suffix+"@example.test";
+  const registered=await membership.register({email,password:"Security-nonadmin-password-12345",firstName:"Security",lastName:"Nonadmin"+suffix,phone:"09"+randomUUID().replace(/\D/g,"").slice(0,8)},"security-nonadmin-register");
+  createdUsers.push(registered.user.id);
+  const {beginAdminPasskeyRegistration}=await import("../../src/platform/webauthn.js");
+  await assert.rejects(beginAdminPasskeyRegistration({sub:registered.user.id,sid:"not-a-session"}),error=>error.statusCode===403&&error.code==="FORBIDDEN");
+});
+
+test("revoked administrator passkeys cannot be used for authentication",async()=>{
+  const email="security-revoked-"+suffix+"@example.test";
+  const registered=await membership.register({email,password:"Security-revoked-password-12345",firstName:"Security",lastName:"Revoked"+suffix,phone:"09"+randomUUID().replace(/\D/g,"").slice(0,8)},"security-revoked-register");
+  const userId=registered.user.id;createdUsers.push(userId);
+  const db=getPool();
+  await db.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code='system_admin' on conflict do nothing",[userId]);
+  await db.query("update app_user set admin_passkey_enforced_at=now() where id=$1",[userId]);
+  await db.query("insert into admin_passkey_credential(user_id,credential_id,public_key_jwk,revoked_at) values($1,$2,$3,now())",[userId,Buffer.from("revoked-"+suffix).toString("base64url"),{kty:"EC",crv:"P-256",x:Buffer.alloc(32,3).toString("base64url"),y:Buffer.alloc(32,4).toString("base64url")}]);
+  await assert.rejects(beginAdminPasskeyAuthentication(email),error=>error.code==="PASSKEY_NOT_AVAILABLE");
 });
 
 test.after(async()=>{
