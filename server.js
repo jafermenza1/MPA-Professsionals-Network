@@ -118,8 +118,8 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && req.url==="/readyz") return ok(res,{status:"ready",databaseConfigured:Boolean(config.databaseUrl)},requestId);
     const parts=pathParts(req.url);
     const p=parts.join("/");
-    if(req.method==="GET" && p==="api/v1/auth/human-challenge") return ok(res,await issueHumanChallenge(),requestId);
-    if(req.method==="POST" && p==="api/v1/auth/human-challenge/verify") { const b=await body(req); return ok(res,await verifyHumanChallenge(b.id,b.answer),requestId); }
+    if(req.method==="GET" && p==="api/v1/auth/human-challenge") { publicRateLimit(req,"human-challenge",10,60000); await enforcePersistentRateLimit(req,"human-challenge",10,60000); return ok(res,await issueHumanChallenge(),requestId); }
+    if(req.method==="POST" && p==="api/v1/auth/human-challenge/verify") { const b=await body(req); await enforcePersistentRateLimit(req,"human-challenge-verify",10,60000); return ok(res,await verifyHumanChallenge(b.id,b.answer),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/email-verification/resend") { const b=await body(req); await enforcePersistentRateLimit(req,"email-verification-resend",3,3600000,String(b.email||"").trim().toLowerCase()); return ok(res,await resendEmailVerification(b.email,requestId),requestId,202); }
     if(req.method==="POST" && p==="api/v1/auth/email-verification/verify") { const b=await body(req); await enforcePersistentRateLimit(req,"email-verification-verify",10,60000); return ok(res,await verifyEmailToken(b.token,requestId),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/passkeys/options") { const b=await body(req); await enforcePersistentRateLimit(req,"passkey-options",10,60000,String(b.email||"").trim().toLowerCase()); return ok(res,await beginAdminPasskeyAuthentication(b.email),requestId); }
