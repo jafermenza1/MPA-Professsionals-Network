@@ -5,6 +5,7 @@ import { ArrowDownToLine,CheckCircle2,FileSpreadsheet,FileText,ShieldCheck,Uploa
 import { Card,Badge } from "../../../components/ui";
 import { api,ApiError } from "../../../lib/api";
 import { useUiStore } from "../../../lib/store";
+import { AdminPageHeader } from "../admin-page-header";
 
 type PreviewRow={rowNumber:number;email:string;fullName:string;membershipNumber:string;productCode:string;status:string;match?:{displayName?:string;reason:string}|null;errors:string[];ready:boolean};
 type Preview={importId:string;filename:string;rowCount:number;matchedCount:number;newCount:number;conflictCount:number;rows:PreviewRow[]};
@@ -20,7 +21,7 @@ export default function AdminMembersPage(){
  if(!hydrated)return <div className="grid" style={{gap:16}}><h1 className="h1">Member administration</h1><Card>Loading secure member tools…</Card></div>;
  if(!token)return <div className="grid" style={{gap:16}}><h1 className="h1">Member administration</h1><Card><p>Sign in with an authorized MPA administrator account to import or export membership records.</p><a className="btn btn-primary" href="/login?next=/admin/members">Sign in</a></Card></div>;
  return <div className="grid" style={{gap:18,minWidth:0}}>
-  <header className="grid" style={{gap:8}}><div className="eyebrow">Administration · Membership</div><h1 className="h1">Bulk member administration</h1><p className="muted">Bring the approved MPA register into one auditable workflow. Download the template, validate and resolve conflicts, then explicitly apply the batch. Existing accounts are matched instead of duplicated.</p><div className="row" style={{gap:8,flexWrap:"wrap"}}><a className="btn btn-ghost" href="/admin">Admin home</a><a className="btn btn-ghost" href="/admin/reports">Reports catalogue</a><a className="btn btn-primary" href="/admin/membership-card">Membership card design</a></div></header>
+  <AdminPageHeader eyebrow="Administration · Membership" title="Bulk member administration" description="Bring the approved MPA register into one auditable workflow. Download the template, validate and resolve conflicts, then explicitly apply the batch. Existing accounts are matched instead of duplicated." actions={<><a className="btn btn-ghost" href="/admin">Admin home</a><a className="btn btn-ghost" href="/admin/reports">Reports catalogue</a><a className="btn btn-primary" href="/admin/membership-card">Membership card design</a></>}/>
   {error&&<FormFeedback kind="error" message={error}/>}{notice&&<FormFeedback kind="success" message={notice}/>}
   <div className="grid grid-2" style={{gap:16}}>
    <Card><div className="row" style={{gap:10,alignItems:"flex-start"}}><div className="icon-tile"><UploadCloud size={22}/></div><div><h2 className="h2">Import approved members</h2><p className="muted">CSV import · preview first · no silent merges</p></div></div>
