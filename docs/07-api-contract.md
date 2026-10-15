@@ -280,3 +280,15 @@ The action-center event/recipient mapping and acceptance boundary are defined in
 - GET /api/v1/mentors?q=&topic=&limit=20&offset=0 returns a bounded array; a page may contain one extra item for next-page detection. Existing moderation, visibility and active membership rules still apply.
 - GET /api/v1/public/organizations?q=&organizationType=&location=&limit=20&offset=0 returns only public_visible=true and verification_status='verified' organizations with items, limit, offset, total, and hasMore. It does not return organization membership or contact information.
 - These pagination/filter parameters improve response size and rendering but do not replace server authorization. Acceptance and current-head validation remain open. Cross-entity saved items are not part of this implementation slice; saved jobs and talent saved searches retain their existing persistence contracts.
+
+
+## Increment 4 follow-up: saved items and public profile details
+
+- `GET /api/v1/me/saved-items` — authenticated; returns the caller's saved professional, organization, service and mentor items that remain visible to that caller.
+- `POST /api/v1/me/saved-items` — authenticated JSON body `{ "itemType": "professional|organization|service|mentor", "itemId": "uuid" }`; the server checks current target visibility before persistence.
+- `DELETE /api/v1/me/saved-items/:type/:id` — authenticated; removes only the caller-owned save.
+- `GET /api/v1/public/organizations/:id` — returns only verified, explicitly public organization fields; no membership or personal contact details.
+- `GET /api/v1/services/:id` — resolves optional identity and re-checks service listing visibility.
+- `GET /api/v1/mentors/:id` — resolves optional identity and requires an active, approved mentor plus public/member visibility.
+- `GET /api/v1/talent/:id` remains the authoritative professional profile detail API.
+- Opportunity search applies posting-scope authorization predicates in SQL before counting or paging. The public/member/partner/internal visibility distinctions remain unchanged. Database migration and exact-head acceptance checks remain open.
