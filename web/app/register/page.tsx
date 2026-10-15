@@ -24,6 +24,7 @@ export default function Register(){
  const [challengeBusy,setChallengeBusy]=useState(false);
  const [verificationMessage,setVerificationMessage]=useState("");
  const [verificationUrl,setVerificationUrl]=useState("");
+ const [draftWarning,setDraftWarning]=useState(false);
  const set=(k:keyof RegistrationForm,v:string)=>setForm(f=>({...f,[k]:v}));
 
  async function loadChallenge(){
@@ -34,9 +35,10 @@ export default function Register(){
  }
  useEffect(()=>{void loadChallenge();},[]);
 
- function saveOrganizationDraft(){
+ function saveOrganizationDraft():boolean{
   const now=Date.now();const draft={representativeEmail:form.email.trim().toLowerCase(),legalName:form.orgLegalName.trim(),displayName:form.orgDisplayName.trim(),organizationType:form.orgType.trim(),description:form.orgDescription.trim(),website:form.orgWebsite.trim(),email:form.orgEmail.trim(),phone:form.orgPhone.trim(),addressText:form.orgAddress.trim(),savedAt:now,expiresAt:now+DRAFT_TTL_MS};
-  localStorage.setItem(ORGANIZATION_DRAFT_KEY,JSON.stringify(draft));
+  try{localStorage.setItem(ORGANIZATION_DRAFT_KEY,JSON.stringify(draft));return true;}
+  catch{return false;}
  }
 
  async function submit(e:FormEvent){
@@ -49,12 +51,13 @@ export default function Register(){
   try{
    if(!challenge)throw new Error("Load a new human check before registering.");
    const proof=await api<{token:string}>("/api/v1/auth/human-challenge/verify",{method:"POST",body:JSON.stringify({id:challenge.id,answer:challengeAnswer})});
-   if(kind==="organization")saveOrganizationDraft();
+   const organizationDraftSaved=kind!=="organization"||saveOrganizationDraft();
+   setDraftWarning(kind==="organization"&&!organizationDraftSaved);
    const representativeName=[form.firstName,form.middleName,form.lastName].map(x=>x.trim()).filter(Boolean).join(" ");
    const payload={accountType:kind==="organization"?"organization":"professional",email:form.email.trim(),password:form.password,passwordConfirmation:form.passwordConfirm,humanCheckToken:proof.token,firstName:form.firstName.trim(),middleName:form.middleName.trim(),lastName:form.lastName.trim(),displayName:kind==="organization"?representativeName:form.displayName.trim(),phone:kind==="professional"?form.phone.trim():form.orgPhone.trim(),nationality:form.nationality};
    const r=await api<any>("/api/v1/auth/register",{method:"POST",body:JSON.stringify(payload)});
    if(r.verificationRequired){
-    setVerificationMessage(r.verificationSent?"Your representative account was created. Verify the representative's email before signing in; check your inbox and spam folder.":"Your account was created, but email delivery was not confirmed. Use the resend option on the login page, or use the development link if one is provided.");
+    setVerificationMessage((r.verificationSent?"Your representative account was created. Verify the representative's email before signing in; check your inbox and spam folder.":"Your account was created, but email delivery was not confirmed. Use the resend option on the login page, or use the development link if one is provided.")+(kind==="organization"&&!organizationDraftSaved?" Browser storage was unavailable, so the organization details could not be saved for later. After verifying and signing in, re-enter them in the organization workspace.":""));
     setVerificationUrl(String(r.developmentVerificationUrl||""));
     return;
    }
@@ -78,6 +81,7 @@ export default function Register(){
   {kind==="organization"&&<section className="form-stack" aria-label="Organization application details"><h2 className="h2">Representative and organization details</h2><label>Representative work email<input required type="email" autoComplete="email" value={form.email} onChange={e=>set("email",e.target.value)}/></label><p className="muted">The representative's email is used to verify and sign in to the account. Organization approval happens separately after profile submission and review.</p><label>Legal or registered organization name<input required value={form.orgLegalName} onChange={e=>set("orgLegalName",e.target.value)}/></label><label>Public/display name<input required value={form.orgDisplayName} onChange={e=>set("orgDisplayName",e.target.value)}/></label><div className="form-grid"><label>Organization type<input required value={form.orgType} onChange={e=>set("orgType",e.target.value)} placeholder="Company, NGO, institution…"/></label><label>Registered location / address<input required value={form.orgAddress} onChange={e=>set("orgAddress",e.target.value)}/></label><label>Organization work email<input required type="email" value={form.orgEmail} onChange={e=>set("orgEmail",e.target.value)}/></label><label>Organization phone<input required value={form.orgPhone} onChange={e=>set("orgPhone",e.target.value)}/></label></div><label>Website (optional)<input type="url" value={form.orgWebsite} onChange={e=>set("orgWebsite",e.target.value)}/></label><label>Description (optional)<textarea value={form.orgDescription} onChange={e=>set("orgDescription",e.target.value)} rows={3}/></label><p className="muted">Organization details are saved in this browser for up to 24 hours while you verify your representative email. After verification and sign-in, review and submit them from the organization workspace. Private evidence is uploaded in the separate verification workflow.</p></section>}
   <div className="form-grid"><label>Password<input required minLength={10} type="password" autoComplete="new-password" value={form.password} onChange={e=>set("password",e.target.value)}/></label><label>Confirm password<input required minLength={10} type="password" autoComplete="new-password" value={form.passwordConfirm} onChange={e=>set("passwordConfirm",e.target.value)}/></label></div><p className="muted">Use at least 10 characters. If you already have an account, sign in instead of registering again.</p>
   <div className="form-stack" style={{border:"1px solid var(--border)",borderRadius:12,padding:14}}><b>Verify you are human</b>{challenge?<label>{challenge.question}<input required inputMode="numeric" value={challengeAnswer} onChange={e=>setChallengeAnswer(e.target.value)} autoComplete="off" placeholder="Enter your answer"/></label>:<p className="muted">Loading human check…</p>}<button type="button" className="btn btn-ghost" onClick={()=>void loadChallenge()} disabled={challengeBusy}><RefreshCw size={16}/>{challengeBusy?"Loading…":"Get a new question"}</button></div>
+  {draftWarning&&kind==="organization"&&<div className="form-error" role="status">This browser could not save your organization details for the verification step. You can continue creating the representative account, but keep these details available to re-enter after verification.</div>}
   {error&&<div className="form-error" role="alert">{error}</div>}<button className="btn btn-primary" disabled={busy||!challenge}>{busy?"Creating account…":kind==="professional"?"Create professional account":"Create representative account and continue"} <ArrowRight size={16}/></button>
  </form><div className="auth-links"><a href="/login">Already have an account? Login</a></div></Card></div>;
 }
