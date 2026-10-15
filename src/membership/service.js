@@ -45,6 +45,8 @@ function notificationActionUrl(payload,resourceType,resourceId){
   return path?path+"/"+encodeURIComponent(String(resourceId)):null;
 }
 async function notify(db,userId,eventCode,resourceType,resourceId,payload={}){
+  const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled,coalesce(np.in_app_enabled,true) in_app_enabled,coalesce(np.in_app_categories,'{}'::jsonb) in_app_categories from app_user u left join notification_preference np on np.user_id=u.id where u.id=$1",[userId])).rows[0];
+  if(!user)return;
   const category=notificationCategory(eventCode);
   const title=String(payload.title||eventCode||"Update").split(/[._-]+/).filter(Boolean).map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(" ");
   const body=String(payload.message||payload.summary||payload.nextAction||payload.next_action||(payload.status?("Status updated: "+String(payload.status).replace(/[_-]+/g," ").toLowerCase()):"There is an update to review in your MPA Network account.")).slice(0,1000);
@@ -52,13 +54,14 @@ async function notify(db,userId,eventCode,resourceType,resourceId,payload={}){
   const actionRequired=payload.actionRequired===true||payload.action_required===true;
   const actionUrl=notificationActionUrl(payload,resourceType,resourceId);
   const dedupeKey=String(payload.dedupeKey||payload.dedupe_key||"").slice(0,240)||null;
-  const inserted=await db.query(`insert into notification_event(user_id,event_code,resource_type,resource_id,payload,category,title,body,priority,action_required,action_url,dedupe_key)
-    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-    on conflict (user_id,dedupe_key) where dedupe_key is not null do nothing returning id`,
-    [userId,eventCode,resourceType||null,resourceId||null,payload,category,title,body,priority,actionRequired,actionUrl,dedupeKey]);
-  if(dedupeKey&&!inserted.rows[0])return;
-  const r=await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled from app_user u left join notification_preference np on np.user_id=u.id where u.id=$1",[userId]);
-  if(r.rows[0]?.email&&r.rows[0].email_enabled) await db.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,$2,$3)",[r.rows[0].email,eventCode,payload]);
+  if(user.in_app_enabled&&user.in_app_categories?.[category]!==false){
+    const inserted=await db.query(`insert into notification_event(user_id,event_code,resource_type,resource_id,payload,category,title,body,priority,action_required,action_url,dedupe_key)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      on conflict (user_id,dedupe_key) where dedupe_key is not null do nothing returning id`,
+      [userId,eventCode,resourceType||null,resourceId||null,payload,category,title,body,priority,actionRequired,actionUrl,dedupeKey]);
+    if(dedupeKey&&!inserted.rows[0])return;
+  }
+  if(user.email&&user.email_enabled)await db.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,$2,$3)",[user.email,eventCode,payload]);
 }
 async function roles(db,userId){
   const r=await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);
