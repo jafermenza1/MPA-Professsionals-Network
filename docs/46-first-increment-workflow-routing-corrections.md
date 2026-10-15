@@ -68,3 +68,30 @@ The installability foundation is layered onto the existing Next.js App Router ap
 3. The worker's cached root is public shell content only. Users must reconnect before attempting protected workflows; cached UI is never authorization.
 4. Browser installability depends on HTTPS, browser support, deployment headers and platform-specific requirements. SVG icon support differs by browser/platform; dedicated PNG and Apple touch icons remain a compatibility follow-up if required by device testing.
 5. **No tests, build, migration, service-worker browser test or offline/installability check was run.** Increment 2 is committed code, not accepted evidence. Validate the exact branch head before marking this increment complete.
+
+
+## Increment 3 — Offline organization-registration drafts (implemented, not accepted)
+
+**Status: implementation committed; tests/build/browser validation not run.**
+
+This increment deliberately chooses one workflow: the organization-registration draft on `web/app/register/page.tsx`. It implements local draft persistence and conflict-safe recovery, not automatic account-creation replay or broad background synchronization.
+
+- Organization form fields autosave to the existing same-device local storage key after a short debounce. The draft has schema version 2 and a 24-hour expiry; expired or malformed drafts are discarded.
+- The previous draft format is migrated into the allowlisted v2 shape when it is still within its expiry window.
+- Draft restoration includes representative name/email and organization details, but always clears password and password-confirmation fields. The draft allowlist does not include passwords, challenge answers, challenge tokens, session tokens, or uploaded evidence.
+- The UI exposes save/retry, clear, last-saved status, and storage-error feedback. If another tab writes a newer draft, the current tab pauses autosave and requires the user to choose the newer saved version or keep the current edits. No silent merge occurs.
+- Saving or restoring a draft never calls the registration API. Creating the representative account still requires an explicit online submit and a fresh server-issued human-check token. No service-worker queue, Background Sync, or automatic replay was added.
+- Added static contract tests in `test/platform/pwa-registration-draft.test.js` for the allowlist, TTL/schema, restore secret-clearing, explicit conflict choices, and separation of local persistence from account creation. These tests were not executed.
+
+### Safety and sync boundary
+
+The browser draft is local-only and can contain representative/organization contact details. It is not encrypted application storage; use a trusted device, clear it when finished/shared-device use is expected, and do not put secrets or private verification evidence into it. Clearing the draft removes this app's local key only. No server synchronization is claimed: account creation and subsequent organization submission remain separate online operations, governed by existing server authorization and review queues. A timeout during account creation must not trigger blind replay; users should use existing login/email-verification recovery paths before attempting registration again.
+
+### Required acceptance evidence
+
+1. Test draft save/restore across reload and offline/online changes, including old-schema migration, expiry, malformed local data, blocked storage and quota errors.
+2. Test two tabs editing the same draft: conflict appears, autosave pauses, and each explicit choice preserves the intended version without silent merging.
+3. Assert password/password-confirmation/challenge fields are absent from local storage before and after restoration.
+4. Verify offline submit does not create an account; reconnecting never auto-submits; explicit submission requires a fresh challenge.
+5. Simulate registration request timeout after server commit and confirm UI does not auto-replay or claim account creation failed with certainty; verify the documented login/verification recovery path.
+6. Run the new Node contract tests, production build and browser journeys on the exact head, then record SHA and results. Until then, this increment remains unaccepted.
