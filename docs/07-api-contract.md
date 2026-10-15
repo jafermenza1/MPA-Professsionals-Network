@@ -270,3 +270,13 @@ Notification links must be safe internal relative paths, and destination APIs/pa
 ## Workflow notification routing — Increment 2
 
 The action-center event/recipient mapping and acceptance boundary are defined in [docs/45-workflow-notification-routing.md](45-workflow-notification-routing.md). Notifications must be created through the shared `createInAppNotification` policy or `queueWorkflowEmail` from within the same transaction as the persisted workflow transition. The producer chooses recipients from authoritative workflow relationships and current role/organization membership. Reviewer notifications link to the existing authorized queue; notification read/archive never changes workflow state. Security events bypass optional in-app/category preferences and remain visible in inbox/counts. Events/learning are not wired because those modules are not deployed. The new routing contract tests are committed but **not run**; migration, role-separated API, E2E, build, and accessibility acceptance remains open.
+
+
+## Fast discovery APIs — Increment 4
+
+- GET /api/v1/talent?q=&location=&availability=&verifiedClaim=&limit=20&offset=0 returns bounded items, limit and offset; current profile visibility and verified-claim rules remain mandatory.
+- GET /api/v1/jobs?q=&location=&employmentType=&workMode=&seniority=&postingScope=&limit=20&offset=0 returns items, limit, offset, total and hasMore; scope authorization is applied before records are exposed.
+- GET /api/v1/services?q=&category=&limit=20&offset=0 returns bounded items, limit and offset.
+- GET /api/v1/mentors?q=&topic=&limit=20&offset=0 returns a bounded array; a page may contain one extra item for next-page detection. Existing moderation, visibility and active membership rules still apply.
+- GET /api/v1/public/organizations?q=&organizationType=&location=&limit=20&offset=0 returns only public_visible=true and verification_status='verified' organizations with items, limit, offset, total, and hasMore. It does not return organization membership or contact information.
+- These pagination/filter parameters improve response size and rendering but do not replace server authorization. Acceptance and current-head validation remain open. Cross-entity saved items are not part of this implementation slice; saved jobs and talent saved searches retain their existing persistence contracts.
