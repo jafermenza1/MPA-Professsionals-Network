@@ -25,6 +25,7 @@ PR: #3 — keep open and draft until validation passes.
 - Updated member ID card and admin card settings accents; corrected lemon-on-light-background eyebrow text to use the theme's readable primary color. New card-setting fallbacks and the database default use lemon without overwriting saved user-selected colors.
 - Improved support-workspace theme accents and primary-action contrast.
 - Added a shared responsive admin workspace with sidebar navigation, route-aware breadcrumbs, a current-role summary, consistent heading rhythm and focus styling. All existing admin destinations remain discoverable; the shell does not pretend client-side link hiding is authorization.
+- Added a reusable admin page-header component and adopted it in the admin overview, members, reference portfolio, marketplace, reports, email operations, and passkey workspaces. The membership-card settings page uses the same component; support keeps its information-dense hero and live queue counters.
 - Corrected an undefined mobileNav reference in the shared shell so the organization link remains discoverable through the existing mobile More list.
 - Kept the work on PR #3's existing reconciliation branch. No merge or deployment.
 
@@ -52,7 +53,7 @@ The inventory is a coverage register for subsequent rendered/browser validation;
 
 ## Remaining work — do not mark complete until verified
 
-1. **Admin consistency (partially implemented):** shared shell, responsive navigation, breadcrumbs and common heading rhythm are in place. Still review each route's title/description/action composition and map role-specific navigation only where the server's permission contract is explicit; keep all routes discoverable meanwhile so client-side assumptions do not mask existing workflows.
+1. **Admin consistency (implementation substantially progressed, code review still open):** shared shell, responsive navigation, breadcrumbs and reusable headers are in place across the primary admin routes. The admin overview retains its explicit role-conditioned shortcuts. Do not hide sidebar links until a reliable server-side effective-permission contract can drive that decision; continue reviewing each route's action placement and scoped-access messaging without changing server authorization.
 2. **Per-route functional audit:** exercise every listed route at desktop and mobile widths; verify every button, link, menu, filter, dialog, form, retry and state transition.
 3. **State integrity:** check loading, empty, error, retry and partial-failure cases, including stale data and session expiry. Do not turn failed API calls into empty-success states.
 4. **Member journey clarity:** validate account-type switching and registration fields; membership application/payment/reversal/correction; profile completion and private evidence; opportunity interest and withdrawal consent; organization inquiries; mentorship and service request/acceptance; recruitment.
