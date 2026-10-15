@@ -46,7 +46,7 @@ export async function createDemand(userId,input,requestId){
 }
 export async function listMyDemand(userId){
  const db=getPool();
- return (await db.query("select d.id,d.demand_type,d.title,d.category,d.delivery_mode,d.location_label,d.desired_timing,d.status,d.outcome_code,d.outcome_note,d.merged_into_demand_id,d.created_at,d.updated_at,o.display_name organization_name from marketplace_demand d left join organization o on o.id=d.organization_id where d.requester_user_id=$1 or (d.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=d.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by d.created_at desc",[userId,ORG_ROLES])).rows;
+ return (await db.query("select d.id,d.demand_type,d.title,d.category,d.delivery_mode,d.location_label,d.desired_timing,d.status,d.outcome_code,d.outcome_note,(d.merged_into_demand_id is not null) merged_into_existing,d.created_at,d.updated_at,o.display_name organization_name from marketplace_demand d left join organization o on o.id=d.organization_id where d.requester_user_id=$1 or (d.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=d.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by d.created_at desc",[userId,ORG_ROLES])).rows;
 }
 export async function listPublishedTopics(filters={}){
  const args=[],where=["t.status='published'","(t.closes_at is null or t.closes_at>now())"];
@@ -126,7 +126,7 @@ export async function mergeDemand(duplicateDemandId,targetDemandId,actorId,reque
   if(target.organization_id){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[target.organization_id,ORG_ROLES])).rows;for(const member of team)recipients.add(member.user_id);}
   const notificationResults=[];
   for(const recipient of recipients){
-   const event=await notify(db,recipient,"marketplace.demand_duplicate_merged","marketplace_demand",duplicate.id,{message:"The Support Desk identified this request as a duplicate and linked it to an existing request. Your original submission and history remain preserved.",nextAction:"Follow the request status shown in your private activity. Contact the Support Desk if this does not reflect your need.",mergedIntoDemandId:target.id});
+   const event=await notify(db,recipient,"marketplace.demand_duplicate_merged","marketplace_demand",duplicate.id,{message:"The Support Desk identified this request as a duplicate and linked it to an existing request. Your original submission and history remain preserved.",nextAction:"Follow the request status shown in your private activity. Contact the Support Desk if this does not reflect your need.",});
    if(event.status==="recorded")notificationResults.push(event);
   }
   return {...updated,mergedInto:{id:target.id,title:target.title},notificationStatus:"in_app_recorded",notificationCount:notificationResults.length,externalDelivery:"not_configured",nextAction:"The original request is retained in history and linked to the canonical request. In-app status was recorded; email/SMS delivery is not configured."};
