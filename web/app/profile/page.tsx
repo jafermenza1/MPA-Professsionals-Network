@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormFeedback } from "../../components/form-feedback";
 import {
   CreditCard,
   Eye,
@@ -863,16 +864,8 @@ export default function Profile() {
           </button>
         </>
       )}
-      {error && (
-        <p role="alert" className="form-error">
-          {error}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className="muted">
-          {notice}
-        </p>
-      )}
+      {error && <FormFeedback kind="error" message={error} />}
+      {notice && <FormFeedback kind="success" message={notice} />}
       <div className="footer-note">
         <Badge>Adl · Amanah · Tabayyun · Satr</Badge>
       </div>
