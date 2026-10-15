@@ -67,10 +67,10 @@ Do not disclose private applicant details, evidence, payment information, review
 
 ## Required follow-up and acceptance evidence
 
-This is foundation work, not a claim that every event in all seven categories is already wired. Continue gate-by-gate without weakening existing assertions:
+Increment 2 now wires the persisted transitions listed in [Workflow Notification Routing](45-workflow-notification-routing.md) across membership, verification, recruitment, organizations, mentorship, services and security. Events/learning remain unwired because those modules are not deployed. This is not a claim that every transition in every category is covered. Continue gate-by-gate without weakening existing assertions:
 1. Verify schema compatibility and migration fresh-install/upgrade/rerun behavior on disposable PostgreSQL; do not apply this migration to production as part of this PR.
 2. Add/execute focused API and service tests for own-user scope, cross-user read/archive denial, malformed IDs, filter validation, read/archive idempotency, unread count persistence, category preferences, safe URLs, dedupe behavior, and audit rows.
-3. Wire each real workflow transition to a correct category, recipient, priority, action-required flag and authorized next-step URL. Never manufacture a notification for a transition that did not persist.
+3. Close the remaining producer/transition inventory against [Workflow Notification Routing](45-workflow-notification-routing.md), then verify each wired event's persisted state, recipient, category, priority, action-required flag and authorized next-step URL. Never manufacture a notification for a transition that did not persist.
 4. Add role-separated tests for professional, organization representative, recruiter, mentor, reviewer and administrator; prove private/cross-organization data is not leaked.
 5. Validate the shell badge, inbox filters, mobile/responsive behavior, keyboard/screen-reader announcements, reduced motion, loading/empty/error/retry states and reload persistence in browser tests.
 6. Ensure the administrator intervention view reflects authoritative pending workflow tasks and due dates, not just unread messages. Existing admin review queues remain the source of truth until a connected aggregate is implemented and tested.
@@ -78,4 +78,4 @@ This is foundation work, not a claim that every event in all seven categories is
 
 ## Acceptance status
 
-**NOT VALIDATED.** No test suite, typecheck, web build, migration run, browser/accessibility check or cross-role privacy matrix is claimed as passed for this increment. Keep PR #3 draft and open; no merge or deployment is authorized.
+**NOT VALIDATED.** The routing contract tests have been added but not executed. No test suite, typecheck, web build, migration run, browser/accessibility check or cross-role privacy matrix is claimed as passed for this increment. Keep PR #3 draft and open; no merge or deployment is authorized.
