@@ -22,8 +22,8 @@ function audit(db,actor,action,type,id,requestId,metadata={}){
 }
 async function notify(db,userId,eventCode,resourceType,resourceId,payload={}){
   await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload) values($1,$2,$3,$4,$5)",[userId,eventCode,resourceType||null,resourceId||null,payload]);
-  const r=await db.query("select email from app_user where id=$1",[userId]);
-  if(r.rows[0]?.email) await db.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,$2,$3)",[r.rows[0].email,eventCode,payload]);
+  const r=await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled from app_user u left join notification_preference np on np.user_id=u.id where u.id=$1",[userId]);
+  if(r.rows[0]?.email&&r.rows[0].email_enabled) await db.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,$2,$3)",[r.rows[0].email,eventCode,payload]);
 }
 async function roles(db,userId){
   const r=await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);
