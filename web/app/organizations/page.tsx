@@ -952,7 +952,7 @@ export default function Organizations() {
             </div>
             {loading ? (
               <p className="muted">Loading inquiries…</p>
-            ) : inquiries.length === 0 ? (
+            ) : inquiries.length === 0 && !error ? (
               <p className="muted">
                 No public job inquiries are currently visible to this account.
               </p>
