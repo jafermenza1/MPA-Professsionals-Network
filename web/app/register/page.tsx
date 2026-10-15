@@ -17,7 +17,11 @@ function parseOrganizationDraft(raw:string|null):OrganizationDraft|null{
  if(!raw)return null;
  try{
   const value=JSON.parse(raw);
-  if(value?.version===2&&value?.form&&typeof value.savedAt==="number"&&typeof value.expiresAt==="number")return value as OrganizationDraft;
+  if(value?.version===2&&value?.form&&typeof value.savedAt==="number"&&typeof value.expiresAt==="number"){
+   const keys: (keyof OrganizationDraftForm)[]=["email","firstName","middleName","lastName","orgLegalName","orgDisplayName","orgType","orgDescription","orgWebsite","orgEmail","orgPhone","orgAddress"];
+   if(keys.every(key=>typeof value.form[key]==="string"))return {version:2,form:Object.fromEntries(keys.map(key=>[key,value.form[key]])) as OrganizationDraftForm,savedAt:value.savedAt,expiresAt:value.expiresAt};
+   return null;
+  }
   if(value&&typeof value.savedAt==="number"&&typeof value.expiresAt==="number"&&value.expiresAt>Date.now()){
    return {version:2,savedAt:value.savedAt,expiresAt:value.expiresAt,form:{email:String(value.representativeEmail||""),firstName:"",middleName:"",lastName:"",orgLegalName:String(value.legalName||""),orgDisplayName:String(value.displayName||""),orgType:String(value.organizationType||""),orgDescription:String(value.description||""),orgWebsite:String(value.website||""),orgEmail:String(value.email||""),orgPhone:String(value.phone||""),orgAddress:String(value.addressText||"")}};
   }
