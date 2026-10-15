@@ -608,13 +608,20 @@ export async function attachApplicationFile(applicationId,userId,input,requestId
 export async function notificationPreferences(userId,input=null){
   const db=getPool();
   if(input){
-    return (await db.query(`insert into notification_preference(user_id,email_enabled,sms_enabled,push_enabled,in_app_enabled,updated_at)
-      values($1,coalesce($2,true),coalesce($3,true),coalesce($4,true),coalesce($5,true),now())
-      on conflict(user_id) do update set email_enabled=coalesce($2,notification_preference.email_enabled),
-      sms_enabled=coalesce($3,notification_preference.sms_enabled),push_enabled=coalesce($4,notification_preference.push_enabled),
-      in_app_enabled=coalesce($5,notification_preference.in_app_enabled),updated_at=now() returning *`,[
-        userId,input.emailEnabled,input.smsEnabled,input.pushEnabled,input.inAppEnabled
-      ])).rows[0];
+    const allowedCategories=new Set(["membership","verification","opportunities","recruitment","organizations","mentorship","services","events_learning","security","system"]);
+    let categories=null;
+    if(input.inAppCategories!==undefined){
+      if(!input.inAppCategories||typeof input.inAppCategories!=="object"||Array.isArray(input.inAppCategories))throw httpError(400,"In-app category preferences must be an object.","VALIDATION_ERROR");
+      categories={};
+      for(const [key,value] of Object.entries(input.inAppCategories)){
+        if(!allowedCategories.has(key)||typeof value!=="boolean")throw httpError(400,"Each in-app category preference must use a supported category and a boolean value.","VALIDATION_ERROR");
+        categories[key]=value;
+      }
+    }
+    if(input.digestEnabled!==undefined&&typeof input.digestEnabled!=="boolean")throw httpError(400,"Digest preference must be a boolean.","VALIDATION_ERROR");
+    return (await db.query("insert into notification_preference(user_id,email_enabled,sms_enabled,push_enabled,in_app_enabled,in_app_categories,digest_enabled,updated_at) values($1,coalesce($2,true),coalesce($3,true),coalesce($4,true),coalesce($5,true),coalesce($6::jsonb,'{}'::jsonb),coalesce($7,false),now()) on conflict(user_id) do update set email_enabled=coalesce($2,notification_preference.email_enabled),sms_enabled=coalesce($3,notification_preference.sms_enabled),push_enabled=coalesce($4,notification_preference.push_enabled),in_app_enabled=coalesce($5,notification_preference.in_app_enabled),in_app_categories=coalesce($6::jsonb,notification_preference.in_app_categories),digest_enabled=coalesce($7,notification_preference.digest_enabled),updated_at=now() returning *",[
+      userId,input.emailEnabled,input.smsEnabled,input.pushEnabled,input.inAppEnabled,categories===null?null:JSON.stringify(categories),input.digestEnabled??null
+    ])).rows[0];
   }
   return (await db.query("select * from notification_preference where user_id=$1",[userId])).rows[0] ||
     (await db.query("insert into notification_preference(user_id) values($1) returning *",[userId])).rows[0];
