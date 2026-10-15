@@ -287,3 +287,10 @@ Implementation detail: `e2e/homepage-live-feeds.spec.js` was added with three Pl
 - Security-critical account notices bypass optional category/global notification preferences and remain visible in inbox/count projections. Reviewer links point to existing authorized queues; no parallel workflow queue was introduced.
 - Events/learning notifications remain unwired because those modules are not deployed. No external calendar/Moodle/SMS/push delivery is claimed.
 - Added `test/platform/workflow-notification-routing.test.js`, `docs/45-workflow-notification-routing.md`, and additive migration `20261015210000_notification_category_legacy_backfill.sql` for historical underscore-style event codes. **Tests, migrations, build and browser validation have not been run.** Continue acceptance against the current head and preserve PR #3 as draft/open; no merge or deployment.
+
+
+## Increment 4 — Fast discovery experience (implementation checkpoint; acceptance open)
+
+The current branch adds bounded discovery paging for professionals, opportunities, services and mentors; shared accessible pagination controls; and a new public organization directory constrained to verified, explicitly public organizations. Search criteria remain routed to existing server-side filters, and protected/private workspace routes remain separate. The install prompt is now delayed until 10 seconds after first page load and shown once per browser profile unless storage is unavailable.
+
+Implementation and acceptance details are recorded in docs/46-first-increment-workflow-routing-corrections.md and docs/31-workflow-reconciliation-matrix.md. Static contract tests were added but have not been executed. **Increment 4 is not accepted.** Current gaps include consistent account-owned saved items for professional profiles, organizations, services and mentors; SQL-efficient scope-aware job pagination; dedicated public profile routes where the existing detail panels are insufficient; and exact-head build/API/browser/accessibility validation. Keep PR #3 draft/open; do not merge or deploy.
