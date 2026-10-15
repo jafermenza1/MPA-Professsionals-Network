@@ -121,6 +121,11 @@ export async function importReferenceCsv(identity,key,filename,csv,mapping={},fo
  if(errors.length) return {status:"rejected",imported:0,errors};
  return withTransaction(async db=>{
   const {dataset,version}=await datasetContext(db,key,{edit:true,actorId:identity.sub});
+   const hierarchyRows=(await db.query("select child.code,parent.code parent_code from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1",[version.id])).rows;
+   const allCodes=new Set([...hierarchyRows.map(item=>item.code),...rows.map(item=>clean(item.code,80).toUpperCase())]);
+   const parentByCode=new Map(hierarchyRows.filter(item=>item.parent_code).map(item=>[item.code,item.parent_code]));
+   for(const row of rows){const code=clean(row.code,80).toUpperCase();if(row.parent_code!==undefined){const parent=clean(row.parent_code,80).toUpperCase();if(parent){if(parent===code||!allCodes.has(parent))throw fail(400,"Parent code "+parent+" is invalid for "+code+".","REFERENCE_PARENT_INVALID");parentByCode.set(code,parent);}else parentByCode.delete(code);}}
+   for(const [code,parent] of parentByCode){const visited=new Set([code]);let cursor=parent;while(cursor&&parentByCode.has(cursor)){if(visited.has(cursor))throw fail(400,"Parent relationships contain a cycle involving "+code+".","REFERENCE_HIERARCHY_CYCLE");visited.add(cursor);cursor=parentByCode.get(cursor);}}
    await db.query("update reference_dataset_version set status='draft',approved_by=null where id=$1 and status<>'draft'",[version.id]);
    let inserted=0,updated=0;
   for(const row of rows){
