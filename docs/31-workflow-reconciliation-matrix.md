@@ -288,3 +288,10 @@ Shared routing tests exist at `test/platform/workflow-notification-routing.test.
 The installable-shell and safe-cache changes are recorded in [docs/46-first-increment-workflow-routing-corrections.md](46-first-increment-workflow-routing-corrections.md). The existing Next.js shell links the web manifest, exposes install help and online/offline status, and uses a versioned service worker with a narrow public-static cache policy. API/private workflow paths and non-GET requests are excluded; no offline mutation replay is implemented.
 
 **Evidence status: code committed; validation not run.** Required proof: production build; manifest/icon checks in Chromium and supported mobile browsers; service-worker install/activate/update behavior; offline navigation for public versus protected paths; explicit assertion that API/auth/account/workflow responses are not cached; responsive install-help and online/offline state checks. Do not mark accepted until those checks run on the exact head.
+
+
+## Offline draft and synchronization — increment 3 (implemented, not accepted)
+
+The first workflow is the organization-registration draft in `web/app/register/page.tsx`. It persists only allowlisted representative/organization fields locally, expires after 24 hours, restores without secrets, supports explicit save retry and clear, and pauses autosave when another tab has a conflicting newer draft. Account creation is not queued or replayed: it requires an explicit online submit and a fresh human-check token. This increment does **not** claim server synchronization.
+
+Static safety contract tests were added at `test/platform/pwa-registration-draft.test.js`; they have not been run. Required evidence includes reload/offline recovery, expiry/malformed/storage failure, two-tab conflict choices, absence of secrets in storage, offline-submit denial, fresh challenge enforcement and timeout-after-commit behavior. Acceptance remains open pending tests/build/browser validation on the exact head.
