@@ -125,3 +125,31 @@ The code changes above have **not** been validated by a test run in this environ
 6. Full suite: `npm test`, configured web build, browser workflows, and controlled email delivery using test credentials. Record exact SHA and results; a missing CI run is not a pass.
 
 No tests, build, database migration, browser run, or live email delivery are claimed as passed by these commits. Keep PR #3 open and draft until the above evidence is recorded and remaining failures are fixed without relaxing assertions.
+
+
+## Registration, challenge, shared rate-limit, and security-test follow-up — 15 October 2026
+
+Additional implementation commits on this branch:
+
+- `e0bb54c42e620413fb5a47b66f3bf0ce891cdc69`: removes the process-local limiter from human-challenge issue, registration, and login entry points where the shared PostgreSQL limiter already applies.
+- `0fd7ce018eea7c7beb98fe91f29f6e3fdee63da8`: adds persistent database limits to the remaining public inquiry, sharing-audience, access/consent, and one-time-session redemption routes. Existing local throttles were retained as defense in depth; they are not the cross-instance control.
+- `ad23759926a9333a53fcd350be6c00ecd4a0243b`: changes the rate-limit identity bucket to be independent of source IP, so changing IP addresses cannot reset per-account/per-email limits. Keeps identifiers hashed in storage. Also ensures subtraction challenges do not require negative answers, improving compatibility with numeric-only mobile keyboards.
+- `630fb252cf60ca398dfd691089126af0d8734c26` and `ad3732d26957481a0e9f12addffc0855f9042787`: add test cases for expired challenges, missing-token registration rejection before account creation, unauthorized passkey enrollment, revoked passkey rejection, persisted human-readable registration references, email verification/replay, cross-IP persistent identity limits, and numeric-keyboard-compatible challenges. The email-verification assertion now matches the API's `EMAIL_VERIFICATION_REQUIRED` contract.
+- `38ecf32435ef880fa52b62a62986a584db6b624d`: adds persistent limits to public inquiry history/details/update/link endpoints, including per-inquiry identity buckets.
+
+### Important remaining UI integration gap
+
+The registration page already displays the registration reference in the email-verification-required branch. Inspection found that the immediate-success branch does not retain/render `registrationReference`, even though the API returns it. An attempted edit to `web/app/register/page.tsx` was blocked by the repository editing tool's safety checks and was not committed. **Do not mark the human-readable reference requirement fully closed until the success page displays the returned reference and a UI test verifies it.** The API persistence test is not a substitute for user-visible display.
+
+### Test and integration status
+
+These are committed test additions, not test results. I could not clone the repository in the execution environment because GitHub DNS/network access was unavailable. No Node test suite, browser tests, web build, database migration, multi-process load test, or live email delivery test was executed here. No green CI run was found for the inspected commit. Do not infer passing status from committed tests.
+
+Remaining acceptance work:
+1. Correct the registration success UI to display the returned registration reference when email verification is disabled, then add a UI regression test.
+2. Run `node --test test/platform/security-auth.test.js test/platform/security-route-contract.test.js` (if the route-contract file is present) and the complete `npm test` suite against a disposable PostgreSQL database with migrations applied.
+3. Run actual HTTP integration tests for unauthenticated enrollment, cross-account enrollment, revoked passkey authentication, recovery-session route bypass attempts, challenge replay/expiry, and production registration with missing/invalid/replayed challenge tokens. Source/service tests alone do not establish route-level acceptance.
+4. Validate rate limits across two separately running API instances sharing the same database, including identity-bucket enforcement when requests use different source IPs. Confirm reverse-proxy configuration overwrites forwarded headers before enabling `TRUST_PROXY=true`.
+5. Exercise configured email delivery, provider failure, resend invalidation, expiry/replay, and verification-required login/session enforcement using a controlled test sender.
+
+Keep PR #3 open and draft until those remaining checks are completed and their results are recorded against the exact branch-head SHA.
