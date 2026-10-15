@@ -134,6 +134,14 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
   }, "p0-consent-test-organization");
   await db.query("update organization set verification_status='verified',public_visible=true,verified_at=now() where id=$1", [organization.id]);
 
+  await assert.rejects(
+    publicOpportunity.updateSharingConsent(inquiry.public_reference, inquiry.continuationToken, {
+      employerSharingConsent: true, scope: "named_employer", fields: ["targetRole", "skills"]
+    }, "p0-sharing-consent-without-audience"),
+    error => error.code === "SHARING_AUDIENCE_REQUIRED",
+    "named-employer consent cannot be saved without identifying its audience"
+  );
+
   const granted = await publicOpportunity.updateSharingConsent(inquiry.public_reference, inquiry.continuationToken, {
     employerSharingConsent: true,
     scope: "named_employer",
@@ -179,6 +187,55 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
   assert.equal(history.length, 1);
   assert.equal(history[0].organizationName, "P0 Consent Test Organization");
   assert.equal(history[0].status, "revoked");
+});
+
+test("P0: membership activation requires approval and confirmed payment; reversal suspends access", async () => {
+  const applicant = await register(randomUUID());
+  const reviewer = await register(randomUUID());
+  const application = await membership.createApplication(applicant.user.id, { productCode: "BASIC" }, "p0-membership-ordering-create");
+  assert.equal(application.status, "submitted");
+  await assert.rejects(
+    membership.activateApplication(application.id, reviewer.user.id, "p0-membership-activate-unapproved"),
+    error => error.code === "ACTIVATION_NOT_READY",
+    "an unapproved and unpaid application cannot activate membership"
+  );
+
+  await membership.reviewApplication(application.id, reviewer.user.id, {
+    decision: "approved", note: "P0 payment-ordering invariant"
+  }, "p0-membership-ordering-approve");
+  const pending = await membership.createManualPayment(application.id, applicant.user.id, {
+    amount: Number(application.fee_snapshot.amount),
+    idempotencyKey: "p0-membership-payment-" + randomUUID(),
+    channel: "bank_transfer",
+    reference: "P0-MANUAL-" + randomUUID()
+  }, "p0-membership-ordering-payment");
+  await assert.rejects(
+    membership.activateApplication(application.id, reviewer.user.id, "p0-membership-activate-unverified-payment"),
+    error => error.code === "ACTIVATION_NOT_READY",
+    "an approved application with an unverified payment cannot activate membership"
+  );
+
+  await membership.verifyPayment(pending.id, reviewer.user.id, {
+    decision: "approved", evidenceChecked: ["reference"], note: "Verified P0 test payment"
+  }, "p0-membership-ordering-verify");
+  const activated = await membership.activateApplication(application.id, reviewer.user.id, "p0-membership-ordering-activate");
+  assert.equal(activated.status, "active");
+
+  const reversal = await membership.reverseMembershipPayment(pending.id, reviewer.user.id, {
+    type: "refund", reason: "P0 verified reversal test reason", evidenceReference: "P0-REVERSAL"
+  }, "p0-membership-ordering-reverse");
+  assert.equal(reversal.reversal_type, "refund");
+  const membershipRow = (await getPool().query("select status from membership_record where application_id=$1 order by created_at desc limit 1", [application.id])).rows[0];
+  assert.equal(membershipRow.status, "suspended", "refund/reversal must remove active membership privileges");
+  await assert.rejects(
+    membership.verifyPayment(pending.id, reviewer.user.id, { decision: "approved" }, "p0-membership-reverify-reversed"),
+    error => error.code === "PAYMENT_NOT_PENDING",
+    "a reversed payment cannot be verified again"
+  );
+  const repeatedReversal = await membership.reverseMembershipPayment(pending.id, reviewer.user.id, {
+    type: "refund", reason: "P0 verified reversal test reason", evidenceReference: "P0-REVERSAL"
+  }, "p0-membership-ordering-reverse-retry");
+  assert.equal(repeatedReversal.id, reversal.id, "repeated reversal requests must return the existing reversal record");
 });
 
 test.after("close P0 test database pool", async () => { await closePool(); });
