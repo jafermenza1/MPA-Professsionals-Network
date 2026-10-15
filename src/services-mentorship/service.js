@@ -468,6 +468,9 @@ export async function changeMentorStatus(profileId,userId,status,requestId){
       if(!(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to submit a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
       const submitted=(await db.query("update mentor_profile set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,updated_at=now() where id=$1 returning *",[profileId])).rows[0];
       await audit(db,userId,"mentorship.offer_submitted_for_review","mentor_profile",profileId,requestId,{from:p.status,to:"draft"});
+      await notify(db,userId,"mentorship.offer_submitted_for_review","mentor_profile",profileId,{message:"Your mentor offer was submitted for moderation.",nextAction:"Monitor the offer for a moderation decision or requested changes.",actionUrl:"/mentorship"});
+      const moderators=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('supporting_staff','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='marketplace.moderate')")).rows;
+      for(const moderator of moderators)await notify(db,moderator.user_id,"mentorship.offer_review_required","mentor_profile",profileId,{message:"A mentor offer is awaiting moderation.",nextAction:"Review the offer in the existing marketplace moderation queue and record the decision with a reason.",actionUrl:"/admin/marketplace",reviewerQueue:true,actionRequired:true,priority:"high"});
       return submitted;
     }
     if(status==="active" && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a mentor profile.","MEMBERSHIP_REQUIRED");
@@ -536,7 +539,7 @@ export async function createMentorshipRequest(menteeId,input,requestId){
     const row=(await db.query("insert into mentorship_request(mentee_user_id,preferred_mentor_user_id,goals,topics,preferred_modes,preferred_languages,preferred_days,status) values($1,$2,$3,$4,$5,$6,$7,'requested') returning *",[menteeId,preferredMentor,goals,topics,modes,languages,days])).rows[0];
     await audit(db,menteeId,"mentorship.request_created","mentorship_request",row.id,requestId);
     const supportUsers=(await db.query("select ur.user_id from app_user_role ur join app_role ar on ar.id=ur.role_id where ar.role_code=any($1::text[])",[["supporting_staff","system_admin"]])).rows;
-    for(const member of supportUsers)await notify(db,member.user_id,"mentorship.request_received","mentorship_request",row.id,{message:"A new mentorship goal is waiting for matching review.",nextAction:"Review eligible mentors and propose a match; the relationship starts only after acceptance."});
+    for(const member of supportUsers)await notify(db,member.user_id,"mentorship.request_received","mentorship_request",row.id,{message:"A new mentorship goal is waiting for matching review.",nextAction:"Review eligible mentors and propose a match; the relationship starts only after acceptance.",actionUrl:"/mentorship",reviewerQueue:true,actionRequired:true,priority:"high"});
     return {...row,nextAction:"Your goal is recorded. A mentor must be proposed and accept before a relationship is active."};
   });
 }
@@ -619,7 +622,8 @@ export async function respondToMatch(matchId,mentorUserId,status,requestIdHeader
       await db.query("update mentorship_request set status='matching',matched_mentor_user_id=null,matched_at=null,updated_at=now() where id=$1",[match.request_id]);
     }
     await audit(db,mentorUserId,"mentorship.match_responded","mentorship_match",matchId,requestIdHeader,{status});
-    await notify(db,match.mentee_user_id,status==="accepted"?"mentorship.match_accepted":"mentorship.match_declined","mentorship_match",matchId,{message:status==="accepted"?"The mentor accepted your proposal. A mentorship relationship is now active.":"The mentor declined this proposal. You can ask the Support Desk to find another mentor.",nextAction:status==="accepted"?"Open the active relationship, agree goals and schedule the first session.":"Review other matches or request another mentor match."});
+    await notify(db,match.mentee_user_id,status==="accepted"?"mentorship.match_accepted":"mentorship.match_declined","mentorship_match",matchId,{message:status==="accepted"?"The mentor accepted your proposal. A mentorship relationship is now active.":"The mentor declined this proposal. You can ask the Support Desk to find another mentor.",nextAction:status==="accepted"?"Open the active relationship, agree goals and schedule the first session.":"Review other matches or request another mentor match.",actionRequired:status==="declined",priority:status==="declined"?"high":"normal"});
+    if(status==="declined"){const supportUsers=(await db.query("select ur.user_id from app_user_role ur join app_role ar on ar.id=ur.role_id where ar.role_code=any($1::text[])",[["supporting_staff","system_admin"]])).rows;for(const member of supportUsers)await notify(db,member.user_id,"mentorship.match_declined","mentorship_request",match.request_id,{message:"A proposed mentor declined a match and the request returned to matching.",nextAction:"Review the request and propose another currently eligible mentor.",actionUrl:"/mentorship",reviewerQueue:true,actionRequired:true,priority:"high"});}
     return {...updated,nextAction:status==="accepted"?"The relationship is active. Agree goals and schedule the first session.":"The request is back in matching. Choose another eligible mentor."};
   });
 }
@@ -655,6 +659,8 @@ export async function createMentorshipSession(mentorshipId,userId,input,requestI
     await assertSessionFitsAvailability(db,m.mentor_user_id,input.scheduledStartAt,input.scheduledEndAt);
     const row=(await db.query("insert into mentorship_session(mentorship_id,scheduled_start_at,scheduled_end_at,mode,location_label,meeting_reference,agenda,created_by) values($1,$2,$3,$4,$5,$6,$7,$8) returning *",[mentorshipId,input.scheduledStartAt,input.scheduledEndAt,input.mode||"remote",input.locationLabel||null,input.meetingReference||null,input.agenda||null,userId])).rows[0];
     await audit(db,userId,"mentorship.session_created","mentorship_session",row.id,requestId);
+    const other=m.mentor_user_id===userId?m.mentee_user_id:m.mentor_user_id;
+    await notify(db,other,"mentorship.session_scheduled","mentorship_session",row.id,{message:"A mentorship session has been scheduled.",nextAction:"Review the date, time, mode and agenda, then coordinate any change with the other participant.",actionUrl:"/mentorship",actionRequired:true,priority:"high",scheduledStartAt:row.scheduled_start_at,scheduledEndAt:row.scheduled_end_at});
     return row;
   });
 }
