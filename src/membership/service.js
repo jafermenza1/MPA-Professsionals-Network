@@ -23,11 +23,28 @@ async function tokenFor(db,user,roles,requestMeta={}){
 function audit(db,actor,action,type,id,requestId,metadata={}){
   return db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor||null,action,type,id||null,requestId||null,metadata]);
 }
+function membershipNotificationCopy(eventCode,payload={}){
+ const code=String(eventCode||"").toLowerCase();
+ const defaults=code==="account_registered"?{message:"Your MPA Network account has been created.",nextAction:"Complete your professional profile and review membership options.",actionUrl:"/profile"}:
+  code.includes("application_submitted")?{message:"Your membership application has been submitted.",nextAction:"Track the application and respond if a reviewer requests corrections.",actionUrl:"/membership"}:
+  code.includes("application_approved")?{message:"Your membership application was approved and is ready for payment.",nextAction:"Review the approved fee and submit payment evidence through the membership workspace.",actionUrl:"/membership",actionRequired:true,priority:"high"}:
+  code.includes("application_rejected")?{message:"Your membership application was not approved.",nextAction:"Review the decision note and contact membership support if you need clarification.",actionUrl:"/membership"}:
+  code.includes("correction")?{message:"Your membership application has a correction update.",nextAction:"Review the correction request, update the requested information, and resubmit.",actionUrl:"/membership",actionRequired:true,priority:"high"}:
+  code.includes("payment_submitted")?{message:"Your membership payment evidence was submitted for verification.",nextAction:"Wait for the finance review; membership is not active until payment is verified and activation is completed.",actionUrl:"/membership"}:
+  code.includes("payment_succeeded")?{message:"Your membership payment was verified.",nextAction:"Check your membership status and await or review activation.",actionUrl:"/membership",actionRequired:true}:
+  code.includes("payment_failed")?{message:"Your membership payment was not verified.",nextAction:"Review the finance note and submit corrected payment evidence if requested.",actionUrl:"/membership",actionRequired:true,priority:"high"}:
+  code.includes("payment_needs_correction")?{message:"Finance needs additional information about your membership payment.",nextAction:"Review the finance note and provide corrected evidence.",actionUrl:"/membership",actionRequired:true,priority:"high"}:
+  code.includes("payment_reversed")?{message:"A membership payment reversal was recorded and membership access may be affected.",nextAction:"Review the reversal reason and contact membership support to resolve the account status.",actionUrl:"/membership",actionRequired:true,priority:"urgent"}:
+  code.includes("activated")?{message:"Your MPA membership is active.",nextAction:"Open your membership card and continue your professional journey.",actionUrl:"/membership/card"}:
+  {message:"There is an update to your MPA membership record.",nextAction:"Review your membership application, payment or membership history for the next required step.",actionUrl:"/membership"};
+ return {...defaults,...payload};
+}
 async function notify(db,userId,eventCode,resourceType,resourceId,payload={}){
   const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled from app_user u left join notification_preference np on np.user_id=u.id where u.id=$1",[userId])).rows[0];
   if(!user)return;
-  await createInAppNotification(db,userId,eventCode,resourceType,resourceId,payload);
-  if(user.email&&user.email_enabled)await db.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,$2,$3)",[user.email,eventCode,payload]);
+  const details=membershipNotificationCopy(eventCode,payload);
+  await createInAppNotification(db,userId,eventCode,resourceType,resourceId,details);
+  if(user.email&&user.email_enabled)await db.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,$2,$3)",[user.email,eventCode,details]);
 }
 async function roles(db,userId){
   const r=await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);
@@ -340,6 +357,8 @@ export async function createApplication(userId,input,requestId){
       values($1,$2,$3,$4,$5,'submitted',now(),$6,$7) returning *`,[userId,trackingReference,type,active.rows[0]?.id||null,prod.id,snapshot,fee])).rows[0];
     await audit(db,userId,"membership.application_submitted","membership_application",row.id,requestId,{applicationType:type,productCode:prod.product_code});
     await notify(db,userId,"membership_application_submitted","membership_application",row.id,{productCode:prod.product_code});
+    const reviewers=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='members.manage')")).rows;
+    for(const reviewer of reviewers)await notify(db,reviewer.user_id,"membership_review_queue_item","membership_application",row.id,{category:"membership",message:"A membership application is ready for review.",nextAction:"Open the existing membership review queue, review required evidence, and record a reasoned decision.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high"});
     return row;
   });
 }
@@ -371,7 +390,9 @@ export async function respondCorrection(applicationId,userId,input,requestId){
     await db.query("update membership_correction set status='responded',responded_by=$1,applicant_response=$2,responded_at=now() where id=$3",[userId,input.response||{},open.id]);
     const updated=(await db.query("update membership_application set status='submitted',data_snapshot=data_snapshot || $1::jsonb,updated_at=now() where id=$2 returning *",[JSON.stringify(input.response||{}),applicationId])).rows[0];
     await audit(db,userId,"membership.correction_responded","membership_application",applicationId,requestId,{correctionId:open.id});
-    await notify(db,userId,"membership_correction_submitted","membership_application",applicationId,{});
+    await notify(db,userId,"membership_correction_submitted","membership_application",applicationId,{message:"Your response to the membership correction request was submitted.",nextAction:"Wait for the reviewer to reassess the updated application.",actionUrl:"/membership"});
+    const reviewers=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='members.manage')")).rows;
+    for(const reviewer of reviewers)await notify(db,reviewer.user_id,"membership_correction_received","membership_application",applicationId,{category:"membership",message:"A member responded to a requested correction.",nextAction:"Reopen the membership review queue and review the member's response.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high"});
     return updated;
   });
 }
@@ -410,6 +431,8 @@ export async function createManualPayment(applicationId,userId,input,requestId){
     }
     await audit(db,userId,"membership.payment_submitted","payment_transaction",p.id,requestId,{applicationId,channel:input.channel||"manual"});
     await notify(db,userId,"membership_payment_submitted","membership_application",applicationId,{paymentId:p.id});
+    const financeUsers=(await db.query("select distinct ur.user_id from app_user_role ur join app_role r on r.id=ur.role_id where r.role_code in ('finance_officer','system_admin') union select distinct up.user_id from app_user_permission up where up.permission_code='finance.manage'")).rows;
+    for(const finance of financeUsers)await notify(db,finance.user_id,"membership_payment_review_required","payment_transaction",p.id,{category:"membership",message:"A membership payment is awaiting finance verification.",nextAction:"Review the payment evidence and reconcile the payment against the approved application fee.",actionUrl:"/membership",reviewerQueue:true,actionRequired:true,priority:"high"});
     return p;
   });
 }
