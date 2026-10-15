@@ -22,3 +22,6 @@ alter table public_opportunity_inquiry
 
 create index if not exists public_opportunity_inquiry_sharing_audience_idx
   on public_opportunity_inquiry(employer_sharing_organization_id,employer_sharing_consent,employer_sharing_revoked_at);
+
+-- Persist the relationship-level outcome separately from individual session notes.
+alter table mentorship add column if not exists outcome_summary text;
