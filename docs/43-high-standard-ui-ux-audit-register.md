@@ -59,6 +59,8 @@ The route-by-route source review has started; this is not browser validation and
 - Marketplace demand distinguishes a confirmed empty topic list from a failed topic request. When no previously loaded topics exist and the request fails, it now presents an unavailable/retry state rather than claiming there are no open topics.
 - Membership plan loading now safely normalizes the API response to an array and does not display “No active membership plans” when the request failed. Existing application and payment workflows were left intact.
 - Verification cases no longer display “No verification cases found” while a case-loading request is still running or has failed.
+- Marketplace moderation now shows an unavailable/retry state rather than claiming the demand queue or provider-review queue is empty after a failed request; the aggregate assessment also distinguishes a failed initial load from a confirmed empty result.
+- Email operations no longer displays “No messages in this folder” after a failed folder request, and passkey management no longer claims there are no registered passkeys when the last request failed.
 
 These are source-level fixes only. They have not been built, typechecked, tested, or browser-verified. The full route matrix, remaining state/authorization checks, responsive behavior, accessibility and localization are still open.
 
