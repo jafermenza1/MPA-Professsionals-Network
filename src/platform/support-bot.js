@@ -105,3 +105,12 @@ export async function adminUpdateConversation(actorId,id,input,requestId){
  await logAudit(db,actorId,"support.inquiry_status_changed",id,requestId);
  return {id:r.rows[0].id,publicReference:r.rows[0].public_reference,status:r.rows[0].status};
 }
+
+export async function adminReplyToConversation(actorId,id,input,requestId){
+ const message=clean(input.message,5000);if(message.length<2)throw httpError("Reply must contain at least two characters.");
+ const db=getPool();const found=await db.query("select id from support_conversation where id=$1",[id]);if(!found.rows[0])throw httpError("Inquiry not found.",404,"NOT_FOUND");
+ await db.query("insert into support_message(conversation_id,sender_type,message_text) values($1,'staff',$2)",[id,message]);
+ await db.query("update support_conversation set status=case when status='open' then 'in_progress' else status end,assigned_to=coalesce(assigned_to,$2),updated_at=now() where id=$1",[id,actorId]);
+ await logAudit(db,actorId,"support.inquiry_replied",id,requestId);
+ return {id,message,status:"in_progress"};
+}
