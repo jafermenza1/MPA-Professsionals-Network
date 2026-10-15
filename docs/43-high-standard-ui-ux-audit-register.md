@@ -62,6 +62,7 @@ The route-by-route source review has started; this is not browser validation and
 - Marketplace moderation now shows an unavailable/retry state rather than claiming the demand queue or provider-review queue is empty after a failed request; the aggregate assessment also distinguishes a failed initial load from a confirmed empty result.
 - Email operations no longer displays “No messages in this folder” after a failed folder request, and passkey management no longer claims there are no registered passkeys when the last request failed.
 - Admin overview list helpers now treat malformed list payloads as section failures instead of silently converting them to empty arrays; the user table suppresses its “No accounts match” row when the users query failed.
+- Service provider listings and request history, organization job inquiries, and organization mentorship programs no longer claim to be empty when the shared workspace has a load error.
 
 These are source-level fixes only. They have not been built, typechecked, tested, or browser-verified. The full route matrix, remaining state/authorization checks, responsive behavior, accessibility and localization are still open.
 
