@@ -59,7 +59,7 @@ export async function listPublicOrganizations(filters={}) {
 
 export async function getPublicOrganizationProfile(orgId){
  const db=getPool();
- const row=(await db.query("select o.id,o.display_name,o.organization_type,o.description,o.website,o.email,o.phone,o.address_text,ri.label location_label,o.created_at from organization o left join reference_item ri on ri.id=o.geography_reference_item_id where o.id=$1 and o.public_visible=true and o.verification_status='verified'",[orgId])).rows[0];
+ const row=(await db.query("select o.id,o.display_name,o.organization_type,o.description,o.website,o.address_text,ri.label location_label,o.created_at from organization o left join reference_item ri on ri.id=o.geography_reference_item_id where o.id=$1 and o.public_visible=true and o.verification_status='verified'",[orgId])).rows[0];
  if(!row)throw error(404,"Public organization profile not found.","NOT_FOUND");
  return row;
 }
