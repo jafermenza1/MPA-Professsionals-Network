@@ -5,6 +5,7 @@ import {AlertCircle,Archive,CheckCircle2,ChevronRight,Inbox,Mail,MailCheck,MailP
 import {Card,Badge} from "../../../components/ui";
 import {api} from "../../../lib/api";
 import {useUiStore} from "../../../lib/store";
+import { AdminPageHeader } from "../admin-page-header";
 
 type Folder="inbox"|"sent"|"drafts"|"outbox"|"failed"|"verification-failed"|"templates"|"settings";
 type Message={id:string;recipient?:string;sender?:string;subject:string;text_body?:string;html_body?:string;status?:string;attempts?:number;last_error?:string|null;delivery_error_code?:string|null;created_at?:string;updated_at?:string;sent_at?:string|null;received_at?:string;read_at?:string|null;template_code?:string;next_attempt_at?:string|null};
@@ -49,7 +50,7 @@ export default function AdminEmailCenter(){
  async function inboxAction(id:string,action:"read"|"unread"|"archive"){await act("Inbox updated",()=>api("/api/v1/admin/email/inbox/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({action})},token));}
  if(!hydrated||!token)return <div className="auth-page"><Card><h1 className="h1">Administrator access required</h1><p className="muted">Sign in with an authorized system administrator account to manage email.</p></Card></div>;
  return <div className="grid" style={{gap:18}}>
-  <div className="row" style={{alignItems:"flex-start",gap:16,flexWrap:"wrap"}}><div style={{flex:1,minWidth:260}}><div className="eyebrow">Platform administration / communications</div><h1 className="h1">Email operations center</h1><p className="muted">Manage platform notification delivery, editable templates, drafts, inbound messages and failures. This is the platform email operations console, not a personal Gmail/Outlook mailbox.</p></div><button className="btn btn-ghost" onClick={()=>void load()} disabled={loading}><RefreshCw size={16}/>{loading?"Refreshing…":"Refresh"}</button></div>
+  <AdminPageHeader eyebrow="Platform administration / communications" title="Email operations center" description="Manage platform notification delivery, editable templates, drafts, inbound messages and failures. This is the platform email operations console, not a personal Gmail/Outlook mailbox." actions={<button className="btn btn-ghost" onClick={()=>void load()} disabled={loading}><RefreshCw size={16}/>{loading?"Refreshing…":"Refresh"}</button>}/>
   {error&&<div className="form-error" role="alert"><AlertCircle size={17}/>{error}</div>}{notice&&<div className="field-banner" role="status"><CheckCircle2 size={17}/>{notice}</div>}
   <div className="grid grid-3">{[{label:"Provider",value:operations?.connection.provider||"Checking…"},{label:"Queued / pending",value:operations?.counts.pending??0},{label:"Failed",value:operations?.counts.failed??0},{label:"Sent",value:operations?.counts.sent??0},{label:"Drafts",value:operations?.drafts??0},{label:"Unread inbox",value:operations?.unread??0}].map(x=><Card key={x.label}><div className="eyebrow">{x.label}</div><div className="metric">{x.value}</div></Card>)}</div>
   <div className="grid" style={{gridTemplateColumns:"minmax(210px,260px) minmax(0,1fr)",gap:18,alignItems:"start"}}>
