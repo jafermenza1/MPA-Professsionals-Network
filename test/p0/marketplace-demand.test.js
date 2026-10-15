@@ -91,7 +91,8 @@ test("P1 marketplace: Support Desk merges duplicate demand into a canonical requ
  const events=(await db.query("select action from marketplace_demand_event where demand_id=$1 order by created_at",[duplicate.id])).rows;
  assert.ok(events.some(event=>event.action==="demand.duplicate_merged"));
  assert.ok((await db.query("select 1 from marketplace_demand_event where demand_id=$1 and action='demand.duplicate_received'",[target.id])).rowCount===1);
- assert.ok((await db.query("select 1 from notification_event where resource_id=$1 and event_code='marketplace.demand_duplicate_merged'",[duplicate.id])).rowCount>=2,"each affected requester/team receives a persisted in-app event");
+ assert.ok((await db.query("select 1 from notification_event where resource_id=$1 and event_code='marketplace.demand_duplicate_received'",[target.id])).rowCount>=1,"canonical requester receives a separate status event without duplicate private details");
+ assert.ok((await db.query("select 1 from notification_event where resource_id=$1 and event_code='marketplace.demand_duplicate_merged'",[duplicate.id])).rowCount>=1,"duplicate requester receives a persisted in-app event");
  const repeated=await marketplaceDemand.mergeDemand(duplicate.id,target.id,staff,"marketplace-merge-retry");
  assert.equal(repeated.idempotent,true);
  await assert.rejects(
