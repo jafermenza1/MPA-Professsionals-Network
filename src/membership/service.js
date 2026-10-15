@@ -59,7 +59,7 @@ export async function register(input,requestId){
   const person=validatePersonInput(input);
   if(input.passwordConfirmation!==undefined&&String(input.passwordConfirmation)!==String(input.password||"")) throw httpError(400,"Password confirmation does not match.","PASSWORD_CONFIRMATION_MISMATCH");
   const verificationRequired=String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true";
-  const humanChallengeRequired=String(process.env.HUMAN_CHALLENGE_REQUIRED||"false").toLowerCase()==="true";
+  const humanChallengeRequired=String(process.env.HUMAN_CHALLENGE_REQUIRED||"false").toLowerCase()==="true"||loadConfig().nodeEnv==="production";
   let verificationMessage=null;
   const registered=await withTransaction(async db=>{
     if(humanChallengeRequired || input.humanCheckToken) await consumeHumanChallenge(db,input.humanCheckToken);
