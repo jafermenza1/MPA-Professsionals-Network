@@ -32,6 +32,7 @@ export async function saveSavedView(identity,input={},requestId){
  const name=String(input.name||"").trim().slice(0,100);
  if(name.length<1)throw fail(400,"Give this saved view a name.","VIEW_NAME_REQUIRED");
  const filters=cleanFilters(input.filters||{});
+ validateGrouping(report.id,filters.groupBy);
  return withTransaction(async db=>{
   try{
    const row=(await db.query("insert into report_saved_view(owner_user_id,report_id,name,filters) values($1,$2,$3,$4) returning id,report_id,name,filters,created_at,updated_at",[identity.sub,report.id,name,JSON.stringify(filters)])).rows[0];
@@ -53,6 +54,18 @@ export async function deleteSavedView(identity,viewId,requestId){
  });
 }
 function authorize(identity,report){const roles=identity?.roles||[],permissions=identity?.permissions||[];if(!report.roles.some(r=>roles.includes(r))&&!permissions.includes("reports.view"))throw fail(403,"Your account is not authorized to run this report.","REPORT_FORBIDDEN");if(report.sensitive&&!roles.some(r=>["system_admin","admin"].includes(r))&&!(report.id==="payment-reconciliation"&&roles.includes("finance_officer"))&&!permissions.includes("reports.sensitive"))throw fail(403,"This report contains restricted data and requires explicit sensitive-report permission.","SENSITIVE_REPORT_FORBIDDEN");}
+const GROUPINGS={
+ "service-listings":["default","category","status","moderation"],
+ "service-request-outcomes":["default","status","category","month"],
+ "mentorship-lifecycle":["default","status","month"],
+ "mentorship-offers-requests-matches":["default"],
+ "job-seeker-sharing-activity":["default","organization","status","month"],
+ "job-seeker-demand":["default","role","skill","location","workMode","availability","experience"]
+};
+function validateGrouping(reportId,groupBy){
+ const allowed=GROUPINGS[reportId]||["default"];
+ if(!allowed.includes(groupBy||"default"))throw fail(400,"This saved view uses a grouping that is not supported by the selected report.","INVALID_GROUPING");
+}
 function cleanFilters(input={}){const f={from:String(input.from||"").trim(),to:String(input.to||"").trim(),status:String(input.status||"").trim().slice(0,40),q:String(input.q||"").trim().slice(0,100),groupBy:String(input.groupBy||"default").trim().slice(0,30)};const valid=v=>!v||(/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v+"T00:00:00Z")));if(!valid(f.from)||!valid(f.to))throw fail(400,"Dates must use YYYY-MM-DD.","INVALID_DATE");if(f.from&&f.to&&f.from>f.to)throw fail(400,"Start date must be on or before end date.","INVALID_DATE_RANGE");return f;}
 export function listReportCatalogue(identity){return REPORTS.filter(r=>{try{authorize(identity,r);return true}catch{return false}}).map(({id,title,description,category,scope,sensitive,columns,definition})=>({id,title,description,category,scope,sensitive,columns,definition,formats:["pdf","xlsx"]}));}
 async function fetchRows(db,id,f){
