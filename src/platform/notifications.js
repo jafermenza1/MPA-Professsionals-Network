@@ -6,7 +6,7 @@ export class NotificationService { constructor(provider){this.provider=provider;
 const CATEGORIES = new Set(["membership","verification","opportunities","recruitment","organizations","mentorship","services","events_learning","security","system"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function fail(status,message,code="BUSINESS_RULE"){throw Object.assign(new Error(message),{statusCode:status,code});}
-export function safeInternalUrl(value){const url=String(value||"");return url.startsWith("/")&&!url.startsWith("//")&&![...url].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127)?url:null;}
+export function safeInternalUrl(value){const url=String(value||"");return url.startsWith("/")&&!url.startsWith("//")&&!url.includes("\\")&&![...url].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127)?url:null;}
 function eventTitle(code){return String(code||"Update").split(/[._-]+/).filter(Boolean).map(word=>word.charAt(0).toUpperCase()+word.slice(1)).join(" ");}
 function present(row){
   const payload=row.payload&&typeof row.payload==="object"?row.payload:{};
