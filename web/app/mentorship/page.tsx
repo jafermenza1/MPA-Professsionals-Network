@@ -3,6 +3,7 @@ import { FormFeedback } from "../../components/form-feedback";
 import { TagInput } from "../../components/tag-input";
 import { humanStatus } from "../../lib/status-labels";
 import {FormEvent,useCallback,useEffect,useRef,useState} from "react";
+import Link from "next/link";
 import {Bookmark,Clock3,HeartHandshake,Languages,RefreshCw,Target} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
@@ -159,7 +160,7 @@ export default function Mentorship(){
      {values(mentor.expertise).length>0&&<div style={{marginTop:12}}><b>Expertise</b><p className="muted">{values(mentor.expertise).join(" · ")}</p></div>}
      {values(mentor.languages).length>0&&<div className="tagline"><Languages size={14}/> {values(mentor.languages).join(" · ")}</div>}
      {values(mentor.mentoring_modes).length>0&&<div className="tagline" style={{marginTop:8}}><Clock3 size={14}/> {values(mentor.mentoring_modes).join(" · ")}</div>}
-     <button className="btn btn-primary" type="button" style={{width:"100%",marginTop:17}} onClick={()=>{setSelected(mentor);setShowRequestForm(false);setCreated(null);setGoals("");setNotice("");}}>Request mentorship <HeartHandshake size={16}/></button>
+     <button className="btn btn-primary" type="button" style={{width:"100%",marginTop:17}} onClick={()=>{setSelected(mentor);setShowRequestForm(false);setCreated(null);setGoals("");setNotice("");}}>Request mentorship <HeartHandshake size={16}/></button><Link className="btn btn-ghost" href={"/mentorship/mentors/"+encodeURIComponent(mentor.user_id)}>Full mentor profile</Link>
    <button className="btn btn-ghost" type="button" disabled={!savedItems.signedIn||savedItems.isSaving("mentor",mentor.user_id)} aria-pressed={savedItems.isSaved("mentor",mentor.user_id)} onClick={()=>void savedItems.toggle("mentor",mentor.user_id)}><Bookmark size={16}/>{savedItems.isSaved("mentor",mentor.user_id)?"Saved":"Save mentor"}</button>
    </Card>)}</div>}
    {savedItems.savedError&&<div role="status" className="form-error">{savedItems.savedError}</div>}
