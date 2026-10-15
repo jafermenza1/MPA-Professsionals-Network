@@ -1,0 +1,74 @@
+name: PR Quality — parallel diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - reconciliation/holistic-gates
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    name: Lint (Biome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Lint all JS/TS application and test sources
+        run: npx --yes @biomejs/biome@2.2.4 lint --max-diagnostics=1000 web src test e2e scripts server.js
+
+  typecheck:
+    name: TypeScript type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type-check web application
+        run: npx --no-install tsc --noEmit --pretty false -p web/tsconfig.json
+
+  production-build:
+    name: Next.js production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build production application
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          API_SERVER_BASE_URL: http://127.0.0.1:3000
+        run: npm run web:build
