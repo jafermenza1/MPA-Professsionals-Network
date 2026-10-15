@@ -5,6 +5,10 @@ const TRANSITIONS={draft:["consent_pending","submitted","withdrawn"],consent_pen
 function assertTransition(from,to){ if(!TRANSITIONS[from] || !TRANSITIONS[from].includes(to)) throw error(409,"Verification case cannot move from "+from+" to "+to,"INVALID_STATE"); }
 async function audit(db,actor,action,type,id,requestId,metadata={}){ await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]); }
 async function notify(db,userId,eventCode,type,id,payload={}){ await createInAppNotification(db,userId,eventCode,type,id,payload); }
+async function notifyVerificationReviewers(db,caseId,{from=null,to="submitted",eventVersion=null}={}){
+ const reviewers=(await db.query("select distinct u.id user_id from app_user u where exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('verification_reviewer','ethics_reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='verification.manage')")).rows;
+ for(const reviewer of reviewers)await notify(db,reviewer.user_id,"verification.review_queue_item","verification_case",caseId,{message:"A verification case is ready for review.",nextAction:"Open the existing verification review queue and review the submitted case.",actionUrl:"/verification",reviewerQueue:true,actionRequired:true,priority:"high",from,to,eventVersion});
+}
 async function assertAssignedReviewer(db,caseId,actorId){
  const row=(await db.query("select subject_user_id,assigned_reviewer_id from verification_case where id=$1",[caseId])).rows[0];
  if(!row) throw error(404,"Verification case not found.","NOT_FOUND");
@@ -30,7 +34,7 @@ export async function listPrograms(){
  return (await db.query("select program_code,name,purpose,risk_level,confidentiality_level,requires_consent,appeal_enabled from verification_program where active=true order by name")).rows;
 }
 export async function createCase(subjectUserId,programCode,actorId,requestId){ return withTransaction(async db=>{ const p=(await db.query("select id from verification_program where program_code=$1 and active=true",[String(programCode).toUpperCase()])).rows[0]; if(!p) throw error(404,"Verification program not found.","NOT_FOUND"); const snap=await snapshotProgram(db,p.id); const existing=await db.query("select id from verification_case where subject_user_id=$1 and program_id=$2 and status not in ('closed','withdrawn','rejected') order by created_at desc limit 1",[subjectUserId,p.id]); if(existing.rows[0]) return getCase(existing.rows[0].id); const initialStatus=snap.program.requiresConsent?"consent_pending":"submitted";
-  const row=(await db.query("insert into verification_case(program_id,subject_user_id,status,checklist_version_snapshot,program_snapshot,purpose_snapshot,opened_by) values($1,$2,$3,$4,$5,$6,$7) returning *",[p.id,subjectUserId,initialStatus,snap.checklists,snap.program,snap.program.purpose,actorId])).rows[0]; await audit(db,actorId,"verification.case_created","verification_case",row.id,requestId,{programCode}); await notify(db,subjectUserId,"verification_case_opened","verification_case",row.id,{programCode,message:"Your professional verification case has been opened.",nextAction:"Review the verification checklist, record consent, and add the required claims and evidence.",actionUrl:"/verification"}); return row; }); }
+  const row=(await db.query("insert into verification_case(program_id,subject_user_id,status,checklist_version_snapshot,program_snapshot,purpose_snapshot,opened_by) values($1,$2,$3,$4,$5,$6,$7) returning *",[p.id,subjectUserId,initialStatus,snap.checklists,snap.program,snap.program.purpose,actorId])).rows[0]; await audit(db,actorId,"verification.case_created","verification_case",row.id,requestId,{programCode}); await notify(db,subjectUserId,"verification_case_opened","verification_case",row.id,{programCode,message:"Your professional verification case has been opened.",nextAction:"Review the verification checklist, record consent, and add the required claims and evidence.",actionUrl:"/verification"}); if(initialStatus==="submitted")await notifyVerificationReviewers(db,row.id,{from:null,to:"submitted",eventVersion:row.id}); return row; }); }
 export async function giveConsent(caseId,actorId,consentVersion,requestId){
  await withTransaction(async db=>{
   const row=(await db.query("select vc.*,vp.requires_consent from verification_case vc join verification_program vp on vp.id=vc.program_id where vc.id=$1 for update",[caseId])).rows[0];
@@ -39,7 +43,7 @@ export async function giveConsent(caseId,actorId,consentVersion,requestId){
   if(!row.requires_consent) return;
   if(row.status!=="consent_pending") throw error(409,"This verification case is not awaiting consent.","INVALID_STATE");
   await db.query("update verification_case set consent_at=now(),consent_by=$1,consent_version=$2,status='submitted',submitted_at=now(),updated_at=now() where id=$3",[actorId,consentVersion||"current",caseId]);
-  await audit(db,actorId,"verification.consent_recorded","verification_case",caseId,requestId,{consentVersion:consentVersion||"current"});
+  await audit(db,actorId,"verification.consent_recorded","verification_case",caseId,requestId,{consentVersion:consentVersion||"current"}); await notifyVerificationReviewers(db,caseId,{from:"consent_pending",to:"submitted",eventVersion:consentVersion||"current"});
  });
  return getCase(caseId,actorId);
 }
@@ -78,10 +82,7 @@ export async function transitionCase(caseId,to,actorId,requestId){
    const nextAction=to==="evidence_required"?"Review the checklist and attach the requested evidence.":to==="member_response_required"?"Read the decision and submit your response before the deadline.":to==="submitted"?"Your case is in the reviewer queue; monitor it for updates.":to==="closed"?"Review the final verification record and appeal options if available.":"Review the case status and contact support if you need help.";
    await notify(db,row.subject_user_id,"verification.case_status_updated","verification_case",caseId,{from:row.status,to,message:"Your verification case status changed to "+to.replace(/_/g," ")+".",nextAction,actionUrl:"/verification",actionRequired:urgent,priority:urgent?"high":"normal"});
   }
-  if(to==="submitted"){
-   const reviewers=(await db.query("select distinct ur.user_id from app_user_role ur join app_role r on r.id=ur.role_id where r.role_code in ('verification_reviewer','ethics_reviewer','system_admin')")).rows;
-   for(const reviewer of reviewers)await notify(db,reviewer.user_id,"verification.review_queue_item","verification_case",caseId,{message:"A verification case is ready for review.",nextAction:"Open the existing verification review queue and review the submitted case.",actionUrl:"/verification",reviewerQueue:true,actionRequired:true,priority:"high",from:row.status,to,eventVersion:row.status+"->"+to});
-  }
+  if(to==="submitted")await notifyVerificationReviewers(db,caseId,{from:row.status,to,eventVersion:row.status+"->"+to});
  });
  return getCase(caseId,actorId);
 }
