@@ -58,6 +58,8 @@ export async function register(input,requestId){
   if(!email || !String(input.password||"")) throw httpError(400,"email and password are required.","VALIDATION_ERROR");
   const person=validatePersonInput(input);
   if(input.passwordConfirmation!==undefined&&String(input.passwordConfirmation)!==String(input.password||"")) throw httpError(400,"Password confirmation does not match.","PASSWORD_CONFIRMATION_MISMATCH");
+  const accountType=input.accountType==="organization"||input.accountType==="organization_representative"?"organization_representative":"professional";
+  const roleCode=accountType==="organization_representative"?"organization_representative":"member";
   const verificationRequired=String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true";
   const humanChallengeRequired=String(process.env.HUMAN_CHALLENGE_REQUIRED||"false").toLowerCase()==="true"||loadConfig().nodeEnv==="production";
   let verificationMessage=null;
@@ -72,19 +74,19 @@ export async function register(input,requestId){
         lower(regexp_replace($3,'[^[:alnum:]]','','g')) limit 3`,[email,person.phone,person.displayName]);
     if(identity.rows.length) throw httpError(409,"An existing account or identity matches these details. Sign in or contact membership support instead of creating a duplicate.","IDENTITY_CONFLICT");
     const registrationReference=await nextTrackingReference(db,"membership");
-    const user=(await db.query("insert into app_user(username,email,password_hash,status,registration_reference) values($1,$2,$3,'active',$4) returning id,email,username,registration_reference",[email,email,hashPassword(input.password),registrationReference])).rows[0];
+    const user=(await db.query("insert into app_user(username,email,password_hash,status,registration_reference,account_type) values($1,$2,$3,'active',$4,$5) returning id,email,username,registration_reference,account_type",[email,email,hashPassword(input.password),registrationReference,accountType])).rows[0];
     const p=(await db.query(`insert into person(user_id,first_name,middle_name,last_name,display_name,phone,date_of_birth,sex,nationality)
       values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id,user_id,first_name,middle_name,last_name,display_name,phone,date_of_birth,sex,nationality`,
       [user.id,person.firstName,person.middleName,person.lastName,person.displayName,person.phone,person.dateOfBirth,person.sex,person.nationality])).rows[0];
-    await db.query("insert into professional_profile(person_id,completion_percent) values($1,20)",[p.id]);
-    await db.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code='member' on conflict do nothing",[user.id]);
+    if(accountType==="professional") await db.query("insert into professional_profile(person_id,completion_percent) values($1,20)",[p.id]);
+    await db.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code=$2 on conflict do nothing",[user.id,roleCode]);
     await db.query("insert into notification_preference(user_id) values($1) on conflict do nothing",[user.id]);
     await audit(db,user.id,"account.registered","account",user.id,requestId,{identityPolicy:"email_phone_exact_name",registrationReference});
     await notify(db,user.id,"account_registered","account",user.id,{displayName:p.display_name,registrationReference});
     if(verificationRequired){
       verificationMessage=await createEmailVerification(db,user.id,user.email,registrationReference,p.first_name||"");
     }
-    return {user:{id:user.id,email:user.email},person:p,registrationReference,roles:["member"],token:verificationRequired?null:await tokenFor(db,user,["member"])};
+    return {user:{id:user.id,email:user.email,accountType:user.account_type},person:p,registrationReference,accountType,roles:[roleCode],token:verificationRequired?null:await tokenFor(db,user,[roleCode])};
   });
   if(verificationRequired){
     const delivery=await deliverEmailVerification(verificationMessage);
@@ -117,7 +119,7 @@ export async function login(email,password,requestId,requestMeta={}){
 
 export async function getMe(userId){
   const db=getPool();
-  const r=await db.query(`select u.id user_id,u.username,u.email,u.status,p.id person_id,p.first_name,p.middle_name,p.last_name,p.display_name,p.phone,p.date_of_birth,p.sex,p.nationality,
+  const r=await db.query(`select u.id user_id,u.username,u.email,u.status,u.account_type,p.id person_id,p.first_name,p.middle_name,p.last_name,p.display_name,p.phone,p.date_of_birth,p.sex,p.nationality,
     pr.id profile_id,pr.headline,pr.bio,pr.visibility,pr.completion_percent,
     coalesce((select jsonb_agg(r.role_code order by r.role_code) from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id),'[]'::jsonb) roles,
     exists(select 1 from membership_record mr where mr.user_id=u.id and mr.status='active' and mr.start_date<=current_date and (mr.end_date is null or mr.end_date>=current_date)) has_active_membership
