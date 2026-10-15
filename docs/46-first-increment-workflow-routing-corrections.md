@@ -126,3 +126,22 @@ This increment improves the existing discovery surfaces without creating a paral
 3. Verify saved-job changes persist across reload and are owner-scoped; verify no saved-item or profile endpoint leaks cross-account data.
 4. Test low-bandwidth behavior with throttling, keyboard navigation, reduced motion, narrow viewports, retry/error/empty states, and profile detail loading.
 5. Run existing regression suites and a production build on the exact head, then record SHA, commands and results. Until then, Increment 4 remains implemented but not accepted.
+
+
+## Increment 4 follow-up — unified saves, SQL pagination and profile detail (implemented, not accepted)
+
+The Increment 4 follow-up now includes:
+
+- **Unified account-owned saved items:** new `saved_discovery_item` persistence and authenticated `GET /api/v1/me/saved-items`, `POST /api/v1/me/saved-items`, and `DELETE /api/v1/me/saved-items/:type/:id` routes for professional profiles, verified public organizations, visible services and eligible mentors. Writes verify that the target is currently visible to the requesting account. Reads are owner-scoped and re-check visibility; stale/inaccessible targets are omitted. Existing saved jobs and talent saved searches are unchanged.
+- **Saved-items workspace:** `/saved` shows the signed-in account's saved items, opens their detail routes and permits removal. Discovery cards expose save/unsave actions. Saved-item records are private to the owner; there is no cross-account read API.
+- **SQL-level opportunity pagination:** `listJobs` now applies the existing public/member/partner/internal posting-scope rules inside the SQL predicate, then computes total and fetches the requested page using deterministic ordering. It no longer loads every matching job into memory or performs a membership query for each result. Scope rules are applied before count/limit/offset.
+- **Dedicated detail pages:** `/network/:id`, `/organizations/directory/:id`, `/services/:id`, and `/mentorship/mentors/:id`. Organization detail APIs return only verified, explicitly public fields; service and mentor detail routes re-check viewer visibility. Existing inquiry, request, membership and contact-release workflows remain authoritative.
+- **Low-bandwidth behavior:** text-first cards, 20-item discovery pages, no new image/media payloads, explicit loading/empty/error/retry states, and separate detail loading. The UI does not attempt to cache private profile data or queue save mutations offline.
+
+### Remaining acceptance boundaries
+
+- The migration has been added to the repository but **has not been applied to any database**.
+- Tests, typecheck, build, API integration checks and browser/accessibility/throttled-network validation have not been run. The new static contract tests are evidence scaffolding only until executed.
+- Review the polymorphic saved-item target checks and database schema against a migrated test database before acceptance. A saved item whose target becomes private/unverified is intentionally omitted from the visible list; the record is retained so it can reappear if visibility is restored.
+- Dedicated service and mentor pages provide details and link back to the existing governed workflow. They do not bypass the existing service request or mentorship request process.
+- Increment 4 remains **implemented, acceptance open**; PR #3 remains open/draft and has not been merged or deployed.
