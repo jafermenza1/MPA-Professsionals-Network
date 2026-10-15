@@ -179,7 +179,7 @@ export default function Organizations() {
       const raw = localStorage.getItem("mpa.organization-registration-draft");
       if (raw) {
         const draft = JSON.parse(raw);
-        if (Number(draft.savedAt || 0) && Date.now() - Number(draft.savedAt) <= 24 * 60 * 60 * 1000) {
+        if (Number(draft.savedAt || 0) > 0 && Number(draft.savedAt) <= Date.now() && Date.now() - Number(draft.savedAt) <= 24 * 60 * 60 * 1000) {
           setForm({ ...blank, legalName: String(draft.legalName || ""), displayName: String(draft.displayName || ""), organizationType: String(draft.organizationType || ""), description: String(draft.description || ""), website: String(draft.website || ""), email: String(draft.email || ""), phone: String(draft.phone || ""), addressText: String(draft.addressText || "") });
           setOrganizationTypeChoice(String(draft.organizationType || ""));
           setShowForm(true);
