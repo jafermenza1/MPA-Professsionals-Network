@@ -251,3 +251,10 @@ The working branch remains unaccepted. Run the documented manual validation proc
 | Shared brand | web/public/brand/ | P inside mosque arch, light/dark logos and favicons, shared membership card logo, animated global brand mark | Implemented in branch; visual/print checks pending |
 
 Do not mark this workflow accepted until migration, API tests, admin-role negative tests, consent behavior, public fallback, responsive UI, reduced-motion behavior, and production build are run on the current branch head.
+
+
+## In-app notification action center — foundation (NOT TESTED)
+
+| Journey / screen | API evidence observed on branch | Service / persistence boundary | Current UI evidence | Status / required proof |
+|---|---|---|---|---|
+| In-app notification action center | `GET /api/v1/notifications`, `PATCH /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/read-all`, `PATCH /api/v1/notifications/{id}/archive`, existing `GET/PATCH /api/v1/notifications/preferences` | Existing `notification_event` ledger extended additively by `20261015200000_in_app_action_center.sql`; `src/platform/notifications.js`; existing notification preference and email outbox boundaries | `/notifications` inbox with unread/action-required counts, category/unread/action-required filters, read-all, per-item read/archive, retry/error/empty/loading states; shell bell with unread badge | **CODE COMMITTED — NOT TESTED.** Must run migration fresh/upgrade/rerun checks on disposable PostgreSQL; add and execute own-user/cross-user authorization, filter, idempotency, preferences, dedupe and audit tests; verify workflow recipient/action mapping, responsive/accessibility behavior, badge persistence and administrator attention integration. Do not claim all seven categories are fully wired. Keep PR draft/open. |
