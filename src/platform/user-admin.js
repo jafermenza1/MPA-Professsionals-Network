@@ -1,5 +1,6 @@
 import {getPool,withTransaction} from "./db.js";
 import {hashPassword} from "../membership/identity.js";
+import {createInAppNotification} from "./notifications.js";
 
 function err(status,message,code="BUSINESS_RULE"){const e=new Error(message);e.statusCode=status;e.code=code;return e}
 async function allowed(db,userId){const r=await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]);return r.rows.map(x=>x.role_code)}
@@ -141,6 +142,7 @@ export async function revokeSessions(actor,userId,requestId,reasonInput){
   if(targetRoles.some(r=>PRIVILEGED_ROLES.has(r))&&!actorRoles.includes(SYSTEM_ROLE))throw err(403,"Only a system administrator may revoke sessions for a privileged account.","PRIVILEGED_ACCOUNT_CHANGE");
   const r=await tx.query("update auth_session set revoked_at=now() where user_id=$1 and revoked_at is null",[userId]);
   await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.sessions.revoked','app_user',$2,$3,'success',$4)",[actorId,userId,requestId,JSON.stringify({count:r.rowCount,reason})]);
+  if(r.rowCount)await createInAppNotification(tx,userId,"security.sessions_revoked","security_event",userId,{category:"security",critical:true,priority:"high",message:"Your active sessions were revoked by MPA account support.",nextAction:"Sign in again if this was expected. If you did not request this, contact MPA support.",actionUrl:"/profile",actionRequired:true});
   return {revoked:r.rowCount};
  });
 }
@@ -157,6 +159,7 @@ export async function resetPassword(actor,userId,newPassword,requestId,reasonInp
   await tx.query("update app_user set password_hash=$1,updated_at=now() where id=$2",[hashPassword(newPassword),userId]);
   await tx.query("update auth_session set revoked_at=now() where user_id=$1 and revoked_at is null",[userId]);
   await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'admin.password.reset','app_user',$2,$3,'success',$4)",[actorId,userId,requestId,JSON.stringify({reason})]);
+  await createInAppNotification(tx,userId,"security.admin_password_reset","security_event",userId,{category:"security",critical:true,priority:"urgent",message:"An MPA administrator reset your account password and revoked active sessions.",nextAction:"Sign in securely, set a new password if prompted, and contact MPA support if you did not expect this change.",actionUrl:"/profile",actionRequired:true});
   return {id:userId,sessionsRevoked:true};
  });
 }
