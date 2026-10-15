@@ -178,8 +178,8 @@ export async function requestService(listingId,requesterId,input,requestId){
       const count=(await db.query("select count(*)::int count from service_request where service_listing_id=$1 and status in ('requested','accepted','in_progress')",[listingId])).rows[0].count;
       if(count>=listing.max_active_requests) throw error(409,"This service has reached its active request limit.","CAPACITY_REACHED");
     }
-    const duplicate=(await db.query("select id from service_request where service_listing_id=$1 and requester_user_id=$2 and status in ('requested','accepted','in_progress')",[listingId,requesterId])).rows[0];
-    if(duplicate) throw error(409,"You already have an active request for this service.","DUPLICATE_REQUEST");
+    const duplicate=(await db.query("select * from service_request where service_listing_id=$1 and requester_user_id=$2 and status in ('requested','accepted','in_progress') order by created_at desc limit 1 for update",[listingId,requesterId])).rows[0];
+    if(duplicate) return {...duplicate,idempotent:true,nextAction:duplicate.status==="requested"?"Wait for the provider to respond.":duplicate.status==="accepted"?"Confirm scope, timing and milestones.":"Track delivery and review the provider's submitted outcome."};
     const proposedPrice=input.proposedPrice===undefined||input.proposedPrice===null?null:Number(input.proposedPrice);
     if(proposedPrice!==null&&(!Number.isFinite(proposedPrice)||proposedPrice<0)) throw error(400,"proposedPrice must be a non-negative number.","VALIDATION_ERROR");
     const row=(await db.query("insert into service_request(service_listing_id,requester_user_id,provider_user_id,status,message,scope,agreed_price,agreed_currency,completion_due_at,requested_start_at,requested_end_at) values($1,$2,$3,'requested',$4,$5,$6,$7,$8,$9,$10) returning *",[listingId,requesterId,listing.provider_user_id,input.message||null,input.scope||null,proposedPrice,input.currency?String(input.currency).toUpperCase():listing.currency,input.completionDueAt||null,input.requestedStartAt||null,input.requestedEndAt||null])).rows[0];
@@ -252,8 +252,8 @@ export async function submitServicePayment(requestId,userId,input,requestIdHeade
     if(!["online","manual","bank_transfer","cash","other"].includes(channel)) throw error(400,"Unsupported payment channel.","VALIDATION_ERROR");
     const idem=String(input.idempotencyKey||"").trim();
     if(!idem) throw error(400,"idempotencyKey is required.","VALIDATION_ERROR");
-    const existing=(await db.query("select sp.* from service_payment sp join payment_transaction pt on pt.id=sp.payment_transaction_id where pt.idempotency_key=$1",[idem])).rows[0];
-    if(existing) return existing;
+    const existing=(await db.query("select sp.*,pt.purpose,pt.purpose_reference from service_payment sp join payment_transaction pt on pt.id=sp.payment_transaction_id where pt.idempotency_key=$1",[idem])).rows[0];
+    if(existing){if(existing.purpose!=="service"||String(existing.purpose_reference)!==String(requestId))throw error(409,"This payment retry key was already used for a different transaction. Refresh the request and submit a new payment reference.","IDEMPOTENCY_KEY_CONFLICT");return {...existing,idempotent:true,nextAction:existing.status==="succeeded"?"Payment is verified. You can continue with delivery acceptance.":existing.status==="failed"?"Payment was not accepted. Review the finance note before retrying.":"Your payment is already awaiting finance review."};}
     const p=(await db.query("insert into payment_transaction(provider,idempotency_key,purpose,amount,currency,status,request_payload,channel,submitted_by,purpose_reference,source) values('manual',$1,'service',$2,$3,'pending',$4::jsonb,$5,$6,$7,'manual_entry') returning *",[idem,amount,currency,JSON.stringify({requestId,channel,reference:input.reference||null}),channel,userId,requestId])).rows[0];
     if(input.evidenceFileId){
       const f=(await db.query("select id from file_object where id=$1 and created_by=$2 and visibility='private'",[input.evidenceFileId,userId])).rows[0];
