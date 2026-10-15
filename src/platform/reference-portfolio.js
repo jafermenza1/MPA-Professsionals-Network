@@ -24,7 +24,7 @@ function parseCsv(source,mapping={},allowUnmapped=false){
  const indexes={};
  if(mapped){for(const [target,source] of Object.entries(mapping))if(source&&sourceHeaders.includes(String(source)))indexes[target]=sourceHeaders.indexOf(String(source));if((indexes.code===undefined||indexes.label===undefined)&&!allowUnmapped)throw fail(400,"Map both Code and Label to columns before importing.","CSV_COLUMNS_REQUIRED");}
  else if(!allowUnmapped)for(const required of ["code","label"])if(!headers.includes(required))throw fail(400,"CSV must include code and label columns.","CSV_COLUMNS_REQUIRED");
- const canonical=["code","label","description","sort_order","active","parent_code","aliases"];
+ const canonical=["code","label","description","sort_order","active","parent_code","aliases","short_label","metadata","effective_from","effective_to"];
  return rows.filter(r=>r.some(v=>String(v).trim())).map((values,index)=>{const row={};if(allowUnmapped&&(!mapped||indexes.code===undefined||indexes.label===undefined)){for(let i=0;i<headers.length;i++)row[sourceHeaders[i]]=values[i]??"";}else for(const key of canonical){const ix=mapped?indexes[key]:headers.indexOf(key);if(ix!==undefined&&ix>=0)row[key]=values[ix]??"";}return {...row,__row:index+2};});
 }
 async function datasetContext(db,key,{edit=false,actorId=null}={}){
@@ -98,10 +98,10 @@ export async function previewReferenceCsv(identity,key,filename,csv,providedMapp
  for(const [code,parent] of parents){const visited=new Set([code]);let cursor=parent;while(cursor&&parents.has(cursor)){if(visited.has(cursor)){errors.push({row:rows.find(x=>clean(x.code,80).toUpperCase()===code)?.__row||0,message:"Parent relationships contain a cycle involving "+code+"."});break;}visited.add(cursor);cursor=parents.get(cursor);}}
  return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row),errors,canImport:errors.length===0};
 }
-export async function importReferenceCsv(identity,key,filename,csv,mapping={}){
+export async function importReferenceCsv(identity,key,filename,csv,mapping={},format="csv"){
  assertReferenceAdmin(identity);
  const rows=parseCsv(csv,mapping);const seen=new Set();const errors=[],parents=new Map();
- rows.forEach(row=>{const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required and Code must use letters, numbers, dot, underscore or hyphen."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this CSV."});seen.add(code);if(parent){if(parent===code)errors.push({row:row.__row,message:"An item cannot be its own parent."});parents.set(code,parent);}});
+ rows.forEach(row=>{const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and label are required and Code must use letters, numbers, dot, underscore or hyphen."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code within this import."});seen.add(code);if(parent){if(parent===code)errors.push({row:row.__row,message:"An item cannot be its own parent."});parents.set(code,parent);}if(row.metadata){try{const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata;if(!metadata||typeof metadata!=="object"||Array.isArray(metadata))throw new Error();}catch{errors.push({row:row.__row,message:"Metadata must be a valid JSON object."});}}for(const field of ["effective_from","effective_to"]){const value=clean(row[field],10);if(value&&!/^\d{4}-\d{2}-\d{2}$/.test(value))errors.push({row:row.__row,message:field+" must be a valid YYYY-MM-DD date."});}if(row.effective_from&&row.effective_to&&String(row.effective_from)>String(row.effective_to))errors.push({row:row.__row,message:"Effective-from date must not be after effective-to date."});}});
  for(const [code,parent] of parents){const visited=new Set([code]);let cursor=parent;while(cursor&&parents.has(cursor)){if(visited.has(cursor)){errors.push({row:rows.find(x=>clean(x.code,80).toUpperCase()===code)?.__row||0,message:"Parent relationships contain a cycle involving "+code+"."});break;}visited.add(cursor);cursor=parents.get(cursor);}}
  if(errors.length) return {status:"rejected",imported:0,errors};
  return withTransaction(async db=>{
@@ -109,15 +109,15 @@ export async function importReferenceCsv(identity,key,filename,csv,mapping={}){
    await db.query("update reference_dataset_version set status='draft',approved_by=null where id=$1 and status<>'draft'",[version.id]);
    let inserted=0,updated=0;
   for(const row of rows){
-   const code=clean(row.code,80).toUpperCase(),label=clean(row.label,180),description=clean(row.description,2000)||null,active=!["false","0","inactive","no"].includes(String(row.active||"true").toLowerCase());
+   const code=clean(row.code,80).toUpperCase(),label=clean(row.label,180),description=clean(row.description,2000)||null,shortLabel=clean(row.short_label,80)||null,active=!["false","0","inactive","no"].includes(String(row.active||"true").toLowerCase()),metadata=row.metadata?JSON.parse(typeof row.metadata==="string"?row.metadata:JSON.stringify(row.metadata)):{},effectiveFrom=clean(row.effective_from,10)||null,effectiveTo=clean(row.effective_to,10)||null;
    const existing=(await db.query("select id,label,description,active from reference_item where dataset_version_id=$1 and code=$2 for update",[version.id,code])).rows[0];
    const aliases=Array.from(new Set(String(row.aliases||"").split(/[;|]/).map(value=>clean(value,180).toLocaleLowerCase()).filter(value=>value&&value!==label.toLocaleLowerCase())));
-   if(existing){await db.query("update reference_item set label=$1,description=$2,aliases=$3,active=$4,sort_order=$5,updated_by=$6,updated_at=now() where id=$7",[label,description,JSON.stringify(aliases),active,Number(row.sort_order)||0,identity.sub,existing.id]);updated++;}
-   else{await db.query("insert into reference_item(dataset_version_id,code,label,description,aliases,active,sort_order,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7,$8,$8)",[version.id,code,label,description,JSON.stringify(aliases),active,Number(row.sort_order)||0,identity.sub]);inserted++;}
+   if(existing){await db.query("update reference_item set label=$1,description=$2,short_label=$3,aliases=$4,metadata=$5::jsonb,active=$6,sort_order=$7,effective_from=$8,effective_to=$9,updated_by=$10,updated_at=now() where id=$11",[label,description,shortLabel,JSON.stringify(aliases),JSON.stringify(metadata),active,Number(row.sort_order)||0,effectiveFrom,effectiveTo,identity.sub,existing.id]);updated++;}
+   else{await db.query("insert into reference_item(dataset_version_id,code,label,description,short_label,aliases,metadata,active,sort_order,effective_from,effective_to,created_by,updated_by) values($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$12)",[version.id,code,label,description,shortLabel,JSON.stringify(aliases),JSON.stringify(metadata),active,Number(row.sort_order)||0,effectiveFrom,effectiveTo,identity.sub]);inserted++;}
   }
   for(const row of rows){const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();if(parent){const parentRow=(await db.query("select id from reference_item where dataset_version_id=$1 and code=$2",[version.id,parent])).rows[0];if(!parentRow)throw fail(400,"Parent code "+parent+" was not found in the working copy.","REFERENCE_PARENT_INVALID");await db.query("update reference_item set parent_item_id=$1 where dataset_version_id=$2 and code=$3",[parentRow.id,version.id,code]);}else if(row.parent_code!==undefined)await db.query("update reference_item set parent_item_id=null where dataset_version_id=$1 and code=$2",[version.id,code]);}
-  await db.query("insert into reference_import(dataset_id,target_version_id,filename,format,status,uploaded_by,completed_at) values($1,$2,$3,'csv','drafted',$4,now())",[dataset.id,version.id,clean(filename,180)||"reference-import.csv",identity.sub]);
-  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,outcome,metadata) values($1,'reference.csv_imported','reference_dataset',$2,'success',$3)",[identity.sub,dataset.id,JSON.stringify({datasetKey:key,rowCount:rows.length,inserted,updated})]);
+  await db.query("insert into reference_import(dataset_id,target_version_id,filename,format,status,uploaded_by,completed_at) values($1,$2,$3,$4,'drafted',$5,now())",[dataset.id,version.id,clean(filename,180)||("reference-import."+format),format,identity.sub]);
+  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,outcome,metadata) values($1,$2,'reference_dataset',$3,'success',$4)",[identity.sub,"reference."+format+"_imported",dataset.id,JSON.stringify({datasetKey:key,rowCount:rows.length,inserted,updated,format})]);
   return {status:"imported",datasetKey:key,rowCount:rows.length,inserted,updated,errors:[]};
  });
 }
@@ -152,11 +152,11 @@ function jsonReferenceRows(source){
  try{parsed=JSON.parse(String(source||""));}catch{throw fail(400,"JSON import must be valid JSON.","JSON_INVALID");}
  const rows=Array.isArray(parsed)?parsed:parsed&&Array.isArray(parsed.items)?parsed.items:null;
  if(!rows||!rows.length||rows.some(row=>!row||typeof row!=="object"||Array.isArray(row)))throw fail(400,"JSON import must be a non-empty array of reference item objects or an object with an items array.","JSON_SHAPE_INVALID");
- const allowed=["code","label","description","sort_order","active","parent_code","aliases"];
- return rows.map((row,index)=>{const item={};for(const key of allowed){const camel=key.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase());if(row[key]!==undefined)item[key]=Array.isArray(row[key])?row[key].join(";"):row[key];else if(row[camel]!==undefined)item[key]=Array.isArray(row[camel])?row[camel].join(";"):row[camel];}item.__row=index+2;return item;});
+ const allowed=["code","label","description","sort_order","active","parent_code","aliases","short_label","metadata","effective_from","effective_to"];
+ return rows.map((row,index)=>{const item={};for(const key of allowed){const camel=key.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase());if(row[key]!==undefined)item[key]=key==="metadata"&&typeof row[key]==="object"?JSON.stringify(row[key]):Array.isArray(row[key])?row[key].join(";"):row[key];else if(row[camel]!==undefined)item[key]=key==="metadata"&&typeof row[camel]==="object"?JSON.stringify(row[camel]):Array.isArray(row[camel])?row[camel].join(";"):row[camel];}item.__row=index+2;return item;});
 }
 function referenceRowsToCsv(rows){
- const headers=["code","label","description","sort_order","active","parent_code","aliases"];
+ const headers=["code","label","description","sort_order","active","parent_code","aliases","short_label","metadata","effective_from","effective_to"];
  return [headers.join(","),...rows.map(row=>headers.map(key=>csvEscape(row[key]??"")).join(","))].join("\r\n");
 }
 export async function previewReferenceJson(identity,key,filename,jsonText,providedMapping={}){
@@ -167,7 +167,7 @@ export async function previewReferenceJson(identity,key,filename,jsonText,provid
 export async function importReferenceJson(identity,key,filename,jsonText,providedMapping={}){
  assertReferenceAdmin(identity);
  const rows=jsonReferenceRows(jsonText).map(({__row,...row})=>row);
- return importReferenceCsv(identity,key,filename,referenceRowsToCsv(rows),providedMapping);
+ return importReferenceCsv(identity,key,filename,referenceRowsToCsv(rows),providedMapping,"json");
 }
 export async function exportReferenceJson(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {dataset,version}=await datasetContext(db,key);
@@ -197,17 +197,21 @@ export async function previewReferenceXlsx(identity,key,filename,xlsxBase64,mapp
 export async function importReferenceXlsx(identity,key,filename,xlsxBase64,mapping={}){
  assertReferenceAdmin(identity);
  const parsed=normalizeXlsxImport(xlsxBase64,mapping);
- return importReferenceJson(identity,key,filename,JSON.stringify(parsed.rows),{});
+ const rows=parsed.rows.map(row=>({...row,aliases:Array.isArray(row.aliases)?row.aliases.join(";"):row.aliases,metadata:row.metadata&&typeof row.metadata==="object"?JSON.stringify(row.metadata):row.metadata}));
+ return importReferenceCsv(identity,key,filename,referenceRowsToCsv(rows),{},"xlsx");
 }
 export async function exportReferenceXlsx(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
  const rows=(await db.query("select child.code,child.label,coalesce(child.description,'') description,child.sort_order,child.active,parent.code parent_code,child.aliases,child.metadata,child.effective_from,child.effective_to from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1 order by child.sort_order,child.label",[version.id])).rows;
  const headers=["code","label","description","sort_order","active","parent_code","aliases","metadata","effective_from","effective_to"];
- return {filename:key+".xlsx",xlsxBase64:createXlsx(rows,headers).toString("base64")};
+ const workbookRows=rows.map(row=>({...row,aliases:Array.isArray(row.aliases)?row.aliases.join(";"):row.aliases,metadata:row.metadata&&typeof row.metadata==="object"?JSON.stringify(row.metadata):row.metadata}));
+ return {filename:key+".xlsx",xlsxBase64:createXlsx(workbookRows,headers).toString("base64")};
 }
 
 export async function exportReferenceCsv(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {version}=await datasetContext(db,key);
  const rows=(await db.query("select code,label,coalesce(description,'') description,sort_order,active from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
- return {filename:key+".csv",csv:["code,label,description,sort_order,active",...rows.map(row=>[row.code,row.label,row.description,row.sort_order,row.active].map(csvEscape).join(","))].join("\r\n")};
+ const rows=(await db.query("select child.code,child.label,coalesce(child.description,'') description,child.sort_order,child.active,parent.code parent_code,child.aliases,child.short_label,child.metadata,child.effective_from,child.effective_to from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1 order by child.sort_order,child.label",[version.id])).rows;
+ const headers=["code","label","description","sort_order","active","parent_code","aliases","short_label","metadata","effective_from","effective_to"];
+ return {filename:key+".csv",csv:[headers.join(","),...rows.map(row=>headers.map(header=>{const value=row[header];return csvEscape(value&&typeof value==="object"?JSON.stringify(value):Array.isArray(value)?value.join(";"):value??"");}).join(","))].join("\r\n")};
 }
