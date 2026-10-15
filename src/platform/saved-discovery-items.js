@@ -61,8 +61,8 @@ export async function listDiscoveryItems(userId){
  select s.item_type,s.item_id,s.created_at,
    p.display_name title,pp.professional_title subtitle,'/network?profile='||s.item_id::text href
  from saved_discovery_item s
- join professional_profile pp on pp.user_id=s.item_id
- join person p on p.user_id=pp.user_id
+ join person p on p.user_id=s.item_id
+ join professional_profile pp on pp.person_id=p.id
  where s.user_id=$1 and s.item_type='professional'
    and (pp.directory_visibility='public' or (pp.directory_visibility='members' and exists(
      select 1 from membership_record vm where vm.user_id=$1 and vm.status='active'
