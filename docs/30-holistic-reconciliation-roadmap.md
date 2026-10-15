@@ -294,3 +294,13 @@ Implementation detail: `e2e/homepage-live-feeds.spec.js` was added with three Pl
 The current branch adds bounded discovery paging for professionals, opportunities, services and mentors; shared accessible pagination controls; and a new public organization directory constrained to verified, explicitly public organizations. Search criteria remain routed to existing server-side filters, and protected/private workspace routes remain separate. The install prompt is now delayed until 10 seconds after first page load and shown once per browser profile unless storage is unavailable.
 
 Implementation and acceptance details are recorded in docs/46-first-increment-workflow-routing-corrections.md and docs/31-workflow-reconciliation-matrix.md. Static contract tests were added but have not been executed. **Increment 4 is not accepted.** Current gaps include consistent account-owned saved items for professional profiles, organizations, services and mentors; SQL-efficient scope-aware job pagination; dedicated public profile routes where the existing detail panels are insufficient; and exact-head build/API/browser/accessibility validation. Keep PR #3 draft/open; do not merge or deploy.
+
+
+## Increment 4 follow-up — saved discovery items, SQL paging and detail pages (IMPLEMENTED, NOT ACCEPTED)
+
+- Added account-owned saved-item persistence for professionals, verified public organizations, visible service listings and eligible mentors, plus `/saved` management UI and save/unsave controls. Existing saved jobs and talent saved searches remain unchanged.
+- Added owner-authenticated saved-item APIs. Save writes verify target visibility; list reads are owner-scoped and re-check public/member visibility. Unavailable targets are omitted.
+- Opportunity pagination now applies posting-scope visibility in SQL before count/limit/offset, using deterministic ordering; this removes the old all-results-in-memory + per-result membership-query pattern.
+- Added dedicated detail routes for professionals, organizations, services and mentors, with server-side visibility checks and text-first loading.
+- Migration `20261016200000_saved_discovery_items.sql` is committed to the branch but has not been applied to any database.
+- Validation is open: do not claim acceptance until migration-backed API tests, cross-account authorization tests, typecheck/build, browser, responsive and throttled-network checks pass on the exact head.
