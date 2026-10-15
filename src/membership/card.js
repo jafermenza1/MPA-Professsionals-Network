@@ -46,7 +46,7 @@ export async function getMyMembershipCard(userId){
     join app_user u on u.id=m.user_id
     left join person on person.user_id=u.id
     left join professional_profile pr on pr.person_id=person.id
-    where m.user_id=$1
+    where m.user_id=$1 and m.status<>'pending'
     order by (m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)) desc,m.start_date desc nulls last,m.created_at desc
     limit 1`,[userId]);
   const row=r.rows[0];
@@ -79,7 +79,7 @@ export async function getMembershipCardForAdmin(membershipNumber,actorId,request
     join app_user u on u.id=m.user_id
     left join person on person.user_id=u.id
     left join professional_profile pr on pr.person_id=person.id
-    where upper(m.membership_number)=$1
+    where upper(m.membership_number)=$1 and m.status<>'pending'
     order by m.start_date desc nulls last,m.created_at desc limit 1`,[number]);
   const row=r.rows[0];
   if(!row) throw fail(404,"No membership record matches that ID.","MEMBERSHIP_NOT_FOUND");
