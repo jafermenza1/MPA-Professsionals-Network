@@ -246,6 +246,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && p==="api/v1/me/marketplace-demand") return ok(res,await marketplaceDemand.listMyDemand(identity.sub),requestId);
     if(req.method==="GET" && p==="api/v1/me/marketplace-demand-interests") return ok(res,await marketplaceDemand.listMyInterests(identity.sub),requestId);
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/marketplace-demand/topics/") && parts[5]==="interest") return ok(res,await marketplaceDemand.joinDemandTopic(parts[4],identity.sub,await body(req),requestId),requestId,201);
+     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/marketplace-demand/topics/") && parts[5]==="withdraw") { const b=await body(req); return ok(res,await marketplaceDemand.withdrawDemandInterest(parts[4],identity.sub,b.reason,requestId),requestId); }
     if(req.method==="GET" && p==="api/v1/admin/marketplace-match-candidates") { const q=query(req.url); return ok(res,await marketplaceDemand.listDemandMatchCandidates(identity.sub,q.get("type")||"service"),requestId); }
      if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/admin/marketplace-demand/") && parts[5]==="matches") return ok(res,await marketplaceDemand.createDemandProviderMatch(parts[4],identity.sub,await body(req),requestId),requestId,201);
      if(req.method==="GET" && p==="api/v1/me/marketplace-demand-matches") return ok(res,await marketplaceDemand.listMyDemandProviderMatches(identity.sub),requestId);
