@@ -22,6 +22,7 @@ import * as publicOpportunity from "./src/platform/public-opportunity.js";
 import * as userAdmin from "./src/platform/user-admin.js";
 import * as emailOperations from "./src/platform/email-operations.js";
 import * as notifications from "./src/platform/notifications.js";
+import * as savedDiscoveryItems from "./src/platform/saved-discovery-items.js";
 import { verifyEmailToken, resendEmailVerification } from "./src/platform/email-verification.js";
 import { enforcePersistentRateLimit, issueHumanChallenge, verifyHumanChallenge } from "./src/platform/security-controls.js";
 import { beginAdminPasskeyRegistration, finishAdminPasskeyRegistration, beginAdminPasskeyAuthentication, finishAdminPasskeyAuthentication, recoverAdminPasskey, listAdminPasskeys, revokeAdminPasskey } from "./src/platform/webauthn.js";
@@ -278,6 +279,9 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && parts.length===5 && p.startsWith("api/v1/jobs/") && parts[4]==="save") return ok(res,await organizationJobs.saveJob(parts[3],identity.sub,requestId),requestId,201);
     if(req.method==="DELETE" && parts.length===5 && p.startsWith("api/v1/jobs/") && parts[4]==="save") return ok(res,await organizationJobs.unsaveJob(parts[3],identity.sub,requestId),requestId);
     if(req.method==="GET" && p==="api/v1/me/saved-jobs") return ok(res,await organizationJobs.listSavedJobs(identity.sub),requestId);
+    if(req.method==="GET" && p==="api/v1/me/saved-items") return ok(res,await savedDiscoveryItems.listDiscoveryItems(identity.sub),requestId);
+    if(req.method==="POST" && p==="api/v1/me/saved-items") return ok(res,await savedDiscoveryItems.saveDiscoveryItem(identity.sub,await body(req),requestId),requestId,201);
+    if(req.method==="DELETE" && parts.length===6 && p.startsWith("api/v1/me/saved-items/")) return ok(res,await savedDiscoveryItems.removeDiscoveryItem(identity.sub,parts[4],parts[5],requestId),requestId);
     if(req.method==="POST" && p==="api/v1/me/job-alerts") return ok(res,await organizationJobs.createJobAlert(identity.sub,await body(req),requestId),requestId,201);
     if(req.method==="GET" && p==="api/v1/me/job-alerts") return ok(res,await organizationJobs.listJobAlerts(identity.sub),requestId);
     if(req.method==="GET" && parts.length===5 && p.startsWith("api/v1/job-applications/") && parts[4]==="notes") return ok(res,await organizationJobs.listApplicationNotes(parts[3],identity.sub),requestId);
