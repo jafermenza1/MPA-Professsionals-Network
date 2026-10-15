@@ -35,6 +35,7 @@ function workflowNotificationCategory(code){
  const value=String(code||"").toLowerCase();
  if(value.startsWith("membership."))return "membership";
  if(value.startsWith("verification."))return "verification";
+ if(value.startsWith("opportunity."))return "opportunities";
  if(value.startsWith("organization."))return "organizations";
  if(value.startsWith("job.")||value.startsWith("job_application.")||value.startsWith("employer."))return "recruitment";
  if(value.startsWith("mentor.")||value.startsWith("mentorship."))return "mentorship";
