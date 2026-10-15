@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Building2, ExternalLink, MapPin, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { Card, Badge } from "../../../components/ui";
 import { DiscoveryPagination } from "../../../components/discovery-pagination";
@@ -75,6 +76,7 @@ export default function OrganizationDirectory() {
         <button className="btn btn-ghost" type="button" disabled={!savedItems.signedIn||savedItems.isSaving("organization",org.id)} aria-pressed={savedItems.isSaved("organization",org.id)} onClick={()=>void savedItems.toggle("organization",org.id)}><Bookmark size={16}/>{savedItems.isSaved("organization",org.id)?"Saved":"Save organization"}</button>
         {org.description && <p className="muted" style={{ marginTop: 12 }}>{org.description}</p>}
         {org.location_label && <p className="tagline"><MapPin size={14} /> {org.location_label}</p>}
+        <Link className="btn btn-primary" href={"/organizations/directory/"+encodeURIComponent(org.id)}>View organization profile</Link>
         {org.website && /^https:\/\//i.test(org.website) && <a className="btn btn-ghost" href={org.website} target="_blank" rel="noreferrer">Public website <ExternalLink size={14} /></a>}
       </Card>)}</div>}
     {!loading && !error && items.length > 0 && <DiscoveryPagination page={page} pageSize={PAGE_SIZE} itemCount={items.length} hasMore={hasMore} disabled={loading} label="organizations" onPageChange={next => void load(filters, next)} />}
