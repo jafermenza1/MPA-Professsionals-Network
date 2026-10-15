@@ -61,3 +61,12 @@ test("deduplication distinguishes separate persisted workflow transitions",async
  assert.equal(inserts.length,2);
  assert.notEqual(inserts[0].params[11],inserts[1].params[11]);
 });
+
+test("same-state events remain distinct when backed by different persisted transition versions",async()=>{
+ const db=fakeDb();
+ await createInAppNotification(db,"user-1","organization.review_update","organization","org-1",{status:"correction_required",eventVersion:"submission-2026-01"});
+ await createInAppNotification(db,"user-1","organization.review_update","organization","org-1",{status:"correction_required",eventVersion:"submission-2026-02"});
+ const inserts=db.calls.filter(call=>call.sql.includes("insert into notification_event"));
+ assert.equal(inserts.length,2);
+ assert.notEqual(inserts[0].params[11],inserts[1].params[11]);
+});
