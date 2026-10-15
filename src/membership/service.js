@@ -9,6 +9,8 @@ import { membershipEndDate } from "../platform/membership-duration.js";
 import { consumeHumanChallenge } from "../platform/security-controls.js";
 import { createEmailVerification, deliverEmailVerification } from "../platform/email-verification.js";
 
+export function generateMembershipNumber(date=new Date()) { return `MPA-${date.getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`; }
+
 function httpError(status,message,code="BUSINESS_RULE"){
   const e=new Error(message); e.statusCode=status; e.code=code; return e;
 }
@@ -477,7 +479,7 @@ export async function activateApplication(applicationId,actorId,requestId){
     }
     let end=null;
     if(fee.durationDays!==null && fee.durationDays!==undefined) end=membershipEndDate(start,fee);
-    const number=`MPA-${start.getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`;
+    const number=generateMembershipNumber(start);
     if(previous?.status==="active") await db.query("update membership_record set status='expired',end_date=coalesce(end_date,$1),updated_at=now() where id=$2",[new Date(start.getTime()-86400000).toISOString().slice(0,10),previous.id]);
     const membership=(await db.query(`insert into membership_record(user_id,membership_product_id,membership_number,status,start_date,end_date,source,application_id)
       values($1,$2,$3,'active',$4,$5,'online',$6) returning *`,[app.user_id,app.membership_product_id,number,start.toISOString().slice(0,10),end?.toISOString().slice(0,10)||null,applicationId])).rows[0];
