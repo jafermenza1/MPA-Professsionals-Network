@@ -42,7 +42,7 @@ function notificationActionUrl(payload,resourceType,resourceId){
     organization:"/organizations",job:"/jobs",job_application:"/jobs",service_request:"/services",service_listing:"/services",
     mentorship_request:"/mentorship",mentorship_match:"/mentorship",professional_profile:"/profile"};
   const path=paths[String(resourceType||"").toLowerCase()];
-  return path?path+"/"+encodeURIComponent(String(resourceId)):null;
+  return path||null;
 }
 async function notify(db,userId,eventCode,resourceType,resourceId,payload={}){
   const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled,coalesce(np.in_app_enabled,true) in_app_enabled,coalesce(np.in_app_categories,'{}'::jsonb) in_app_categories from app_user u left join notification_preference np on np.user_id=u.id where u.id=$1",[userId])).rows[0];
