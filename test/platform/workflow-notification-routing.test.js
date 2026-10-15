@@ -70,3 +70,20 @@ test("same-state events remain distinct when backed by different persisted trans
  assert.equal(inserts.length,2);
  assert.notEqual(inserts[0].params[11],inserts[1].params[11]);
 });
+
+test("reviewer routing excludes inactive accounts and organization drafts do not page reviewers",async()=>{
+ const {readFile}=await import("node:fs/promises");
+ const [membership,verification,organizations,marketplace]=await Promise.all([
+  readFile(new URL("../../src/membership/service.js",import.meta.url),"utf8"),
+  readFile(new URL("../../src/verification/service.js",import.meta.url),"utf8"),
+  readFile(new URL("../../src/organization-jobs/service.js",import.meta.url),"utf8"),
+  readFile(new URL("../../src/services-mentorship/service.js",import.meta.url),"utf8")
+ ]);
+ assert.match(membership,/u\.status='active' and \(exists\(select 1 from app_user_role/);
+ assert.match(verification,/u\.status='active' and \(exists\(select 1 from app_user_role/);
+ assert.match(organizations,/u\.status='active' and \(exists\(select 1 from app_user_role/);
+ assert.match(marketplace,/u\.status='active' and \(exists\(select 1 from app_user_role/);
+ const registration=organizations.slice(organizations.indexOf("export async function registerOrganization"),organizations.indexOf("export async function getOrganization"));
+ assert.doesNotMatch(registration,/reviewer\.review_queue_update|organization\.review_queue_item/);
+ assert.match(organizations,/organization verification queue and review the submitted evidence/);
+});
