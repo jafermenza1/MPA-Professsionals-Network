@@ -12,3 +12,16 @@
 .form-feedback__body{min-width:0;flex:1}.form-feedback__body>strong{display:block;font-weight:650}.form-feedback__body>p{margin:4px 0 0;line-height:1.55;overflow-wrap:anywhere}.form-feedback__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.form-feedback__reassurance{font-size:.875rem;color:var(--muted,#64748b)}
 
 .mobile-nav>button{display:grid;justify-items:center;align-content:center;gap:3px;border:0;background:transparent;color:var(--muted);font-size:10px;text-decoration:none;font-weight:700;cursor:pointer}.mobile-nav>button.active{color:var(--primary)}.mobile-more-panel{position:fixed;right:10px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:45;display:grid;gap:4px;min-width:200px;max-width:min(280px,calc(100vw - 20px));padding:8px;border:1px solid var(--border);border-radius:16px;background:var(--surface);box-shadow:var(--shadow)}.mobile-more-panel a{display:flex;align-items:center;justify-items:initial;gap:10px;padding:10px 12px;border-radius:10px;color:var(--text);font-size:13px;text-decoration:none;font-weight:650}.mobile-more-panel a.active,.mobile-more-panel a:hover{background:color-mix(in srgb,var(--primary) 12%,transparent);color:var(--primary)}.mobile-nav a.active{color:var(--primary)}.mobile-nav a.active svg,.mobile-nav>button.active svg{color:var(--primary)}
+
+/* Shared quality baseline: visible keyboard focus, consistent controls, and motion safety. */
+:where(a,button,input,select,textarea,summary,[role="button"],[tabindex]):focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+:where(input,select,textarea){accent-color:var(--primary)}
+:where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){max-width:100%;border-color:var(--border);color:var(--text)}
+:where(input,select,textarea)::placeholder{color:var(--muted);opacity:.82}
+:where(button,a,input,select,textarea){-webkit-tap-highlight-color:transparent}
+:where(button:disabled,input:disabled,select:disabled,textarea:disabled){cursor:not-allowed;opacity:.62}
+:where(button,a){touch-action:manipulation}
+:where(p,li,dd,dt,td,th){overflow-wrap:anywhere}
+:where(img,svg,video,canvas){max-width:100%}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+@media(max-width:600px){.card{padding:16px;border-radius:16px}.h2{font-size:21px}.btn{min-height:42px}.top-actions{gap:5px}.top-actions .icon-btn{width:34px;height:34px}.mobile-more-panel{max-height:calc(100dvh - 90px);overflow-y:auto}}
