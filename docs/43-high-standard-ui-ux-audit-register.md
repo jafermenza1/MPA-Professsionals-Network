@@ -22,8 +22,10 @@ PR: #3 — keep open and draft until validation passes.
 - Removed inert universal-search and notifications controls; the network icon is a real link.
 - Mobile navigation presents four common destinations plus a keyboard-operable “More” menu, retains role-filtered links, and closes on Escape.
 - Added shared visible focus treatment, reduced-motion safety, improved form placeholder/disabled states, wrapping for long content, and small-screen control sizing.
-- Updated member ID card and admin card settings accents; corrected lemon-on-light-background eyebrow text to use the theme's readable primary color.
+- Updated member ID card and admin card settings accents; corrected lemon-on-light-background eyebrow text to use the theme's readable primary color. New card-setting fallbacks and the database default use lemon without overwriting saved user-selected colors.
 - Improved support-workspace theme accents and primary-action contrast.
+- Added a shared responsive admin workspace with sidebar navigation, route-aware breadcrumbs, a current-role summary, consistent heading rhythm and focus styling. All existing admin destinations remain discoverable; the shell does not pretend client-side link hiding is authorization.
+- Corrected an undefined mobileNav reference in the shared shell so the organization link remains discoverable through the existing mobile More list.
 - Kept the work on PR #3's existing reconciliation branch. No merge or deployment.
 
 ## UI inventory included in this review
@@ -50,7 +52,7 @@ The inventory is a coverage register for subsequent rendered/browser validation;
 
 ## Remaining work — do not mark complete until verified
 
-1. **Admin consistency:** standardize admin page title/breadcrumb/description/action placement and role-aware navigation across all admin routes without changing authorization.
+1. **Admin consistency (partially implemented):** shared shell, responsive navigation, breadcrumbs and common heading rhythm are in place. Still review each route's title/description/action composition and map role-specific navigation only where the server's permission contract is explicit; keep all routes discoverable meanwhile so client-side assumptions do not mask existing workflows.
 2. **Per-route functional audit:** exercise every listed route at desktop and mobile widths; verify every button, link, menu, filter, dialog, form, retry and state transition.
 3. **State integrity:** check loading, empty, error, retry and partial-failure cases, including stale data and session expiry. Do not turn failed API calls into empty-success states.
 4. **Member journey clarity:** validate account-type switching and registration fields; membership application/payment/reversal/correction; profile completion and private evidence; opportunity interest and withdrawal consent; organization inquiries; mentorship and service request/acceptance; recruitment.
