@@ -251,3 +251,16 @@ Sign-in accepts either the account's email address or username. Username changes
 - The support assistant is mounted in the shared app shell and is available on public and authenticated pages. Admin support workspace: /admin/support.
 
 Acceptance remains pending until the migration is applied in a test database, the server and Next.js build run, public knowledge answers and fallback behavior are exercised, role/permission denials are tested, contact consent/privacy and rate limiting are verified, and the widget is checked across public/authenticated routes and light/dark themes.
+
+
+## In-app notification action center (foundation)
+
+The canonical product and acceptance contract is [In-App Notification Action Center](44-in-app-notification-action-center.md). The notification system is an action center, not merely a feed: help each member complete their next professional step and give authorized administrators reliable visibility into workflow intervention needs.
+
+- `GET /api/v1/notifications?category=all&unreadOnly=false&actionRequired=false&limit=30&offset=0` — authenticated user's inbox and counts. Categories: membership, verification, opportunities, recruitment, organizations, mentorship, services, events_learning, security, system. Page size is capped server-side.
+- `PATCH /api/v1/notifications/{id}/read` — mark only the authenticated user's notification as read; idempotent and audited.
+- `POST /api/v1/notifications/read-all` — mark current user's unarchived unread notifications as read; audited.
+- `PATCH /api/v1/notifications/{id}/archive` — archive only the authenticated user's notification; idempotent and audited. Archive/read does not complete the business workflow.
+- `GET/PATCH /api/v1/notifications/preferences` — retains existing channel preferences and supports `inAppCategories` (category-to-boolean object) and `digestEnabled` (boolean). Digest sending is not implemented merely by storing this preference.
+
+Notification links must be safe internal relative paths, and destination APIs/pages must enforce authorization independently. Counts, read state and archive state are persisted in PostgreSQL. The existing email outbox/provider delivery state remains separate from in-app read state and provider acceptance is not proof of inbox delivery. The foundation is **not validated** until migrations, API/service tests, cross-user and cross-organization authorization tests, build and browser/accessibility checks pass on the current head.
