@@ -131,7 +131,7 @@ export async function getMe(userId){
   row.gender=row.sex||null;
   const userRoles=Array.isArray(row.roles)?row.roles:[];
   if(!userRoles.some(role=>["member","professional"].includes(role))){
-    row.profile_id=null; row.headline=null; row.bio=null; row.visibility=null; row.completion_percent=null;
+    row.profile_id=null; row.headline=null; row.bio=null; row.visibility=null; row.completion_percent=null; row.profile_picture_file_id=null;
   }
   return row;
 }
