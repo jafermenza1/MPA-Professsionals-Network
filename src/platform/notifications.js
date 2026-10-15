@@ -16,7 +16,7 @@ function present(row){
     actionUrl:safeInternalUrl(row.action_url),resourceType:row.resource_type,resourceId:row.resource_id,
     eventCode:row.event_code,createdAt:row.created_at,readAt:row.read_at,archivedAt:row.archived_at};
 }
-function parseFilter(input={}){
+export function parseNotificationFilters(input={}){
   const category=String(input.category||"all");
   if(category!=="all"&&!CATEGORIES.has(category))fail(400,"Choose a supported notification category.","VALIDATION_ERROR");
   const limit=Math.min(Math.max(Number.parseInt(input.limit,10)||30,1),100);
@@ -24,7 +24,7 @@ function parseFilter(input={}){
   return {category,limit,offset,unreadOnly:String(input.unreadOnly||"false")==="true",actionRequired:String(input.actionRequired||"false")==="true"};
 }
 export async function getNotificationInbox(userId,input={}){
-  const db=getPool(),f=parseFilter(input),where=["user_id=$1","archived_at IS NULL"],values=[userId];
+  const db=getPool(),f=parseNotificationFilters(input),where=["notification_event.user_id=$1","notification_event.archived_at IS NULL","coalesce((select in_app_enabled from notification_preference where user_id=$1),true)=true","coalesce((select (in_app_categories->>notification_event.category)::boolean from notification_preference where user_id=$1),true)=true"],values=[userId];
   if(f.category!=="all"){values.push(f.category);where.push(`category=$${values.length}`);}
   if(f.unreadOnly)where.push("read_at IS NULL");
   if(f.actionRequired)where.push("action_required=true");
@@ -38,7 +38,7 @@ export async function getNotificationInbox(userId,input={}){
       count(*) FILTER(WHERE archived_at IS NULL AND read_at IS NULL)::int AS unread,
       count(*) FILTER(WHERE archived_at IS NULL AND action_required=true)::int AS action_required,
       count(*) FILTER(WHERE archived_at IS NULL AND action_required=true AND read_at IS NULL)::int AS unread_action_required
-      FROM notification_event WHERE user_id=$1`,[userId])
+      FROM notification_event WHERE user_id=$1 AND coalesce((select in_app_enabled from notification_preference where user_id=$1),true)=true AND coalesce((select (in_app_categories->>notification_event.category)::boolean from notification_preference where user_id=$1),true)=true`,[userId])
   ]);
   return {items:items.rows.map(present),counts:counts.rows[0]||{total:0,unread:0,action_required:0,unread_action_required:0},page:{limit:f.limit,offset:f.offset,hasMore:items.rows.length===f.limit}};
 }
@@ -72,6 +72,6 @@ export async function getActionCenterSummary(userId){
   const r=await db.query(`SELECT count(*) FILTER(WHERE archived_at IS NULL AND read_at IS NULL)::int AS unread,
     count(*) FILTER(WHERE archived_at IS NULL AND action_required=true)::int AS action_required,
     count(*) FILTER(WHERE archived_at IS NULL AND action_required=true AND read_at IS NULL)::int AS unread_action_required
-    FROM notification_event WHERE user_id=$1`,[userId]);
+    FROM notification_event WHERE user_id=$1 AND coalesce((select in_app_enabled from notification_preference where user_id=$1),true)=true AND coalesce((select (in_app_categories->>notification_event.category)::boolean from notification_preference where user_id=$1),true)=true`,[userId]);
   return r.rows[0]||{unread:0,action_required:0,unread_action_required:0};
 }
