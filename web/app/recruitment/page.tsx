@@ -1,4 +1,5 @@
 "use client";
+import { FormFeedback } from "../../components/form-feedback";
 import {FormEvent,useCallback,useEffect,useState} from "react";
 import {Building2,BriefcaseBusiness,CalendarClock,RefreshCw,Users} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
@@ -42,7 +43,7 @@ export default function Recruitment(){
  if(!token)return <div className="auth-page"><Card><h1 className="h1">Recruitment workspace</h1><p className="muted">Sign in with an authorized organization recruiter or hiring-manager account.</p><a className="btn btn-primary" href="/login?next=/recruitment">Sign in</a></Card></div>;
  return <div className="grid">
   <div><div className="eyebrow">Employer ATS · organization-scoped</div><h1 className="h1">Move candidates through a traceable pipeline.</h1><p className="muted">Only jobs and candidates in an organization you are authorized to manage are returned. Candidate decisions and interview scheduling are persisted through the API.</p></div>
-  {error&&<div className="form-error" role="alert">{error}</div>}{notice&&<div className="form-success" role="status">{notice}</div>}
+  {error&&<FormFeedback kind="error" message={error} onRetry={()=>void load()}/>}{notice&&<FormFeedback kind="success" message={notice}/>}
   <Card><div className="row"><div><div className="h2">Organization and job</div><p className="muted">Recruiting access depends on organization membership and assigned job role.</p></div><button className="btn btn-ghost" onClick={()=>void load()} disabled={loading}><RefreshCw size={16}/> Refresh</button></div>
    {organizations.length===0?<div className="muted">No organization memberships are available. Register an organization or ask its owner to grant you an appropriate role.</div>:<><label>Organization workspace<select value={orgId} aria-label="Organization workspace" onChange={e=>{setOrgId(e.target.value);setJobId("");setCandidates([]);setDashboard(null);}}>{organizations.map(o=><option key={o.id} value={o.id}>{o.display_name||o.legal_name} · {o.verification_status||"unverified"}</option>)}</select></label>
     <label>Recruiting job<select value={jobId} aria-label="Recruiting job" onChange={e=>void refreshJob(e.target.value)}><option value="">Select a job</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.title} · {j.status}</option>)}</select></label>
