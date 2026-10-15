@@ -43,8 +43,14 @@ function unzip(buffer) {
 function entryText(files, name) { const value = files.get(name); return value ? value.toString("utf8") : ""; }
 export function parseXlsxRows(input) {
   const files = unzip(input);
-  const sheet = entryText(files, "xl/worksheets/sheet1.xml");
-  if (!sheet) throw new Error("The XLSX workbook has no first worksheet.");
+  const workbook = entryText(files, "xl/workbook.xml");
+  const relationships = entryText(files, "xl/_rels/workbook.xml.rels");
+  const firstSheet = workbook.match(/<sheet\\b[^>]*\\br:id="([^"]+)"/);
+  const target = firstSheet && relationships.match(new RegExp("<Relationship\\\\b(?=[^>]*\\\\bId=\\""+firstSheet[1]+"\\")(?=[^>]*\\\\bTarget=\\"([^"]+)\\")[^>]*/>"));
+  const sheetTarget = target?.[1] || "worksheets/sheet1.xml";
+  const sheetPath = sheetTarget.startsWith("/") ? sheetTarget.slice(1) : "xl/" + sheetTarget.replace(/^\\.\\//, "");
+  const sheet = entryText(files, sheetPath);
+  if (!sheet) throw new Error("The XLSX workbook has no readable first worksheet.");
   const sharedXml = entryText(files, "xl/sharedStrings.xml");
   const shared = [...sharedXml.matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)].map(match =>
     [...match[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map(part => xmlDecode(part[1])).join("")
