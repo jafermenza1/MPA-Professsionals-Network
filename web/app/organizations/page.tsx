@@ -175,18 +175,34 @@ export default function Organizations() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("register") === "1") setShowForm(true);
-    try {
-      const raw = localStorage.getItem("mpa.organization-registration-draft");
-      if (raw) {
+    if (!token) return;
+    let cancelled = false;
+    async function restoreDraft() {
+      try {
+        const me = await api<{ email?: string; user?: { email?: string } }>("/api/v1/me", {}, token);
+        if (cancelled) return;
+        const accountEmail = String(me.email || me.user?.email || "").trim().toLowerCase();
+        const raw = localStorage.getItem("mpa.organization-registration-draft");
+        if (!raw) return;
         const draft = JSON.parse(raw);
-        if (Number(draft.savedAt || 0) > 0 && Number(draft.savedAt) <= Date.now() && Date.now() <= Number(draft.expiresAt || (Number(draft.savedAt) + 24 * 60 * 60 * 1000))) {
-          setForm({ ...blank, legalName: String(draft.legalName || ""), displayName: String(draft.displayName || ""), organizationType: String(draft.organizationType || ""), description: String(draft.description || ""), website: String(draft.website || ""), email: String(draft.email || ""), phone: String(draft.phone || ""), addressText: String(draft.addressText || "") });
-          setOrganizationTypeChoice(String(draft.organizationType || ""));
-          setShowForm(true);
-        } else localStorage.removeItem("mpa.organization-registration-draft");
+        const validLifetime = Number(draft.savedAt || 0) > 0 && Number(draft.savedAt) <= Date.now() && Date.now() <= Number(draft.expiresAt || (Number(draft.savedAt) + 24 * 60 * 60 * 1000));
+        if (!validLifetime) { localStorage.removeItem("mpa.organization-registration-draft"); return; }
+        const representativeEmail = String(draft.representativeEmail || "").trim().toLowerCase();
+        if (!accountEmail) return;
+        if (!representativeEmail || representativeEmail !== accountEmail) {
+          localStorage.removeItem("mpa.organization-registration-draft");
+          return;
+        }
+        setForm({ ...blank, legalName: String(draft.legalName || ""), displayName: String(draft.displayName || ""), organizationType: String(draft.organizationType || ""), description: String(draft.description || ""), website: String(draft.website || ""), email: String(draft.email || ""), phone: String(draft.phone || ""), addressText: String(draft.addressText || "") });
+        setOrganizationTypeChoice(String(draft.organizationType || ""));
+        setShowForm(true);
+      } catch {
+        // Keep the draft, but do not prefill it until the signed-in account is confirmed.
       }
-    } catch { localStorage.removeItem("mpa.organization-registration-draft"); }
-  }, []);
+    }
+    void restoreDraft();
+    return () => { cancelled = true; };
+  }, [token]);
 
   async function register(e: FormEvent) {
     e.preventDefault();
