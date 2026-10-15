@@ -68,4 +68,37 @@ test("P1 marketplace: service listings stay hidden until approved by Support Des
  await marketplaceDemand.moderateListing("service",listing.id,staff,{decision:"approved",note:"Approved by automated test."},"marketplace-listing-approve");
  assert.equal((await services.listServices(null,{q:"Test professional service"})).items.some(item=>item.id===listing.id),true);
 });
+test("P1 marketplace: Support Desk merges duplicate demand into a canonical request without losing source history",async()=>{
+ const firstRequester=await account(randomUUID()),secondRequester=await account(randomUUID()),staff=await supportStaff(),outsider=await account(randomUUID());
+ const target=await marketplaceDemand.createDemand(firstRequester,{demandType:"service",title:"Bookkeeping support for SMEs",description:"Small businesses need recurring bookkeeping and monthly financial reporting.",category:"Finance",deliveryMode:"remote"},"marketplace-merge-target");
+ const duplicate=await marketplaceDemand.createDemand(secondRequester,{demandType:"service",title:"Monthly bookkeeping help",description:"A small company needs monthly bookkeeping and reporting assistance.",category:"Finance",deliveryMode:"remote"},"marketplace-merge-duplicate");
+ await assert.rejects(
+  marketplaceDemand.mergeDemand(duplicate.id,target.id,outsider,"marketplace-merge-forbidden"),
+  error=>error.code==="FORBIDDEN",
+  "non-staff actors cannot merge private demand"
+ );
+ const merged=await marketplaceDemand.mergeDemand(duplicate.id,target.id,staff,"marketplace-merge");
+ assert.equal(merged.status,"closed");
+ assert.equal(merged.outcome_code,"duplicate_merged");
+ assert.equal(merged.merged_into_demand_id,target.id);
+ assert.equal(merged.mergedInto.id,target.id);
+ assert.equal(merged.notificationStatus,"in_app_recorded");
+ assert.equal(merged.externalDelivery,"not_configured");
+ const db=getPool();
+ const stored=(await db.query("select status,outcome_code,merged_into_demand_id from marketplace_demand where id=$1",[duplicate.id])).rows[0];
+ assert.deepEqual(stored,{status:"closed",outcome_code:"duplicate_merged",merged_into_demand_id:target.id});
+ const events=(await db.query("select action from marketplace_demand_event where demand_id=$1 order by created_at",[duplicate.id])).rows;
+ assert.ok(events.some(event=>event.action==="demand.duplicate_merged"));
+ assert.ok((await db.query("select 1 from marketplace_demand_event where demand_id=$1 and action='demand.duplicate_received'",[target.id])).rowCount===1);
+ assert.ok((await db.query("select 1 from notification_event where resource_id=$1 and event_code='marketplace.demand_duplicate_merged' and delivery_channel='in_app' and delivery_status='recorded'",[duplicate.id])).rowCount>=2);
+ const repeated=await marketplaceDemand.mergeDemand(duplicate.id,target.id,staff,"marketplace-merge-retry");
+ assert.equal(repeated.idempotent,true);
+ await assert.rejects(
+  marketplaceDemand.mergeDemand(target.id,duplicate.id,staff,"marketplace-merge-cycle"),
+  error=>error.code==="INVALID_STATE"||error.code==="MERGE_TARGET_INVALID",
+  "a canonical request cannot be merged into its already-merged duplicate"
+ );
+ const firstActivity=await marketplaceDemand.listMyDemand(secondRequester);
+ assert.ok(firstActivity.some(row=>row.id===duplicate.id&&row.merged_into_demand_id===target.id),"requester must retain a private record and see the canonical link");
+});
 test.after(async()=>{await closePool();});
