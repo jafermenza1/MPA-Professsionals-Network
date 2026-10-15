@@ -80,8 +80,9 @@ export async function requestOrganizationMentorship(offerId,requesterId,input,re
   if(!row){const current=(await db.query("select * from organization_mentorship_request where offer_id=$1 and requester_user_id=$2",[offerId,requesterId])).rows[0];return {...current,idempotent:true,nextAction:current?.status==="requested"?"Wait for the organization team to respond.":current?.status==="accepted"?"Agree the program goals and first session with the organization.":"This request is already resolved; contact the organization if your need has changed."};}
   await audit(db,requesterId,"organization.mentorship_requested","organization_mentorship_request",row.id,requestId,{offerId,from:prior?.status||null,to:"requested"});
   const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[offer.organization_id,TEAM_ROLES])).rows;
-  for(const member of team)await notify(db,member.user_id,"organization.mentorship_request_received","organization_mentorship_request",row.id,{message:"A new mentorship request needs your organization's response.",nextAction:"Review the request and accept or decline with a clear note."});
-  return {...row,nextAction:"Your request is recorded. The organization team must respond before a program is confirmed."};
+  let notificationCount=0;
+  for(const member of team){await notify(db,member.user_id,"organization.mentorship_request_received","organization_mentorship_request",row.id,{message:"A new mentorship request needs your organization's response.",nextAction:"Review the request and accept or decline with a clear note."});notificationCount++;}
+  return {...row,notificationStatus:notificationCount?"in_app_recorded":"no_active_recipients",notificationCount,externalDelivery:"not_configured",nextAction:notificationCount?"Your request is recorded. An in-app event was recorded for the organization team; email/SMS delivery is not configured. The team must respond before a program is confirmed.":"Your request is recorded, but no active organization team recipient was available for an in-app notification. Contact the organization through the Support Desk if you need follow-up."};
  });
 }
 export async function listMyOrganizationMentorshipRequests(userId){
