@@ -36,6 +36,7 @@ type Profile = {
   completion_percent: number;
   roles?: string[];
   has_active_membership?: boolean;
+  profile_picture_file_id?: string | null;
 };
 type Preferences = {
   email_enabled: boolean;
@@ -105,6 +106,8 @@ export default function Profile() {
     [form, setForm] = useState(blank),
     [tokenDraft, setTokenDraft] = useState("");
   const [organizationOnly, setOrganizationOnly] = useState(false);
+  const [profilePictureUrl, setProfilePictureUrl] = useState("");
+  const [uploadingPicture, setUploadingPicture] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>({
     email_enabled: true,
     sms_enabled: true,
@@ -218,6 +221,60 @@ export default function Profile() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (!token || !profile?.profile_picture_file_id) {
+      setProfilePictureUrl("");
+      return;
+    }
+    let objectUrl = "";
+    let cancelled = false;
+    void fetch("/api/v1/files/" + encodeURIComponent(profile.profile_picture_file_id), {
+      headers: { Authorization: "Bearer " + token }, cache: "no-store",
+    }).then(async (response) => {
+      if (!response.ok) throw new Error("Picture unavailable");
+      const blob = await response.blob();
+      if (!cancelled) {
+        objectUrl = URL.createObjectURL(blob);
+        setProfilePictureUrl(objectUrl);
+      }
+    }).catch(() => { if (!cancelled) setProfilePictureUrl(""); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [token, profile?.profile_picture_file_id]);
+  async function uploadProfilePicture(file: File) {
+    if (!token) return;
+    if (!(file.type === "image/jpeg" || file.type === "image/png")) {
+      setError("Choose a JPG or PNG image."); return;
+    }
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) {
+      setError("Choose an image smaller than 10 MiB."); return;
+    }
+    setUploadingPicture(true); setError(""); setNotice("");
+    try {
+      const upload = await api<{uploadId:string;uploadToken:string;uploadUrl:string}>(
+        "/api/v1/files/uploads",
+        { method: "POST", body: JSON.stringify({ fileName: file.name, contentType: file.type, byteSize: file.size }) }, token,
+      );
+      const bytes = await fetch(upload.uploadUrl, {
+        method: "PUT", headers: { Authorization: "Bearer " + token, "Content-Type": "application/octet-stream", "X-Upload-Token": upload.uploadToken }, body: file,
+      });
+      if (!bytes.ok) throw new Error("The image upload could not be completed.");
+      const stored = await api<{id:string}>("/api/v1/files/uploads/" + encodeURIComponent(upload.uploadId) + "/confirm", { method: "POST", body: "{}" }, token);
+      await api("/api/v1/me/profile-picture", { method: "PATCH", body: JSON.stringify({ fileObjectId: stored.id }) }, token);
+      await load();
+      setNotice("Profile picture updated. You can now print your membership card.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (e instanceof Error ? e.message : "We couldn't update your profile picture."));
+    } finally { setUploadingPicture(false); }
+  }
+  async function removeProfilePicture() {
+    if (!token) return;
+    setUploadingPicture(true); setError(""); setNotice("");
+    try {
+      await api("/api/v1/me/profile-picture", { method: "DELETE" }, token);
+      await load(); setNotice("Profile picture removed. Your membership card will use its photo placeholder.");
+    } catch (e) { setError(e instanceof ApiError ? e.message : "We couldn't remove your profile picture."); }
+    finally { setUploadingPicture(false); }
+  }
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
     if (!token) return;
@@ -454,6 +511,23 @@ export default function Profile() {
               <ShieldCheck color="var(--primary)" />
             </div>
             {loading && <p role="status">Loading profile from your account…</p>}
+            <section aria-labelledby="profile-picture-heading" className="grid" style={{ gridTemplateColumns: "auto minmax(0,1fr)", alignItems: "center", gap: 14, padding: 14, border: "1px solid var(--border)", borderRadius: 12 }}>
+              <div style={{ width: 92, height: 92, borderRadius: 12, overflow: "hidden", display: "grid", placeItems: "center", background: "linear-gradient(145deg,#0A3258,#174A78)", color: "#fff", border: "2px solid #97C024", fontSize: 28, fontWeight: 800 }}>
+                {profilePictureUrl ? <img src={profilePictureUrl} alt="Your professional profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>{(profile?.first_name?.[0] || "M").toUpperCase()}{(profile?.last_name?.[0] || "P").toUpperCase()}</span>}
+              </div>
+              <div className="grid" style={{ gap: 7 }}>
+                <h2 id="profile-picture-heading" className="h2" style={{ margin: 0 }}>Profile photograph</h2>
+                <p className="muted" style={{ margin: 0 }}>JPG or PNG, up to 10 MiB. Your image is stored privately and used on your membership card; a branded placeholder is used if you skip this.</p>
+                <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                  <label className="btn btn-primary" style={{ cursor: uploadingPicture ? "wait" : "pointer" }}>
+                    {uploadingPicture ? "Saving photo…" : profile?.profile_picture_file_id ? "Change photograph" : "Upload photograph"}
+                    <input aria-label="Upload professional profile photograph" type="file" accept="image/jpeg,image/png" disabled={uploadingPicture || loading} onChange={(e) => { const input=e.currentTarget; const file=input.files?.[0]; input.value=""; if(file) void uploadProfilePicture(file); }} style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }} />
+                  </label>
+                  {profile?.profile_picture_file_id && <button className="btn btn-ghost" type="button" disabled={uploadingPicture} onClick={() => void removeProfilePicture()}>Remove photo</button>}
+                  <a className="btn btn-ghost" href="/membership/card">Preview / print membership ID</a>
+                </div>
+              </div>
+            </section>
             <form className="grid" style={{ gap: 12 }} onSubmit={saveProfile}>
               <p className={styles.formHint}>
                 Fields marked <b>*</b> are required to save your identity. Other
