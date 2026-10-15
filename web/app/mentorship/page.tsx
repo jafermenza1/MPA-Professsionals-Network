@@ -6,6 +6,7 @@ import {FormEvent,useCallback,useEffect,useRef,useState} from "react";
 import {Clock3,HeartHandshake,Languages,RefreshCw,Target} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
+import {DiscoveryPagination} from "../../components/discovery-pagination";
 import {useUiStore} from "../../lib/store";
 
 type Mentor={id:string;user_id:string;display_name:string;headline?:string;bio?:string;expertise?:string[]|string;languages?:string[]|string;mentoring_modes?:string[]|string;max_active_mentees?:number};
@@ -23,6 +24,7 @@ function values(value:unknown):string[]{if(Array.isArray(value))return value.map
 export default function Mentorship(){
  const token=useUiStore(s=>s.token);
  const [mentors,setMentors]=useState<Mentor[]>([]);
+  const [discoveryPage,setDiscoveryPage]=useState(0);const [mentorsHasMore,setMentorsHasMore]=useState(false);const discoveryPageSize=20;
   const [organizationOffers,setOrganizationOffers]=useState<OrganizationOffer[]>([]);
   const [myOrganizationOffers,setMyOrganizationOffers]=useState<OrganizationOffer[]>([]);
   const [organizationRequests,setOrganizationRequests]=useState<OrganizationRequest[]>([]);
@@ -64,7 +66,7 @@ export default function Mentorship(){
  const [submitting,setSubmitting]=useState(false);
  const [created,setCreated]=useState<RequestResult|null>(null);
 
- const load=useCallback(async(queryValue?:string,topicValue?:string)=>{
+ const load=useCallback(async(queryValue?:string,topicValue?:string,pageIndex=0)=>{
    const q=queryValue===undefined?lastSearch.current.query:queryValue;
    const t=topicValue===undefined?lastSearch.current.topic:topicValue;
    lastSearch.current={query:q,topic:t};
@@ -138,11 +140,11 @@ export default function Mentorship(){
       {organizationRequests.length>0&&<div className="grid" style={{gap:8,marginTop:12}}><h4 className="h2">Organization mentorship requests</h4>{organizationRequests.map(request=><div className="case-row" key={request.id}><div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}><b>{request.offer_title}</b><Badge>{humanStatus(request.status)}</Badge></div><p className="muted">{request.organization_name} · {request.is_requester?"Your request":"Request from a participant"}</p><p>{request.message}</p>{request.response_note&&<p className="muted">Response: {request.response_note}</p>}{!request.is_requester&&request.status==="requested"&&<div className="row" style={{gap:8,flexWrap:"wrap"}}><button type="button" className="btn btn-primary" disabled={organizationBusyId===request.id} onClick={()=>void respondOrganizationRequest(request,"accepted")}>Accept request</button><button type="button" className="btn btn-ghost" disabled={organizationBusyId===request.id} onClick={()=>void respondOrganizationRequest(request,"declined")}>Decline</button></div>}{!request.is_requester&&request.status==="accepted"&&<button type="button" className="btn btn-ghost" disabled={organizationBusyId===request.id} onClick={()=>void respondOrganizationRequest(request,"completed")}>Record completion</button>}{request.is_requester&&["requested","accepted"].includes(request.status)&&<button type="button" className="btn btn-ghost" disabled={organizationBusyId===request.id} onClick={()=>void respondOrganizationRequest(request,"cancelled")}>Cancel request</button>}</div>)}</div>}
       </Card>}
     </section>
-   <Card><form onSubmit={e=>{e.preventDefault();void load(query,topic)}} className="row" style={{gap:10,flexWrap:"wrap"}}>
+   <Card><form onSubmit={e=>{e.preventDefault();void load(query,topic,0)}} className="row" style={{gap:10,flexWrap:"wrap"}}>
      <label style={{flex:"1 1 220px"}}>Search expertise<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Mentor headline or bio"/></label>
      <label style={{flex:"1 1 180px"}}>Topic<input value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Expertise topic"/></label>
      <button className="btn btn-primary" type="submit" disabled={loading}>{loading?"Searching…":"Search mentors"}</button>
-     <button className="btn btn-ghost" type="button" onClick={()=>{setQuery("");setTopic("");void load("","")}}>Clear</button>
+     <button className="btn btn-ghost" type="button" onClick={()=>{setQuery("");setTopic("");void load("","",0)}}>Clear</button>
    </form></Card>
    <div style={{marginTop:14}}><button className="btn btn-ghost" type="button" onClick={()=>{setSelected(null);setShowRequestForm(true);setCreated(null);setNotice("");setError("");}}>Request mentorship without a preferred mentor</button><p className="muted">You can submit your goal now; the platform will not invent a match or confirm a mentor until one is eligible and accepts.</p></div>
    {error&&<FormFeedback kind="error" message={error} onRetry={()=>{void load();void loadMyRequests();void loadOrganizationOffers();}} retryLabel="Reload workspace" membershipReturnTo="/mentorship"/>}
@@ -157,6 +159,7 @@ export default function Mentorship(){
      {values(mentor.mentoring_modes).length>0&&<div className="tagline" style={{marginTop:8}}><Clock3 size={14}/> {values(mentor.mentoring_modes).join(" · ")}</div>}
      <button className="btn btn-primary" type="button" style={{width:"100%",marginTop:17}} onClick={()=>{setSelected(mentor);setShowRequestForm(false);setCreated(null);setGoals("");setNotice("");}}>Request mentorship <HeartHandshake size={16}/></button>
    </Card>)}</div>}
+   {!loading&&!error&&mentors.length>0&&<DiscoveryPagination page={discoveryPage} pageSize={discoveryPageSize} itemCount={mentors.length} hasMore={mentorsHasMore} disabled={loading} label="mentors" onPageChange={next=>void load(query,topic,next)}/>}
    {(selected||showRequestForm)&&<Card id="mentor-goal"><div className="row"><div><div className="eyebrow">Mentorship request</div><h2 className="h2">Goal and preferences</h2>{selected?<p className="muted">Preferred mentor: {selected.display_name}</p>:<p className="muted">No preferred mentor selected. Matching remains a separate, governed step.</p>}</div><button className="btn btn-ghost" type="button" onClick={()=>{setSelected(null);setShowRequestForm(false)}}>Close</button></div>
      {!token?<><p className="muted">A formal request requires sign-in and active membership. You can still explore mentor profiles.</p><a className="btn btn-primary" href="/login?next=/mentorship">Sign in to continue</a></>:<form className="form-stack" onSubmit={submit}>
        <label>Your mentorship goal<textarea required rows={4} value={goals} onChange={e=>setGoals(e.target.value)} placeholder="What outcome do you want help achieving?"/></label>
