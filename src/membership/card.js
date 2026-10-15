@@ -102,7 +102,7 @@ export async function setMyProfilePicture(userId,fileObjectId,requestId){
         and exists(select 1 from membership_record m where m.user_id=u.id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))
       for update of pr`,[userId])).rows[0];
     if(!owner) throw fail(403,"An active professional membership is required to change the profile picture.","MEMBERSHIP_REQUIRED");
-    const file=(await db.query("select id,created_by,content_type,visibility from file_object where id=$1",[fileObjectId])).rows[0];
+    const file=(await db.query("select f.id,f.created_by,f.content_type,f.visibility from file_object f join private_upload_session s on s.file_object_id=f.id and s.status='confirmed' where f.id=$1",[fileObjectId])).rows[0];
     if(!file||file.created_by!==userId||file.visibility!=="private"||!["image/jpeg","image/png"].includes(file.content_type))
       throw fail(403,"Choose a confirmed JPEG or PNG image uploaded by your own account.","PROFILE_PICTURE_FILE_FORBIDDEN");
     await db.query("update professional_profile set profile_picture_file_id=$1,updated_at=now() where id=$2",[file.id,owner.profile_id]);
@@ -169,7 +169,7 @@ export async function rotateMembershipCardVerification(recordId,actorId,requestI
   });
 }
 export async function verifyMembershipCard(recordId,token){
-  if(!recordId||typeof token!=="string") return {valid:false,status:"invalid",message:"This membership ID could not be verified."};
+  if(typeof recordId!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(recordId)||typeof token!=="string") return {valid:false,status:"invalid",message:"This membership ID could not be verified."};
   const db=getPool();
   const row=(await db.query(`select m.id,m.membership_number,m.status,m.start_date,m.end_date,m.card_token_version,
       p.name membership_type,coalesce(nullif(person.display_name,''),concat_ws(' ',person.first_name,person.middle_name,person.last_name)) member_name
