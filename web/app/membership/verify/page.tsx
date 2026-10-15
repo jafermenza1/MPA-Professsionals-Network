@@ -1,17 +1,18 @@
 "use client";
 import { useEffect,useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { api } from "../../../lib/api";
 import styles from "./verify.module.css";
 type Verification={valid:boolean;status:string;message:string;membershipNumber?:string;memberName?:string;membershipType?:string;startDate?:string|null;endDate?:string|null;verifiedAt?:string};
 export default function MembershipVerificationPage(){
-  const params=useSearchParams();
-  const record=params.get("record")||"";
-  const token=params.get("token")||"";
+  const [record,setRecord]=useState("");
+  const [token,setToken]=useState("");
+  const [paramsReady,setParamsReady]=useState(false);
+  useEffect(()=>{const params=new URLSearchParams(window.location.search);setRecord(params.get("record")||"");setToken(params.get("token")||"");setParamsReady(true);},[]);
   const [result,setResult]=useState<Verification|null>(null);
   const [loading,setLoading]=useState(true);
   useEffect(()=>{
     let cancelled=false;
+    if(!paramsReady)return;
     setLoading(true);
     if(!record||!token){setResult({valid:false,status:"invalid",message:"This verification link is incomplete."});setLoading(false);return;}
     void api<Verification>("/api/v1/public/membership-verification?record="+encodeURIComponent(record)+"&token="+encodeURIComponent(token))
@@ -19,7 +20,7 @@ export default function MembershipVerificationPage(){
       .catch(()=>{if(!cancelled)setResult({valid:false,status:"invalid",message:"We could not verify this membership. Check the QR code or contact MPA."});})
       .finally(()=>{if(!cancelled)setLoading(false);});
     return ()=>{cancelled=true;};
-  },[record,token]);
+  },[record,token,paramsReady]);
   return <main className={styles.page}><section className={styles.sheet}>
     <div className={styles.brand}><span>MPA</span><div><strong>Muslim Professionals Association</strong><small>Membership verification</small></div></div>
     {loading?<p role="status" className={styles.message}>Checking the current membership record…</p>:<><div className={styles.status} data-valid={result?.valid?"true":"false"}><span>{result?.valid?"✓":"!"}</span><div><strong>{result?.valid?"Verified membership":result?.status==="invalid"?"Unable to verify":"Membership not active"}</strong><p>{result?.message}</p></div></div>
