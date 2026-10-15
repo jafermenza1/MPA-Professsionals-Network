@@ -19,6 +19,7 @@ Correct the first increment of the MPA PWA/action-center roadmap before adding i
 - Service-listing and mentor-offer moderation alerts include the persisted submission version for each review cycle.
 - Draft organization registration no longer creates a reviewer-queue notification. Reviewers are notified when the organization verification case is actually submitted, preserving the existing review queue as authoritative.
 - Service/mentor moderation, mentorship support, and service finance reviewer recipient queries exclude inactive accounts while retaining existing role/permission checks.
+- Recruitment notifications resolve organization team recipients and offer approvers against active accounts; service provider notifications resolve active organization teams or active individual providers.
 - Resubmitted service listings and mentor offers include their persisted update version to allow a later moderation cycle to generate a new actionable notification.
 
 ## Invariants preserved
