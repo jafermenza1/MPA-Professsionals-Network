@@ -1,4 +1,5 @@
 import { getPool, withTransaction } from "../platform/db.js";
+import { queueWorkflowEmail } from "../platform/email-operations.js";
 import { hasCurrentActiveMembership, assertProfessionalIdentity, assertCurrentActiveMembership, assertOrganizationCapability } from "../platform/identity-policy.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
@@ -186,7 +187,8 @@ export async function requestService(listingId,requesterId,input,requestId){
     await db.query("insert into service_request_event(request_id,actor_user_id,to_status,note) values($1,$2,'requested',$3)",[row.id,requesterId,input.message||null]);
     await audit(db,requesterId,"service.request_created","service_request",row.id,requestId,{listingId,organizationId:listing.organization_id||null});
     const recipients=listing.organization_id?(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[listing.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id):[listing.provider_user_id];
-    for(const recipient of new Set(recipients))if(recipient&&recipient!==requesterId)await notify(db,recipient,"service.request_received","service_request",row.id,{message:"A new service request needs a response.",nextAction:"Review the requested scope and accept or decline with an explanation."});
+    for(const recipient of new Set(recipients))if(recipient&&recipient!==requesterId){await notify(db,recipient,"service.request_received","service_request",row.id,{message:"A new service request needs a response.",nextAction:"Review the requested scope and accept or decline with an explanation."});await queueWorkflowEmail(db,recipient,"professional.workflow_update",{status:"new service request",nextAction:"Review the service request and accept, decline or ask for clarification"},"service_request",row.id);}
+    await queueWorkflowEmail(db,requesterId,"professional.workflow_update",{status:"requested",nextAction:"Track the provider response in your service requests"},"service_request",row.id);
     return {...row,nextAction:"Your request is recorded. The provider or authorized organization team must respond before delivery begins."};
   });
 }
@@ -581,6 +583,8 @@ export async function proposeMentorMatch(requestId,mentorUserId,actorUserId,requ
     const row=(await db.query("insert into mentorship_match(request_id,mentor_user_id,mentee_user_id,score,match_reasons,status) values($1,$2,$3,$4,$5,'proposed') on conflict(request_id) do update set mentor_user_id=excluded.mentor_user_id,score=excluded.score,match_reasons=excluded.match_reasons,status='proposed',proposed_at=now(),responded_at=null returning *",[requestId,mentorUserId,request.mentee_user_id,match.score,JSON.stringify(match.reasons)])).rows[0];
     await db.query("update mentorship_request set status='matched',matched_mentor_user_id=$1,matched_at=now(),updated_at=now() where id=$2",[mentorUserId,requestId]);
     await audit(db,actorUserId,"mentorship.match_proposed","mentorship_match",row.id,requestIdHeader,{mentorUserId,score:match.score});
+    await queueWorkflowEmail(db,mentorUserId,"mentor.mentorship_update",{status:"match proposed",nextAction:"Review and accept or decline the mentorship match"},"mentorship_match",row.id);
+    await queueWorkflowEmail(db,request.mentee_user_id,"professional.workflow_update",{status:"mentor match proposed",nextAction:"Wait for the proposed mentor to respond"},"mentorship_match",row.id);
     return row;
   });
 }
