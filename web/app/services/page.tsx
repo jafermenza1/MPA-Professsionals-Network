@@ -5,6 +5,7 @@ import {FormEvent,useCallback,useEffect,useState} from "react";
 import {Handshake,MessageSquareText,RefreshCw,Star} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
+import {DiscoveryPagination} from "../../components/discovery-pagination";
 import {useUiStore} from "../../lib/store";
 
 type Service={id:string;title:string;description:string;service_category:string;delivery_mode?:string;location_label?:string;pricing_model:string;price_amount?:number|string|null;currency?:string|null;display_name?:string;provider_name?:string};
@@ -15,6 +16,7 @@ type Org={id:string;display_name:string;verification_status?:string;role_code?:s
 export default function Services(){
  const token=useUiStore(s=>s.token);
  const [items,setItems]=useState<Service[]>([]);
+ const [page,setPage]=useState(0);const [hasMore,setHasMore]=useState(false);const pageSize=20;
  const [requests,setRequests]=useState<ServiceRequest[]>([]);
  const [deliveries,setDeliveries]=useState<Record<string,ServiceDelivery[]>>({});
  const [deliveryDrafts,setDeliveryDrafts]=useState<Record<string,string>>({});
@@ -34,12 +36,12 @@ export default function Services(){
  const [message,setMessage]=useState("");
  const [submitting,setSubmitting]=useState(false);
 
- const load=useCallback(async(q="")=>{
+ const load=useCallback(async(q="",pageIndex=0)=>{
    setLoading(true);setError("");
    try{
-     const params=new URLSearchParams();if(q.trim())params.set("q",q.trim());
-     const result=await api<{items:Service[]}>("/api/v1/services"+(params.toString()?"?"+params.toString():""),{},token||undefined);
-     setItems(Array.isArray(result?.items)?result.items:[]);
+     const params=new URLSearchParams();if(q.trim())params.set("q",q.trim());params.set("limit",String(pageSize+1));params.set("offset",String(pageIndex*pageSize));
+     const result=await api<{items:Service[]}>("/api/v1/services?"+params.toString(),{},token||undefined);
+     const rows=Array.isArray(result?.items)?result.items:[];setItems(rows.slice(0,pageSize));setHasMore(rows.length>pageSize);setPage(pageIndex);
    }catch(e){setItems([]);setError(e instanceof ApiError?e.message:"We couldn't load services right now.");}
    finally{setLoading(false);}
  },[token]);
@@ -117,13 +119,13 @@ export default function Services(){
     {token&&<div className="grid" style={{gap:10,marginTop:18}}><h3 className="h2">Your listings</h3>{myListings.length===0&&!error?<p className="muted">No listings yet. Saved drafts will appear here for review and follow-up.</p>:myListings.map(item=><div className="case-row" key={item.id}><div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}><b>{item.title}</b><div className="row" style={{gap:6,flexWrap:"wrap"}}><Badge>{item.status.replaceAll("_"," ")}</Badge><Badge>{item.moderation_status.replaceAll("_"," ")}</Badge></div></div><p className="muted">{item.provider_name||"Professional provider"} · {item.service_category}</p>{item.moderation_note&&<p className="muted">Reviewer note: {item.moderation_note}</p>}<div className="row" style={{gap:8,flexWrap:"wrap",marginTop:8}}><button type="button" className="btn btn-ghost" onClick={()=>editListing(item)} disabled={item.status==="closed"}>Edit</button>{item.moderation_status!=="approved"&&item.status!=="closed"&&<button type="button" className="btn btn-primary" disabled={transitioningId===item.id} onClick={()=>void changeListingStatus(item,"published")}>Submit for review</button>}{item.moderation_status==="approved"&&item.status==="published"&&<button type="button" className="btn btn-ghost" disabled={transitioningId===item.id} onClick={()=>void changeListingStatus(item,"paused")}>Pause listing</button>}</div></div>)}</div>}
    </Card>
    <Card id="service-discovery">
-     <form onSubmit={e=>{e.preventDefault();void load(query)}} className="row" style={{gap:10,flexWrap:"wrap"}}>
+     <form onSubmit={e=>{e.preventDefault();void load(query,0)}} className="row" style={{gap:10,flexWrap:"wrap"}}>
        <label style={{flex:"1 1 240px"}}>Search services<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Category, capability or keyword" style={{width:"100%"}}/></label>
        <button className="btn btn-primary" type="submit" disabled={loading}>{loading?"Searching…":"Search"}</button>
-       <button className="btn btn-ghost" type="button" disabled={loading} onClick={()=>{setQuery("");void load("")}}>Clear</button>
+       <button className="btn btn-ghost" type="button" disabled={loading} onClick={()=>{setQuery("");void load("",0)}}>Clear</button>
      </form>
    </Card>
-   {error&&<FormFeedback kind="error" message={error} onRetry={()=>{void load(query);void loadRequests();}} retryLabel="Reload workspace" membershipReturnTo="/services"/>}
+   {error&&<FormFeedback kind="error" message={error} onRetry={()=>{void load(query,page);void loadRequests();}} retryLabel="Reload workspace" membershipReturnTo="/services"/>}
    {notice&&<FormFeedback kind="success" message={notice} actionHref={!token?"/login?next=/services":undefined} actionLabel={!token?"Sign in":undefined}/>}
    {loading?<Card><div className="row"><RefreshCw size={18}/><p className="muted">Loading published services…</p></div></Card>:items.length===0&&!error?<Card><h2 className="h2">No published services found</h2><p className="muted">Try another keyword or check again later. Only live published listings are shown.</p></Card>:<div className="grid grid-2">{items.map(service=><Card key={service.id}>
      <div className="row"><Badge>{service.service_category}</Badge><span className="tagline">{(service.delivery_mode||"remote").replaceAll("_"," ")}</span></div>
@@ -134,6 +136,7 @@ export default function Services(){
      <div className="tagline" style={{marginTop:6}}>Pricing: {service.pricing_model==="quote"?"Request a quote":service.pricing_model==="free"?"Free":service.price_amount!=null?`${service.currency||""} ${Number(service.price_amount).toLocaleString()} · ${service.pricing_model}`:service.pricing_model}</div>
      <button className="btn btn-primary" type="button" style={{marginTop:16,width:"100%"}} onClick={()=>{setSelected(service);setMessage("");setNotice("");}}>Request this service</button>
    </Card>)}</div>}
+   {!loading&&!error&&items.length>0&&<DiscoveryPagination page={page} pageSize={pageSize} itemCount={items.length} hasMore={hasMore} disabled={loading} label="services" onPageChange={next=>void load(query,next)}/>}
    {selected&&<Card id="service-request"><div className="row"><div><div className="eyebrow">New service request</div><h2 className="h2">{selected.title}</h2></div><button className="btn btn-ghost" type="button" onClick={()=>setSelected(null)}>Close</button></div>
      {!token?<><p className="muted">Sign in to request this service. Member-only offers require an active membership. A provider must accept before work begins.</p><a className="btn btn-primary" href="/login?next=/services">Sign in to continue</a></>:<form className="form-stack" onSubmit={submitRequest}><label>Message to the provider<textarea rows={4} value={message} onChange={e=>setMessage(e.target.value)} placeholder="Describe the help you need, intended outcome and any important context."/></label><p className="muted">Submitting creates a request in the “requested” state. No payment or service completion is implied.</p><button className="btn btn-primary" type="submit" disabled={submitting}>{submitting?"Submitting…":"Submit service request"} <Handshake size={16}/></button></form>}
    </Card>}
