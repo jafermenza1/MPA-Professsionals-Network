@@ -37,6 +37,7 @@ type Props = {
   token: string;
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
+  usersLoadFailed?: boolean;
 };
 
 export function UsersTable({
@@ -48,6 +49,7 @@ export function UsersTable({
   token,
   onChanged,
   onError,
+  usersLoadFailed = false,
 }: Props) {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
@@ -340,7 +342,7 @@ export function UsersTable({
               </tr>
             );
           })}
-          {users.length === 0 && (
+          {users.length === 0 && !usersLoadFailed && (
             <tr>
               <td colSpan={6} className={styles.empty}>
                 No accounts match these filters.
