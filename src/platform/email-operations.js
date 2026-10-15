@@ -31,13 +31,42 @@ function providerConfig(){
  const provider=resendConfigured?"resend":webhookConfigured?"signed-webhook":"not-configured";
  return {provider,ready:Boolean(publicValid&&(resendConfigured||(webhookConfigured&&webhookValid))),publicUrl,fromConfigured:Boolean(from),apiKeyConfigured:Boolean(apiKey),webhookConfigured, inboundConfigured:Boolean(clean(process.env.EMAIL_INBOUND_WEBHOOK_SECRET)),environment,sender:from?from:null};
 }
+function workflowNotificationCategory(code){
+ const value=String(code||"").toLowerCase();
+ if(value.startsWith("membership."))return "membership";
+ if(value.startsWith("verification."))return "verification";
+ if(value.startsWith("organization."))return "organizations";
+ if(value.startsWith("job.")||value.startsWith("job_application.")||value.startsWith("employer."))return "recruitment";
+ if(value.startsWith("mentor.")||value.startsWith("mentorship."))return "mentorship";
+ if(value.startsWith("service."))return "services";
+ if(value.startsWith("event.")||value.startsWith("learning."))return "events_learning";
+ if(value.startsWith("security."))return "security";
+ return "system";
+}
+function safeActionUrl(value){const url=String(value||"");return url.startsWith("/")&&!url.startsWith("//")&&![...url].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127)?url:null;}
 export async function queueWorkflowEmail(db,userId,templateCode,variables={},resourceType="workflow",resourceId=null){
- const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled,p.first_name from app_user u left join notification_preference np on np.user_id=u.id left join person p on p.user_id=u.id where u.id=$1",[userId])).rows[0];
- if(!user?.email||!user.email_enabled)return false;
- const vars={firstName:user.first_name||"",...variables};
- await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload) values($1,$2,$3,$4,$5)",[userId,templateCode,resourceType,resourceId,vars]);
- await db.query("insert into notification_outbox(channel,recipient,template_code,payload,status,updated_at) values('email',$1,$2,$3,'pending',now())",[user.email,templateCode,{...vars,variables:vars}]);
- return true;
+ const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled,coalesce(np.in_app_enabled,true) in_app_enabled,coalesce(np.in_app_categories,'{}'::jsonb) in_app_categories,p.first_name from app_user u left join notification_preference np on np.user_id=u.id left join person p on p.user_id=u.id where u.id=$1",[userId])).rows[0];
+ if(!user)return false;
+ const vars={firstName:user.first_name||"",...variables},category=workflowNotificationCategory(templateCode);
+ let queued=false;
+ if(user.in_app_enabled&&user.in_app_categories?.[category]!==false){
+  const title=String(vars.title||templateCode||"Update").split(/[._-]+/).filter(Boolean).map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(" ");
+  const body=String(vars.message||vars.summary||vars.nextAction||vars.next_action||(vars.status?("Status updated: "+String(vars.status).replace(/[_-]+/g," ").toLowerCase()):"There is an update to review in your MPA Network account.")).slice(0,1000);
+  const priority=["low","normal","high","urgent"].includes(vars.priority)?vars.priority:"normal";
+  const actionRequired=vars.actionRequired===true||vars.action_required===true;
+  const actionUrl=safeActionUrl(vars.actionUrl||vars.action_url);
+  const dedupeKey=resourceId?String(templateCode+":"+resourceType+":"+resourceId).slice(0,240):null;
+  const result=await db.query(`insert into notification_event(user_id,event_code,resource_type,resource_id,payload,category,title,body,priority,action_required,action_url,dedupe_key)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    on conflict (user_id,dedupe_key) where dedupe_key is not null do nothing returning id`,
+    [userId,templateCode,resourceType,resourceId,vars,category,title,body,priority,actionRequired,actionUrl,dedupeKey]);
+  queued=Boolean(result.rows[0]);
+ }
+ if(user.email&&user.email_enabled){
+  await db.query("insert into notification_outbox(channel,recipient,template_code,payload,status,updated_at) values('email',$1,$2,$3,'pending',now())",[user.email,templateCode,{...vars,variables:vars}]);
+  queued=true;
+ }
+ return queued;
 }
 export async function getEmailOperations(actorId){
  const db=getPool();await requireAdmin(db,actorId);
