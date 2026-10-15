@@ -9,10 +9,14 @@ function publicRef(){return "MPA-SUP-"+randomUUID().replace(/-/g,"").slice(0,10)
 function httpError(message,statusCode=400,code="INVALID_REQUEST"){return Object.assign(new Error(message),{statusCode,code});}
 function rowArticle(row){return {id:row.id,categoryId:row.category_id,categoryName:row.category_name,title:row.title,questionExamples:row.question_examples||[],keywords:row.keywords||[],answer:row.answer,sourceNote:row.source_note,sortOrder:row.sort_order,isPublished:row.is_published,updatedAt:row.updated_at};}
 function matchScore(question,article){
- const q=question.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s]/gu," ");
- const terms=[article.title,...(article.question_examples||[]),...(article.keywords||[])].join(" ").toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s]/gu," ");
- let score=0; for(const token of new Set(q.split(/\s+/).filter(t=>t.length>2))){if(terms.includes(token))score+=token.length>5?2:1;}
- if(terms.includes(q.trim()))score+=4;
+ const normalize=value=>String(value||"").toLowerCase().normalize("NFKD").replace(/[^\\p{L}\\p{N}\\s]/gu," ").replace(/\\s+/g," ").trim();
+ const q=normalize(question);
+ const entries=[article.title,...(article.question_examples||[]),...(article.keywords||[])].map(normalize).filter(Boolean);
+ const qTokens=new Set(q.split(" ").filter(token=>token.length>2));
+ let score=0;
+ for(const token of qTokens){if(entries.some(entry=>entry.split(" ").includes(token)))score+=token.length>5?2:1;}
+ if(entries.some(entry=>entry===q))score+=5;
+ if(entries.some(entry=>entry.startsWith(q+" ")||entry.endsWith(" "+q)||entry.includes(" "+q+" ")))score+=4;
  return score;
 }
 async function logAudit(db,actorId,action,resourceId,requestId){
