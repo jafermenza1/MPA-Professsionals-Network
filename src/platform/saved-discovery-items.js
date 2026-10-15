@@ -1,6 +1,5 @@
 import { getPool } from "./db.js";
 import * as talent from "../talent/service.js";
-import * as organizationJobs from "../organization-jobs/service.js";
 import * as servicesMentorship from "../services-mentorship/service.js";
 
 function error(status,message,code="BUSINESS_RULE"){const e=new Error(message);e.statusCode=status;e.code=code;return e;}
@@ -50,6 +49,7 @@ export async function saveDiscoveryItem(userId,input={},requestId){
 }
 export async function removeDiscoveryItem(userId,itemType,itemId,requestId){
  if(!TYPES.has(String(itemType||"")))throw error(400,"Choose a supported saved-item type.","VALIDATION_ERROR");
+ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(itemId||"")))throw error(400,"itemId must be a valid identifier.","VALIDATION_ERROR");
  const db=getPool();
  await db.query("delete from saved_discovery_item where user_id=$1 and item_type=$2 and item_id=$3",[userId,itemType,itemId]);
  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'discovery.item_unsaved','saved_discovery_item',$2,$3,'success',$4)",[userId,itemId,requestId,{itemType}]);
@@ -75,11 +75,13 @@ export async function listDiscoveryItems(userId){
  select s.item_type,s.item_id,s.created_at,sl.title title,sl.service_category subtitle,'/services/'||sl.id::text href
  from saved_discovery_item s join service_listing sl on sl.id=s.item_id
  where s.user_id=$1 and s.item_type='service' and sl.status='published' and sl.moderation_status='approved'
+   and ((sl.organization_id is not null and exists(select 1 from organization o where o.id=sl.organization_id and o.verification_status='verified' and o.public_visible=true)) or (sl.organization_id is null and exists(select 1 from membership_record pm where pm.user_id=sl.provider_user_id and pm.status='active' and pm.start_date<=current_date and (pm.end_date is null or pm.end_date>=current_date))))
    and ((sl.visibility='public') or (sl.visibility='members' and exists(select 1 from membership_record vm where vm.user_id=$1 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))
  union all
  select s.item_type,s.item_id,s.created_at,p.display_name title,mp.headline subtitle,'/mentorship/mentors/'||mp.user_id::text href
  from saved_discovery_item s join mentor_profile mp on mp.user_id=s.item_id join person p on p.user_id=mp.user_id
  where s.user_id=$1 and s.item_type='mentor' and mp.status='active' and mp.moderation_status='approved'
+   and exists(select 1 from membership_record mentor_membership where mentor_membership.user_id=mp.user_id and mentor_membership.status='active' and mentor_membership.start_date<=current_date and (mentor_membership.end_date is null or mentor_membership.end_date>=current_date))
    and (mp.visibility='public' or (mp.visibility='members' and exists(select 1 from membership_record vm where vm.user_id=$1 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))
  order by created_at desc`,[userId])).rows;
 }
