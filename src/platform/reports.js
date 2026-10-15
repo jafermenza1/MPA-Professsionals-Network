@@ -1,5 +1,5 @@
 import { deflateRawSync } from "node:zlib";
-import { getPool } from "./db.js";
+import { getPool, withTransaction } from "./db.js";
 const REPORTS=[
 {id:"membership-status",title:"Membership status and renewal",description:"Membership counts by status and product.",category:"Membership",scope:"Platform aggregate",sensitive:false,roles:["system_admin","admin","membership_reviewer","finance_officer"],columns:["Status","Product","Members"],definition:"Counts membership records by recorded status and product; does not infer payment approval."},
 {id:"membership-applications",title:"Membership applications and activation funnel",description:"Application type, product, current state and review/activation progress.",category:"Membership",scope:"Operational aggregates",sensitive:false,roles:["system_admin","admin","membership_reviewer","reviewer"],columns:["Application type","Product","Status","Applications","Submitted","Reviewed","Activated"],definition:"Aggregated membership application states and lifecycle timestamps; applicant identity and private application snapshots are excluded."},
@@ -20,6 +20,37 @@ const REPORTS=[
 {id:"audit-activity",title:"Administrative audit activity",description:"Administrative actions and outcomes.",category:"Governance",scope:"Restricted audit",sensitive:true,roles:["system_admin","admin"],columns:["When","Actor","Action","Resource","Outcome"],definition:"Operational audit events; metadata is omitted from exports by default."}
 ];
 function fail(status,message,code="REPORT_ERROR"){const e=new Error(message);e.statusCode=status;e.code=code;return e;}
+export async function listSavedViews(identity){
+ const rows=(await getPool().query("select id,report_id,name,filters,created_at,updated_at from report_saved_view where owner_user_id=$1 order by updated_at desc,id",[identity.sub])).rows;
+ return rows.filter(row=>REPORTS.some(report=>report.id===row.report_id&&(()=>{try{authorize(identity,report);return true}catch{return false}})())).map(row=>({...row,reportTitle:REPORTS.find(report=>report.id===row.report_id)?.title||row.report_id}));
+}
+export async function saveSavedView(identity,input={},requestId){
+ const report=REPORTS.find(row=>row.id===String(input.reportId||""));
+ if(!report)throw fail(404,"Choose a report from the current catalogue before saving a view.","REPORT_NOT_FOUND");
+ authorize(identity,report);
+ const name=String(input.name||"").trim().slice(0,100);
+ if(name.length<1)throw fail(400,"Give this saved view a name.","VIEW_NAME_REQUIRED");
+ const filters=cleanFilters(input.filters||{});
+ return withTransaction(async db=>{
+  try{
+   const row=(await db.query("insert into report_saved_view(owner_user_id,report_id,name,filters) values($1,$2,$3,$4) returning id,report_id,name,filters,created_at,updated_at",[identity.sub,report.id,name,JSON.stringify(filters)])).rows[0];
+   await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'report.saved_view_created','report_saved_view',$2,$3,'success',$4)",[identity.sub,row.id,requestId,JSON.stringify({reportId:report.id,name})]);
+   return {...row,reportTitle:report.title};
+  }catch(cause){if(cause?.code==="23505")throw fail(409,"A saved view with this name already exists for the selected report. Choose a different name.","VIEW_NAME_EXISTS");throw cause;}
+ });
+}
+export async function deleteSavedView(identity,viewId,requestId){
+ return withTransaction(async db=>{
+  const row=(await db.query("select * from report_saved_view where id=$1 and owner_user_id=$2 for update",[viewId,identity.sub])).rows[0];
+  if(!row)throw fail(404,"Saved report view not found.","SAVED_VIEW_NOT_FOUND");
+  const report=REPORTS.find(item=>item.id===row.report_id);
+  if(!report)throw fail(409,"This saved view references a report that is no longer available.","REPORT_NOT_FOUND");
+  authorize(identity,report);
+  await db.query("delete from report_saved_view where id=$1 and owner_user_id=$2",[viewId,identity.sub]);
+  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'report.saved_view_deleted','report_saved_view',$2,$3,'success',$4)",[identity.sub,row.id,requestId,JSON.stringify({reportId:row.report_id,name:row.name})]);
+  return {id:row.id,deleted:true,nextAction:"The saved view was deleted. The source report data was not changed."};
+ });
+}
 function authorize(identity,report){const roles=identity?.roles||[],permissions=identity?.permissions||[];if(!report.roles.some(r=>roles.includes(r))&&!permissions.includes("reports.view"))throw fail(403,"Your account is not authorized to run this report.","REPORT_FORBIDDEN");if(report.sensitive&&!roles.some(r=>["system_admin","admin"].includes(r))&&!(report.id==="payment-reconciliation"&&roles.includes("finance_officer"))&&!permissions.includes("reports.sensitive"))throw fail(403,"This report contains restricted data and requires explicit sensitive-report permission.","SENSITIVE_REPORT_FORBIDDEN");}
 function cleanFilters(input={}){const f={from:String(input.from||"").trim(),to:String(input.to||"").trim(),status:String(input.status||"").trim().slice(0,40),q:String(input.q||"").trim().slice(0,100),groupBy:String(input.groupBy||"default").trim().slice(0,30)};const valid=v=>!v||(/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v+"T00:00:00Z")));if(!valid(f.from)||!valid(f.to))throw fail(400,"Dates must use YYYY-MM-DD.","INVALID_DATE");if(f.from&&f.to&&f.from>f.to)throw fail(400,"Start date must be on or before end date.","INVALID_DATE_RANGE");return f;}
 export function listReportCatalogue(identity){return REPORTS.filter(r=>{try{authorize(identity,r);return true}catch{return false}}).map(({id,title,description,category,scope,sensitive,columns,definition})=>({id,title,description,category,scope,sensitive,columns,definition,formats:["pdf","xlsx"]}));}
