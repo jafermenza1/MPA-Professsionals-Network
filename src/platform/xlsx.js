@@ -17,12 +17,14 @@ function unzip(buffer) {
   }
   if (eocd < 0) throw new Error("The XLSX file is not a valid ZIP-based Excel workbook.");
   const count = buffer.readUInt16LE(eocd + 10), centralOffset = buffer.readUInt32LE(eocd + 16);
-  const files = new Map(); let offset = centralOffset;
+  const files = new Map(); let offset = centralOffset, totalUncompressed = 0;
   for (let i = 0; i < count; i++) {
     if (buffer.readUInt32LE(offset) !== 0x02014b50) throw new Error("The XLSX central directory is invalid.");
     const method = buffer.readUInt16LE(offset + 10), compressedSize = buffer.readUInt32LE(offset + 20), uncompressedSize = buffer.readUInt32LE(offset + 24);
     const nameLength = buffer.readUInt16LE(offset + 28), extraLength = buffer.readUInt16LE(offset + 30), commentLength = buffer.readUInt16LE(offset + 32), localOffset = buffer.readUInt32LE(offset + 42);
     const name = buffer.toString("utf8", offset + 46, offset + 46 + nameLength);
+    totalUncompressed += uncompressedSize;
+    if (uncompressedSize > 25 * 1024 * 1024 || totalUncompressed > 50 * 1024 * 1024) throw new Error("The XLSX workbook expands beyond the allowed import size.");
     if (buffer.readUInt32LE(localOffset) !== 0x04034b50) throw new Error("The XLSX file contains an invalid entry.");
     const localNameLength = buffer.readUInt16LE(localOffset + 26), localExtraLength = buffer.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
