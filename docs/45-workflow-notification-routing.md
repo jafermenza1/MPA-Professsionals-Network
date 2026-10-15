@@ -1,6 +1,8 @@
-# Workflow Notification Routing — Increment 2
+# Workflow Notification Routing — Foundation and First-Increment Corrections
 
 **Status: code committed; validation not run.** This increment extends the existing in-app action center. It does not replace any domain workflow, reviewer queue, or email provider/outbox. Notification creation is performed through the shared `createInAppNotification` policy on the same database transaction connection as the authoritative state change, so a notification is not emitted for a transition that rolls back.
+
+**First-increment correction record:** active-account filters were added to membership, verification, organization, service/mentorship moderation, support, and finance reviewer routing. Repeated membership, verification, organization-submission, service-listing, and mentor-offer transitions now include persisted event versions where available. Organization draft creation no longer alerts reviewers; the existing organization verification queue is alerted when the case is actually submitted. See [First Increment — Workflow and Notification Routing Corrections](46-first-increment-workflow-routing-corrections.md). These changes are code-only evidence; tests and acceptance remain pending.
 
 ## Binding decisions
 
