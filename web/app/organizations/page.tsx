@@ -85,6 +85,7 @@ export default function Organizations() {
   >({});
   const [reviewingOrg, setReviewingOrg] = useState("");
   const [form, setForm] = useState<OrgForm>(blank);
+  const [organizationTypeChoice,setOrganizationTypeChoice]=useState("");
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -190,7 +191,7 @@ export default function Organizations() {
           body: JSON.stringify({
             legalName: form.legalName.trim(),
             displayName: form.displayName.trim(),
-            organizationType: form.organizationType.trim() || undefined,
+            organizationType: organizationTypeChoice==="other" ? (form.organizationType.trim()||undefined) : (organizationTypeChoice||undefined),
             description: form.description.trim() || undefined,
             website: form.website.trim() || undefined,
             email: form.email.trim() || undefined,
@@ -205,6 +206,7 @@ export default function Organizations() {
         ...current.filter((x) => x.id !== created.id),
       ]);
       setForm(blank);
+      setOrganizationTypeChoice("");
       setShowForm(false);
       setNotice(
         "Organization registration recorded. Reference ID: " +
@@ -563,14 +565,18 @@ export default function Organizations() {
                 </label>
                 <label>
                   Organization type
-                  <input
-                    value={form.organizationType}
-                    onChange={(e) =>
-                      setForm({ ...form, organizationType: e.target.value })
-                    }
-                    placeholder="e.g. company, association, NGO"
-                  />
+                  <select value={organizationTypeChoice} onChange={e=>{setOrganizationTypeChoice(e.target.value);if(e.target.value!=="other")setForm(current=>({...current,organizationType:e.target.value}));else setForm(current=>({...current,organizationType:""}));}}>
+                    <option value="">Choose organization type</option>
+                    <option value="company">Company / business</option>
+                    <option value="nonprofit">Nonprofit / NGO</option>
+                    <option value="professional_association">Professional association</option>
+                    <option value="government">Government / public institution</option>
+                    <option value="educational_institution">Educational institution</option>
+                    <option value="cooperative">Cooperative</option>
+                    <option value="other">Other</option>
+                  </select>
                 </label>
+                {organizationTypeChoice==="other"&&<label>Describe organization type<input required maxLength={120} value={form.organizationType} onChange={e=>setForm(current=>({...current,organizationType:e.target.value}))} placeholder="Describe the organization type"/></label>}
                 <label>
                   Description
                   <textarea
