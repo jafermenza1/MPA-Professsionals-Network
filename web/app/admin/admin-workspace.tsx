@@ -43,12 +43,18 @@ export function AdminWorkspace(  children }:   children: React.ReactNode }) {
     return [...destinations].sort((a, b) => b.href.length - a.href.length).find((item) => pathname.startsWith(item.href + "/"));
   }, [pathname]);
   const roleSummary = roles === null ? "Resolving account access…" : roles.length ? roles.map((role) => role.replaceAll("_", " ")).join(" · ") : "No administrator role confirmed";
+  const navDestinations = useMemo(() => {
+    const platformAdmin = Boolean(roles?.some((role) => ["system_admin", "admin", "platform_admin"].includes(role)));
+    if (platformAdmin || !roles?.includes("supporting_staff")) return destinations;
+    const priority: Record<string, number> = { "/admin": 0, "/admin/marketplace": 1, "/admin/support": 2 };
+    return [...destinations].sort((a, b) => (priority[a.href] ?? 10) - (priority[b.href] ?? 10));
+  }, [roles]);
 
   return <div className={styles.workspace}>
     <aside className={styles.sidebar} aria-label="Administration navigation">
       <div className={styles.brand}><span className={styles.brandMark}><Building2 size={19} /></span><div><strong>MPA operations</strong><span>Administration workspace</span></div></div>
       <nav className={styles.nav} aria-label="Admin workspaces">
-        {destinations.map(({ href, label, description, icon: Icon, exact }) => {
+        {navDestinations.map(({ href, label, description, icon: Icon, exact }) => {
           const active = exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
           return <Link key={href} href={href} aria-current={active ? "page" : undefined} className={active ? styles.active : styles.link}>
             <Icon size={18} aria-hidden="true" /><span className={styles.linkText}><strong>{label}</strong><small>{description}</small></span>
