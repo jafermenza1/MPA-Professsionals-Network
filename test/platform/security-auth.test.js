@@ -142,6 +142,24 @@ test("revoked administrator passkeys cannot be used for authentication",async()=
   await assert.rejects(beginAdminPasskeyAuthentication(email),error=>error.code==="PASSKEY_NOT_AVAILABLE");
 });
 
+
+test("persistent identity limits cannot be bypassed by changing source IP",async()=>{
+  const action="security-identity-test-"+suffix;
+  const requestA={headers:{},socket:{remoteAddress:"198.51.100.31"}};
+  const requestB={headers:{},socket:{remoteAddress:"198.51.100.32"}};
+  await enforcePersistentRateLimit(requestA,action,1,60000,"target-"+suffix+"@example.test");
+  await assert.rejects(enforcePersistentRateLimit(requestB,action,1,60000,"TARGET-"+suffix+"@EXAMPLE.TEST"),error=>error.code==="RATE_LIMITED"&&error.statusCode===429);
+});
+
+test("human subtraction challenges remain answerable on numeric-only keyboards",async()=>{
+  for(let i=0;i<12;i++){
+    const challenge=await issueHumanChallenge();
+    const match=challenge.question.match(/(\d+)\s*([+−])\s*(\d+)/);
+    assert.ok(match);
+    if(match[2]==="−")assert.ok(Number(match[1])>=Number(match[3]),"subtraction prompts must not require a negative sign");
+  }
+});
+
 test.after(async()=>{
   const db=getPool();
   for(const userId of createdUsers){await db.query("delete from audit_log where actor_user_id=$1",[userId]);await db.query("delete from app_user where id=$1",[userId]);}
