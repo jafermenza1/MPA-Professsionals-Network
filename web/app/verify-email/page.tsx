@@ -10,7 +10,7 @@ export default function VerifyEmail(){
  const [busy,setBusy]=useState(false);
  const [organizationDraft,setOrganizationDraft]=useState(false);
  useEffect(()=>{
-   try{setOrganizationDraft(Boolean(localStorage.getItem("mpa-organization-registration-draft")));}catch{}
+   try{setOrganizationDraft(Boolean(localStorage.getItem("mpa.organization-registration-draft")));}catch{}
    const value=new URLSearchParams(window.location.search).get("token")||"";
    setToken(value);
    if(value)void verify(value);
