@@ -57,3 +57,44 @@ For every source path in the 29-file net diff, record a disposition: already pre
 
 ## Validation status
 **NOT VALIDATED.** The source range and destination anchors were inspected, and fixed credentials in the destination example were replaced with placeholders. Complete per-file behavioral equivalence, tests, typecheck/lint, production build, migration application/rerun, browser journeys and provider-delivery tests have not been established here. Do not mark complete or merge/deploy until evidence is recorded against the final destination SHA.
+
+
+## Safe integration follow-up — 15 October 2026, 15:07 UTC
+
+### Source-to-destination file audit
+
+The pinned source compare (`433ea129...` to `3685817b...`) reports 29 changed paths. All 29 paths are represented in the destination PR #3 changed-file set. This is a path-coverage result only, not proof of behavior equivalence.
+
+Direct source-head versus destination-head content checks found the following groups:
+
+- **Identical at the time of inspection:** the five new security/passkey/email migrations; `docs/38-authentication-security-hardening.md`; `docs/39-email-operations-center.md`; `e2e/email-operations.spec.js`; `e2e/security-auth.spec.js`; `src/platform/application-tracking.js`; `src/platform/email-operations.js`; `src/platform/email-verification.js`; `src/platform/security-controls.js`; `src/platform/webauthn.js`; `test/platform/security-auth.test.js`; `web/app/admin/email/page.tsx`; and `web/app/admin/security/page.tsx`.
+- **MPA-adapted/different:** `server.js`, `src/membership/service.js`, `src/organization-jobs/service.js`, `src/services-mentorship/service.js`, `web/app/admin/page.tsx`, `web/app/login/page.tsx`, `web/app/organizations/page.tsx`, `web/app/register/page.tsx`, `web/app/track/page.tsx`, `web/lib/api.ts`, and `.env.example`. These differences must be retained and reviewed, not overwritten to force textual equality.
+- `web/app/verify-email/page.tsx` was initially identical but was then adapted to recognize the MPA organization-draft storage key.
+
+### Integration gaps found and addressed in code (validation still pending)
+
+The source registration UI and MPA server were not aligned: the source UI used a different human-challenge path, and the MPA verification route wrapped the issued token under a `valid` property instead of returning the token object expected by the UI. The current follow-up aligns the MPA registration UI with the MPA route and response shape.
+
+The MPA registration service now consumes the supplied one-time human-check token when required or supplied, validates password confirmation server-side, assigns a human-readable registration reference, and creates/delivers a verification token when `EMAIL_VERIFICATION_REQUIRED=true`. The login path rejects unverified accounts when that flag is enabled, and authenticated API sessions are also rejected when the flag is enabled and the account remains unverified. The public challenge issue/verify endpoints now have rate limiting. The login UI maps the verification-required error to an actionable message, and the verification page checks the same local organization-draft key used by MPA registration/workspace.
+
+Relevant destination commits added after the initial port head:
+
+- `1a75f5831ba4e77211e745b18c3485104be0d64c` — replace fixed example credentials with placeholders.
+- `fafb44ee9eaaac531592211afb55b25ac8147d04` — pin source scope and safe-transfer evidence.
+- `9a59ca6c7ac87fcadb9c9ef63354f1b9092cc51f` — consume human challenge and issue registration verification.
+- `7d7e5fac35e880e3045143c04800af27941842db` — return challenge token and enforce verified sessions.
+- `fe73e85347bb78e39368904e69986dfdbf7b416f` — block password login when required verification is missing.
+- `41cc2d910b88bb8fc3e063b591e5476e1af2d906` — align registration UI with challenge/verification.
+- `e04bcd82390e4353e54e093d56f280bb19cb59a5` — validate password confirmation server-side.
+- `513a38344d52713efcdb464eddae95b8e3053c69` — align verification page with the MPA draft key.
+- `a74c4a6b2f85ab389cc55026fa1b13a879d02c87` — explain required email verification errors.
+- `2b85173530e7e16db472938a732cc491646ae922` — document challenge/passkey environment controls.
+- `6ed91eeb4b9e16cc110a80faaaa4ae37f7e520b5` — rate-limit public human-check endpoints.
+
+### Remaining acceptance work
+
+- Run the complete per-file semantic review against the pinned source patches and current MPA contracts; path coverage and line-count/content comparison are not substitutes for reviewing behavior.
+- Confirm `EMAIL_VERIFICATION_REQUIRED` is enabled only with tested server enforcement and working delivery configuration; do not assume the sample `.env.example` value is production-safe.
+- Confirm production `HUMAN_CHALLENGE_REQUIRED` is enabled and verify the passkey enforcement policy before any deployment.
+- Execute registration success/failure/retry, token expiry/reuse, login denial before verification, existing-session denial, organization draft restoration, migration baseline/rerun, security, integration and browser checks at the agreed final gate.
+- Record actual results against the exact final destination SHA. No tests or builds are claimed as passed by this follow-up.
