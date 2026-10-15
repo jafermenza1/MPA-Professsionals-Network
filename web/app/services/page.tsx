@@ -2,11 +2,12 @@
 import { FormFeedback } from "../../components/form-feedback";
 import { humanStatus } from "../../lib/status-labels";
 import {FormEvent,useCallback,useEffect,useState} from "react";
-import {Handshake,MessageSquareText,RefreshCw,Star} from "lucide-react";
+import {Bookmark,Handshake,MessageSquareText,RefreshCw,Star} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
 import {DiscoveryPagination} from "../../components/discovery-pagination";
 import {useUiStore} from "../../lib/store";
+import {useSavedDiscoveryItems} from "../../lib/use-saved-discovery-items";
 
 type Service={id:string;title:string;description:string;service_category:string;delivery_mode?:string;location_label?:string;pricing_model:string;price_amount?:number|string|null;currency?:string|null;display_name?:string;provider_name?:string};
 type ServiceRequest={id:string;status:string;service_title?:string;created_at?:string;message?:string;provider_user_id?:string;requester_user_id?:string;is_provider?:boolean;provider_completed_at?:string|null;requester_accepted_at?:string|null;outcome_summary?:string|null;nextAction?:string;status_history?:{fromStatus?:string|null;toStatus?:string|null;note?:string|null;createdAt?:string}[]};
@@ -15,6 +16,7 @@ type ProviderListing={id:string;title:string;description:string;service_category
 type Org={id:string;display_name:string;verification_status?:string;role_code?:string};
 export default function Services(){
  const token=useUiStore(s=>s.token);
+ const savedItems=useSavedDiscoveryItems();
  const [items,setItems]=useState<Service[]>([]);
  const [page,setPage]=useState(0);const [hasMore,setHasMore]=useState(false);const pageSize=20;
  const [requests,setRequests]=useState<ServiceRequest[]>([]);
@@ -134,7 +136,7 @@ export default function Services(){
      <div className="tagline">Provider: {service.display_name||service.provider_name||"Verified member"}</div>
      {service.location_label&&<div className="tagline" style={{marginTop:6}}>Location: {service.location_label}</div>}
      <div className="tagline" style={{marginTop:6}}>Pricing: {service.pricing_model==="quote"?"Request a quote":service.pricing_model==="free"?"Free":service.price_amount!=null?`${service.currency||""} ${Number(service.price_amount).toLocaleString()} · ${service.pricing_model}`:service.pricing_model}</div>
-     <button className="btn btn-primary" type="button" style={{marginTop:16,width:"100%"}} onClick={()=>{setSelected(service);setMessage("");setNotice("");}}>Request this service</button>
+     <div className="row" style={{gap:8,marginTop:16,flexWrap:"wrap"}}><button className="btn btn-ghost" type="button" disabled={!savedItems.signedIn||savedItems.isSaving("service",service.id)} aria-pressed={savedItems.isSaved("service",service.id)} onClick={()=>void savedItems.toggle("service",service.id)}><Bookmark size={16}/>{savedItems.isSaved("service",service.id)?"Saved":"Save service"}</button><button className="btn btn-primary" type="button" onClick={()=>{setSelected(service);setMessage("");setNotice("");}}>Request this service</button></div>
    </Card>)}</div>}
    {!loading&&!error&&items.length>0&&<DiscoveryPagination page={page} pageSize={pageSize} itemCount={items.length} hasMore={hasMore} disabled={loading} label="services" onPageChange={next=>void load(query,next)}/>}
    {selected&&<Card id="service-request"><div className="row"><div><div className="eyebrow">New service request</div><h2 className="h2">{selected.title}</h2></div><button className="btn btn-ghost" type="button" onClick={()=>setSelected(null)}>Close</button></div>
