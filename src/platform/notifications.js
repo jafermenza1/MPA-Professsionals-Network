@@ -16,6 +16,53 @@ function present(row){
     actionUrl:safeInternalUrl(row.action_url),resourceType:row.resource_type,resourceId:row.resource_id,
     eventCode:row.event_code,createdAt:row.created_at,readAt:row.read_at,archivedAt:row.archived_at};
 }
+const NOTIFICATION_CATEGORIES=new Set(["membership","verification","opportunities","recruitment","organizations","mentorship","services","events_learning","security","system"]);
+export function notificationCategoryFor(eventCode,resourceType,payload={}){
+ const code=String(eventCode||"").toLowerCase(),type=String(resourceType||"").toLowerCase();
+ if(payload.category&&NOTIFICATION_CATEGORIES.has(payload.category))return payload.category;
+ if(code.startsWith("security.")||code.startsWith("security_")||type==="security_event"||type==="auth_session"||type==="one_time_session_link")return "security";
+ if(code.startsWith("membership.")||code.startsWith("membership_")||type.startsWith("membership_")||type==="membership_record"||type==="payment_transaction")return "membership";
+ if(code.startsWith("verification.")||code.startsWith("verification_")||type.startsWith("verification_")||type==="verification_case"||type==="verification_claim"||type==="verification_decision"||type==="verification_appeal")return "verification";
+ if(code.startsWith("opportunity.")||code.startsWith("opportunity_"))return "opportunities";
+ if(code.startsWith("organization.")||code.startsWith("organization_")||type.startsWith("organization"))return "organizations";
+ if(code.startsWith("job.")||code.startsWith("job_")||code.startsWith("employer.")||code.startsWith("employer_")||type.startsWith("job"))return "recruitment";
+ if(code.startsWith("mentor.")||code.startsWith("mentor_")||code.startsWith("mentorship.")||code.startsWith("mentorship_")||type.startsWith("mentor")||type.startsWith("mentorship"))return "mentorship";
+ if(code.startsWith("service.")||code.startsWith("service_")||type.startsWith("service"))return "services";
+ if(code.startsWith("event.")||code.startsWith("event_")||code.startsWith("learning.")||code.startsWith("learning_"))return "events_learning";
+ return "system";
+}
+function defaultActionUrl(category,resourceType,payload={}){
+ const explicit=safeInternalUrl(payload.actionUrl||payload.action_url);
+ if(explicit)return explicit;
+ if(payload.reviewerQueue===true||payload.reviewer_queue===true){
+  const queues={membership:"/membership",verification:"/verification",organizations:"/organizations",recruitment:"/recruitment",mentorship:"/mentorship",services:"/services",security:"/dashboard"};
+  return queues[category]||"/dashboard";
+ }
+ const routes={membership:"/membership",verification:"/verification",opportunities:"/jobs",recruitment:"/jobs",organizations:"/organizations",mentorship:"/mentorship",services:"/services",security:"/profile",system:"/dashboard"};
+ if(resourceType==="job_application"&&payload.audience==="employer")return "/recruitment";
+ if(resourceType==="organization_verification_case")return "/organizations";
+ return routes[category]||null;
+}
+export async function createInAppNotification(db,userId,eventCode,resourceType,resourceId,payload={}){
+ if(!userId)return null;
+ const user=(await db.query("select coalesce(in_app_enabled,true) in_app_enabled,coalesce(in_app_categories,'{}'::jsonb) in_app_categories from notification_preference where user_id=$1",[userId])).rows[0]||{in_app_enabled:true,in_app_categories:{}};
+ const category=notificationCategoryFor(eventCode,resourceType,payload),critical=category==="security"&&(payload.critical===true||payload.critical==="true");
+ if(!critical&&(!user.in_app_enabled||user.in_app_categories?.[category]===false))return null;
+ const title=String(payload.title||eventCode||"Update").split(/[._-]+/).filter(Boolean).map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(" ").slice(0,180);
+ const body=String(payload.message||payload.summary||payload.nextAction||payload.next_action||(payload.status?("Status updated: "+String(payload.status).replace(/[_-]+/g," ").toLowerCase()):"There is an update to review in your MPA Network account.")).slice(0,1000);
+ const priority=["low","normal","high","urgent"].includes(payload.priority)?payload.priority:(critical?"high":"normal");
+ const actionRequired=payload.actionRequired===true||payload.action_required===true||Boolean(payload.nextAction||payload.next_action);
+ const actionUrl=defaultActionUrl(category,resourceType,payload);
+ const transition=[payload.from,payload.to,payload.status,payload.decision,payload.outcome,payload.eventVersion,payload.event_version].filter(v=>v!==undefined&&v!==null&&String(v)!=="").map(String).join(":");
+ const supplied=String(payload.dedupeKey||payload.dedupe_key||"").trim();
+ const dedupeKey=(supplied||[eventCode,resourceType||"",resourceId||"",transition].join(":")).slice(0,240)||null;
+ const result=await db.query(`insert into notification_event(user_id,event_code,resource_type,resource_id,payload,category,title,body,priority,action_required,action_url,dedupe_key)
+   values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+   on conflict (user_id,dedupe_key) where dedupe_key is not null do nothing returning id`,
+   [userId,eventCode,resourceType||null,resourceId||null,payload,category,title,body,priority,actionRequired,actionUrl,dedupeKey]);
+ return result.rows[0]||null;
+}
+
 export function parseNotificationFilters(input={}){
   const category=String(input.category||"all");
   if(category!=="all"&&!CATEGORIES.has(category))fail(400,"Choose a supported notification category.","VALIDATION_ERROR");
