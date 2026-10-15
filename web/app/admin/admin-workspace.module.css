@@ -17,6 +17,10 @@
 .access p{font-size:12px;line-height:1.5;text-transform:capitalize;color:var(--text);overflow-wrap:anywhere;margin:7px 0}
 .access small{display:block;font-size:11px;line-height:1.5;color:var(--muted)}
 .content{min-width:0}
+.content :global(h1),.content :global(.h1){margin:0 0 10px;font-size:clamp(1.8rem,3vw,2.55rem);line-height:1.1;letter-spacing:-.04em;font-weight:800;overflow-wrap:anywhere}
+.content :global(.eyebrow){margin:0 0 7px}
+.content :global(p.muted){line-height:1.65;max-width:78ch}
+.content :global(button:focus-visible),.content :global(a:focus-visible),.sidebar :global(a:focus-visible){outline:3px solid var(--gold);outline-offset:3px}
 .breadcrumbs{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:0 0 18px;color:var(--muted);font-size:12px}
 .breadcrumbs a{color:var(--primary);font-weight:700;text-decoration:none}
 .breadcrumbs a:hover{text-decoration:underline}
