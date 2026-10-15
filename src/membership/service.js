@@ -57,6 +57,7 @@ export async function register(input,requestId){
   const email=normalizeEmail(input.email);
   if(!email || !String(input.password||"")) throw httpError(400,"email and password are required.","VALIDATION_ERROR");
   const person=validatePersonInput(input);
+  if(input.passwordConfirmation!==undefined&&String(input.passwordConfirmation)!==String(input.password||"")) throw httpError(400,"Password confirmation does not match.","PASSWORD_CONFIRMATION_MISMATCH");
   const verificationRequired=String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true";
   const humanChallengeRequired=String(process.env.HUMAN_CHALLENGE_REQUIRED||"false").toLowerCase()==="true";
   let verificationMessage=null;
