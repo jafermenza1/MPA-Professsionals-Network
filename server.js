@@ -21,6 +21,7 @@ import * as applicationTracking from "./src/platform/application-tracking.js";
 import * as publicOpportunity from "./src/platform/public-opportunity.js";
 import * as userAdmin from "./src/platform/user-admin.js";
 import * as emailOperations from "./src/platform/email-operations.js";
+import * as notifications from "./src/platform/notifications.js";
 import { verifyEmailToken, resendEmailVerification } from "./src/platform/email-verification.js";
 import { enforcePersistentRateLimit, issueHumanChallenge, verifyHumanChallenge } from "./src/platform/security-controls.js";
 import { beginAdminPasskeyRegistration, finishAdminPasskeyRegistration, beginAdminPasskeyAuthentication, finishAdminPasskeyAuthentication, recoverAdminPasskey, listAdminPasskeys, revokeAdminPasskey } from "./src/platform/webauthn.js";
@@ -379,7 +380,11 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="PATCH" && p==="api/v1/me/profile") return ok(res,await membership.updateProfile(identity.sub,await body(req),requestId),requestId);
     if(req.method==="GET" && p==="api/v1/membership/history") return ok(res,await membership.history(identity.sub),requestId);
     if(req.method==="GET" && p==="api/v1/membership/applications/me") return ok(res,await membership.listMyApplications(identity.sub),requestId);
-    if(req.method==="GET" && p==="api/v1/notifications/preferences") return ok(res,await membership.notificationPreferences(identity.sub),requestId);
+    if(req.method==="GET" && p==="api/v1/notifications") { const q=query(req.url); return ok(res,await notifications.getNotificationInbox(identity.sub,{category:q.get("category")||"all",unreadOnly:q.get("unreadOnly")||"false",actionRequired:q.get("actionRequired")||"false",limit:q.get("limit")||30,offset:q.get("offset")||0}),requestId); }
+     if(req.method==="POST" && p==="api/v1/notifications/read-all") return ok(res,await notifications.markAllNotificationsRead(identity.sub,requestId),requestId);
+     if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/notifications/") && parts[4]==="read") return ok(res,await notifications.markNotificationRead(identity.sub,parts[3],requestId),requestId);
+     if(req.method==="PATCH" && parts.length===5 && p.startsWith("api/v1/notifications/") && parts[4]==="archive") return ok(res,await notifications.archiveNotification(identity.sub,parts[3],requestId),requestId);
+     if(req.method==="GET" && p==="api/v1/notifications/preferences") return ok(res,await membership.notificationPreferences(identity.sub),requestId);
     if(req.method==="PATCH" && p==="api/v1/notifications/preferences") return ok(res,await membership.notificationPreferences(identity.sub,await body(req)),requestId);
     if(req.method==="POST" && p==="api/v1/membership/applications") {
       requireRole(identity,"member"); return ok(res,await membership.createApplication(identity.sub,await body(req),requestId),requestId,201);
