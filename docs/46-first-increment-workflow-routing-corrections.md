@@ -45,3 +45,26 @@ Correct the first increment of the MPA PWA/action-center roadmap before adding i
 ## Next increment
 
 After this workflow-routing increment is accepted, implement the PWA shell and installability as a separate increment. Do not combine service-worker caching with unresolved workflow authorization or notification-routing defects.
+
+
+## Increment 2 — Installable PWA foundation
+
+**Status: implementation committed; validation not run; acceptance open.**
+
+The installability foundation is layered onto the existing Next.js App Router application and existing provider service-worker registration. It does not replace the application shell or introduce a separate client runtime.
+
+- The web manifest declares the MPA app identity, standalone display, root scope/start URL, brand theme colors, and existing MPA SVG brand assets.
+- Root metadata links the manifest and provides mobile web-app metadata while retaining the current favicon behavior.
+- The existing service worker uses versioned cache names, best-effort shell precaching, activation cleanup, and client claiming. It caches only the public root shell and public brand/fingerprinted static assets.
+- API, authentication, account, dashboard, admin, notification and other workflow paths are excluded from service-worker caching/interception. Non-GET requests are never intercepted. Private forms and changing user data are not queued for background replay.
+- Navigation is network-first. If a navigation fails, the worker serves the cached public root only for a small public path allowlist; otherwise it returns a minimal no-store offline response that explains the connection requirement. This is not a claim that arbitrary pages or workflows work offline.
+- The existing responsive shell now shows network state and install guidance, handles the browser install prompt where available, detects installed display mode, and provides browser-specific manual install instructions.
+- Existing desktop and mobile navigation, account session behavior, notification action center and domain workflow queues are preserved.
+
+### Safety and acceptance boundaries
+
+1. The PWA is not an offline-first data application. No private API responses, auth tokens, account records, notification contents, drafts, review decisions or payment data are intentionally cached.
+2. No Background Sync, offline mutation queue, push notification delivery, chat, media cache, events/learning, Moodle/calendar integration or payment integration is included.
+3. The worker's cached root is public shell content only. Users must reconnect before attempting protected workflows; cached UI is never authorization.
+4. Browser installability depends on HTTPS, browser support, deployment headers and platform-specific requirements. SVG icon support differs by browser/platform; dedicated PNG and Apple touch icons remain a compatibility follow-up if required by device testing.
+5. **No tests, build, migration, service-worker browser test or offline/installability check was run.** Increment 2 is committed code, not accepted evidence. Validate the exact branch head before marking this increment complete.
