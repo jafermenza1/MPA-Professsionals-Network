@@ -12,7 +12,14 @@
 - **Not tested** means no passing end-to-end evidence has been recorded. Do not infer success from code shape.
 - Sensitive evidence, membership status, and organization resources must remain server-authorized; client-side hiding is not authorization.
 
-The repository-wide topology, contract precedence, full migration filename inventory, route-family ownership, screen-family mapping, command/evidence boundaries and known baseline risks are also recorded in [Repository Baseline Inventory](33-repository-baseline-inventory.md). This matrix is the working workflow-level detail and must be updated alongside workflow code changes.\n\n## Screen → API → service → persistence inventory
+The repository-wide topology, contract precedence, full migration filename inventory, route-family ownership, screen-family mapping, command/evidence boundaries and known baseline risks are also recorded in [Repository Baseline Inventory](33-repository-baseline-inventory.md). This matrix is the working workflow-level detail and must be updated alongside workflow code changes.
+
+## Action-center workflow routing increment — implemented, not accepted
+
+The first workflow-routing correction increment is recorded in [docs/46-first-increment-workflow-routing-corrections.md](46-first-increment-workflow-routing-corrections.md), alongside the original [notification routing contract](45-workflow-notification-routing.md). It filters inactive reviewer/support/finance recipients, adds persisted event versions to repeatable workflow notifications, and stops alerting organization reviewers before an organization verification case is submitted. Existing review queues and server-side authorization remain authoritative.
+
+**Evidence status: code committed; validation not run.** Do not mark the workflow or PR gate as passed until the documented authorization, recipient, retry/deduplication, transaction rollback, and browser/API acceptance checks are executed on the exact head.
+\n\n## Screen → API → service → persistence inventory
 
 | Journey / screen | API evidence observed on branch | Service / persistence boundary | Current UI evidence | Status / required proof |
 |---|---|---|---|---|
