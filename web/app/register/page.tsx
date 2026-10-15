@@ -10,7 +10,7 @@ const DRAFT_TTL_MS=24*60*60*1000;
 type AccountKind="professional"|"organization";
 type RegistrationForm={email:string;password:string;passwordConfirm:string;firstName:string;middleName:string;lastName:string;displayName:string;phone:string;nationality:string;orgLegalName:string;orgDisplayName:string;orgType:string;orgDescription:string;orgWebsite:string;orgEmail:string;orgPhone:string;orgAddress:string};
 const initialForm:RegistrationForm={email:"",password:"",passwordConfirm:"",firstName:"",middleName:"",lastName:"",displayName:"",phone:"",nationality:"Ethiopian",orgLegalName:"",orgDisplayName:"",orgType:"",orgDescription:"",orgWebsite:"",orgEmail:"",orgPhone:"",orgAddress:""};
-type RegistrationSuccess={email:string;displayName:string;registrationReference:string};
+type RegistrationSuccess={email:string;displayName:string};
 
 export default function Register(){
  const setToken=useUiStore(s=>s.setToken);
@@ -53,7 +53,6 @@ export default function Register(){
    const representativeName=[form.firstName,form.middleName,form.lastName].map(x=>x.trim()).filter(Boolean).join(" ");
    const payload={email:form.email.trim(),password:form.password,passwordConfirmation:form.passwordConfirm,humanCheckToken:proof.token,firstName:form.firstName.trim(),middleName:form.middleName.trim(),lastName:form.lastName.trim(),displayName:kind==="organization"?representativeName:form.displayName.trim(),phone:kind==="professional"?form.phone.trim():form.orgPhone.trim(),nationality:form.nationality};
    const r=await api<any>("/api/v1/auth/register",{method:"POST",body:JSON.stringify(payload)});
-   const reference=String(r.registrationReference||"");
    if(r.verificationRequired){
     setVerificationMessage(r.verificationSent?"Your representative account was created. Verify the representative's email before signing in; check your inbox and spam folder.":"Your account was created, but email delivery was not confirmed. Use the resend option on the login page, or use the development link if one is provided.");
     setVerificationUrl(String(r.developmentVerificationUrl||""));
@@ -61,7 +60,7 @@ export default function Register(){
    }
    if(!r.token)throw new Error("Registration did not return a session or verification instructions.");
    setToken(r.token);
-   setRegistered({email:String(r.user?.email||form.email),displayName:String(r.person?.display_name||payload.displayName),registrationReference:reference});
+   setRegistered({email:String(r.user?.email||form.email),displayName:String(r.person?.display_name||payload.displayName)});
   }catch(err){
    setError(err instanceof Error?err.message:"Registration failed.");
    void loadChallenge();
@@ -70,7 +69,7 @@ export default function Register(){
 
  if(verificationMessage)return <div className="auth-page"><Card><div className="eyebrow">Email verification</div><h1 className="h1">Check your email</h1><p className="muted">{verificationMessage}</p><p className="muted">Your application reference will be shown after your email is verified. Organization approval is a separate review decision.</p>{verificationUrl&&<p><a className="btn btn-primary" href={verificationUrl}>Verify email (development only)</a></p>}<div className="auth-links"><a href="/login">Continue to login</a></div></Card></div>;
 
- if(registered)return <div className="auth-page"><Card><div className="eyebrow">Account registration</div><h1 className="h1">Your account was created successfully.</h1><div className="form-success" role="status"><b>Registration confirmed</b><p>Welcome, {registered.displayName}. Your account is ready and you are signed in.</p></div><div className="grid" style={{gap:10,marginTop:16}}><p><b>Account status</b><br/><code>Account created</code></p>{registered.registrationReference&&<p><b>Registration reference</b><br/><code>{registered.registrationReference}</code></p>}<p><b>Email</b><br/>{registered.email}</p><p className="muted">Membership or organization approval is a separate process from account creation and email verification.</p></div><div className="grid grid-2" style={{marginTop:18}}><a className="btn btn-primary" href="/dashboard">Open my dashboard <ArrowRight size={16}/></a><a className="btn btn-ghost" href={kind==="professional"?"/membership":"/organizations?register=1"}>{kind==="professional"?"Continue to membership":"Review organization registration"} <ArrowRight size={16}/></a></div></Card></div>;
+ if(registered)return <div className="auth-page"><Card><div className="eyebrow">Account registration</div><h1 className="h1">Your account was created successfully.</h1><div className="form-success" role="status"><b>Registration confirmed</b><p>Welcome, {registered.displayName}. Your account is ready and you are signed in.</p></div><div className="grid" style={{gap:10,marginTop:16}}><p><b>Account status</b><br/><code>Account created</code></p><p><b>Email</b><br/>{registered.email}</p><p className="muted">Membership or organization approval is a separate process from account creation and email verification.</p></div><div className="grid grid-2" style={{marginTop:18}}><a className="btn btn-primary" href="/dashboard">Open my dashboard <ArrowRight size={16}/></a><a className="btn btn-ghost" href={kind==="professional"?"/membership":"/organizations?register=1"}>{kind==="professional"?"Continue to membership":"Review organization registration"} <ArrowRight size={16}/></a></div></Card></div>;
 
  return <div className="auth-page"><Card><div className="eyebrow">Join the ecosystem</div><h1 className="h1">Create your account</h1><p className="muted">Choose an account type. Professional registration keeps the existing personal profile flow. Organization registration creates the representative account first, then lets the verified representative review and submit the organization profile.</p><div className="choice-grid" style={{marginBottom:18}}><button type="button" className={kind==="professional"?"choice active":"choice"} onClick={()=>setKind("professional")}><UserRound/><b>Professional</b><span>Create a personal profile and continue to membership tracking.</span></button><button type="button" className={kind==="organization"?"choice active":"choice"} onClick={()=>setKind("organization")}><Building2/><b>Organization</b><span>Create a representative account and prepare an organization application.</span></button></div>
  <form onSubmit={submit} className="form-stack">
