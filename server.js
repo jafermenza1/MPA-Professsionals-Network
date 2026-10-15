@@ -118,7 +118,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && req.url==="/readyz") return ok(res,{status:"ready",databaseConfigured:Boolean(config.databaseUrl)},requestId);
     const parts=pathParts(req.url);
     const p=parts.join("/");
-    if(req.method==="GET" && p==="api/v1/auth/human-challenge") { publicRateLimit(req,"human-challenge",10,60000); await enforcePersistentRateLimit(req,"human-challenge",10,60000); return ok(res,await issueHumanChallenge(),requestId); }
+    if(req.method==="GET" && p==="api/v1/auth/human-challenge") { await enforcePersistentRateLimit(req,"human-challenge",10,60000); return ok(res,await issueHumanChallenge(),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/human-challenge/verify") { const b=await body(req); await enforcePersistentRateLimit(req,"human-challenge-verify",10,60000); return ok(res,await verifyHumanChallenge(b.id,b.answer),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/email-verification/resend") { const b=await body(req); await enforcePersistentRateLimit(req,"email-verification-resend",3,3600000,String(b.email||"").trim().toLowerCase()); return ok(res,await resendEmailVerification(b.email,requestId),requestId,202); }
     if(req.method==="POST" && p==="api/v1/auth/email-verification/verify") { const b=await body(req); await enforcePersistentRateLimit(req,"email-verification-verify",10,60000); return ok(res,await verifyEmailToken(b.token,requestId),requestId); }
@@ -163,7 +163,7 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/files/uploads/") && parts[5]==="confirm") { const identity=await auth(req); return ok(res,await confirmPrivateUpload(identity.sub,parts[4]),requestId,201); }
     if(req.method==="GET" && parts.length===4 && p.startsWith("api/v1/files/")) { const identity=await auth(req); const result=await readAuthorizedPrivateFile(identity.sub,parts[3],identity.roles||[],requestId,identity.permissions||[]); res.writeHead(200,{"content-type":result.file.content_type,"content-length":String(result.bytes.length),"content-disposition":"attachment; filename*=UTF-8''"+encodeURIComponent(result.file.original_name),"cache-control":"private, no-store","x-content-type-options":"nosniff","x-request-id":requestId}); return res.end(result.bytes); }
     if(req.method==="POST" && p==="api/v1/auth/member-invitation/claim") return ok(res,await membershipAdminBulk.claimMemberInvitation(await body(req)),requestId);
-    if(req.method==="POST" && p==="api/v1/auth/register") { publicRateLimit(req,"register",5,60000); const b=await body(req); await enforcePersistentRateLimit(req,"register",5,60000,String(b.email||"").trim().toLowerCase()); return ok(res,await membership.register(b,requestId),requestId,201); }
+    if(req.method==="POST" && p==="api/v1/auth/register") { const b=await body(req); await enforcePersistentRateLimit(req,"register",5,60000,String(b.email||"").trim().toLowerCase()); return ok(res,await membership.register(b,requestId),requestId,201); }
     if(req.method==="GET" && p==="api/v1/membership/products") return ok(res,await membership.listMembershipProducts(),requestId);
     if(req.method==="GET" && p==="api/v1/admin/membership/products") {
       const identity=await auth(req);
@@ -182,7 +182,7 @@ const server=http.createServer(async (req,res)=>{
     }
     if(req.method==="POST" && p==="api/v1/auth/one-time-session/redeem") { publicRateLimit(req,"one-time-session-redeem",12,60000); const b=await body(req); return ok(res,await accountSecurity.redeemOneTimeSessionLink(b.token,requestId,{ip:clientIp(req),userAgent:req.headers["user-agent"]||null}),requestId); }
     if(req.method==="POST" && p==="api/v1/auth/login") {
-      const b=await body(req); publicRateLimit(req,"login:"+String(b.email||"").trim().toLowerCase(),20,60000); await enforcePersistentRateLimit(req,"login",20,60000,String(b.email||"").trim().toLowerCase()); return ok(res,await membership.login(b.email,b.password,requestId,{ip:clientIp(req),userAgent:req.headers["user-agent"]||null}),requestId);
+      const b=await body(req); await enforcePersistentRateLimit(req,"login",20,60000,String(b.email||"").trim().toLowerCase()); return ok(res,await membership.login(b.email,b.password,requestId,{ip:clientIp(req),userAgent:req.headers["user-agent"]||null}),requestId);
     }
 
     if(req.method==="POST" && p==="api/v1/auth/logout") { const identity=await auth(req); return ok(res,await userAdmin.logout(identity.sub,identity.sid,requestId),requestId); }
