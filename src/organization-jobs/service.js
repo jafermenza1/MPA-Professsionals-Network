@@ -371,7 +371,7 @@ export async function submitApplication(applicationId,userId,input={},requestId)
   await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,'draft','submitted',$3)",[applicationId,userId,input.note||null]);
   await audit(db,userId,"job.application_submitted","job_application",applicationId,requestId,{jobId:a.job_id});
   await queueWorkflowEmail(db,userId,"professional.workflow_update",{notificationEventCode:"job.application_submitted",category:"recruitment",title:"Application submitted",message:"Your application for "+(a.job_title||"the role")+" was submitted.",status:"submitted",jobTitle:a.job_title||"job application",nextAction:"Monitor the application timeline for employer updates.",actionUrl:"/jobs",registrationReference:updated.tracking_reference||""},"job_application",applicationId);
-  const employers=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+  const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
   for(const employer of employers) await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.application_received",category:"recruitment",title:"New candidate application",audience:"employer",jobTitle:a.job_title||"job",status:"submitted",message:"A candidate submitted an application for your job.",nextAction:"Review the candidate in the recruitment workspace.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
   return updated;
  });
@@ -393,7 +393,7 @@ export async function applyToJob(jobId,userId,input,requestId){
   await audit(db,userId,"job.application_submitted","job_application",app.id,requestId,{jobId});
   await queueWorkflowEmail(db,userId,"professional.workflow_update",{notificationEventCode:"job.application_submitted",category:"recruitment",title:"Application submitted",message:"Your application was submitted successfully.",status:"submitted",nextAction:"Monitor the application timeline for employer updates.",actionUrl:"/jobs",registrationReference:app.tracking_reference||""},"job_application",app.id);
   const j=(await db.query("select title,organization_id from job where id=$1",[jobId])).rows[0];
-  const employers=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[j.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+  const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[j.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
   for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.application_received",category:"recruitment",title:"New candidate application",audience:"employer",jobTitle:j.title||"job",status:"submitted",message:"A candidate submitted an application for your job.",nextAction:"Review the candidate in the recruitment workspace.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",app.id);
   return app;
  });
@@ -444,7 +444,7 @@ export async function updateCandidate(jobId,applicationId,userId,input,requestId
     await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,$4,$5)",[applicationId,userId,a.status,input.status,input.note||null]);
     await audit(db,userId,"job.candidate_status_changed","job_application",applicationId,requestId,{from:a.status,to:input.status});
     if(input.status==="offer"&&offerApproval==="pending"){
-      const approvers=(await db.query("select user_id from job_team_member where job_id=$1 and role_code='approver' and active=true",[jobId])).rows;
+      const approvers=(await db.query("select jtm.user_id from job_team_member jtm join app_user u on u.id=jtm.user_id where jtm.job_id=$1 and jtm.role_code='approver' and jtm.active=true and u.status='active'",[jobId])).rows;
       for(const approver of approvers)await queueWorkflowEmail(db,approver.user_id,"employer.offer_approval_required",{notificationEventCode:"job.offer_approval_required",category:"recruitment",title:"Job offer needs approval",audience:"employer",jobTitle:j.title||"job",status:"pending approval",message:"A candidate offer is waiting for the required internal approval.",nextAction:"Review the proposed offer and approve or reject it in the recruitment workspace.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
     }else{
       const candidateMessage=input.status==="offer"?"An employment offer is ready for your response.":input.status==="rejected"?"The employer has updated your application decision.":input.status==="hired"?"Your hiring status has been recorded.":input.status==="shortlisted"?"You have been shortlisted for the next recruitment stage.":input.status==="interview"?"Your application has advanced to interview stage.":"Your application status has been updated.";
@@ -481,7 +481,7 @@ export async function respondToJobApplication(applicationId,userId,input,request
       const row=(await db.query("update job_application set status='accepted',offer_responded_at=now(),updated_at=now() where id=$1 returning *",[applicationId])).rows[0];
       await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,'offer','accepted',$3)",[applicationId,userId,input.note||null]);
       await audit(db,userId,"job.offer_accepted","job_application",applicationId,requestId);
-      const employers=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+      const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
       for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.offer_accepted",category:"recruitment",title:"Candidate accepted offer",audience:"employer",status:"accepted",message:"The candidate accepted the employment offer.",nextAction:"Update the candidate pipeline and prepare any authorized onboarding steps.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
       return row;
     }
@@ -490,7 +490,7 @@ export async function respondToJobApplication(applicationId,userId,input,request
       const row=(await db.query("update job_application set status='withdrawn',withdrawn_at=now(),updated_at=now() where id=$1 returning *",[applicationId])).rows[0];
       await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,'withdrawn',$4)",[applicationId,userId,a.status,input.note||null]);
       await audit(db,userId,"job.application_withdrawn","job_application",applicationId,requestId);
-      const employers=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+      const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
       for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.application_withdrawn",category:"recruitment",title:"Candidate withdrew application",audience:"employer",status:"withdrawn",message:"A candidate withdrew their job application.",nextAction:"Review the updated candidate pipeline.",actionUrl:"/recruitment"},"job_application",applicationId);
       return row;
     }
