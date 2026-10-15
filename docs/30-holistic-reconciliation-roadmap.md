@@ -304,3 +304,8 @@ Implementation and acceptance details are recorded in docs/46-first-increment-wo
 - Added dedicated detail routes for professionals, organizations, services and mentors, with server-side visibility checks and text-first loading.
 - Migration `20261016200000_saved_discovery_items.sql` is committed to the branch but has not been applied to any database.
 - Validation is open: do not claim acceptance until migration-backed API tests, cross-account authorization tests, typecheck/build, browser, responsive and throttled-network checks pass on the exact head.
+
+
+## App-store packaging readiness
+
+The repository assessment is recorded in [docs/47-app-store-packaging-readiness.md](47-app-store-packaging-readiness.md). Android distribution is feasible via a hosted PWA Trusted Web Activity or Capacitor; iOS distribution is feasible via Capacitor but needs app-specific utility beyond a thin website wrapper to reduce App Review Guideline 4.2 risk. No native project, signed package, store submission or approval has been produced. Packaging follows Increment 4 acceptance and requires explicit authorization.
