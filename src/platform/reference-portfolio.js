@@ -92,10 +92,25 @@ export async function previewReferenceCsv(identity,key,filename,csv,providedMapp
  if(!complete)return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row),errors:[],canImport:false};
  const db=getPool();const dataset=(await db.query("select id from reference_dataset where dataset_key=$1 and status='active'",[key])).rows[0];if(!dataset)throw fail(404,"Reference dataset was not found.","NOT_FOUND");
  const version=(await db.query("select id from reference_dataset_version where dataset_id=$1 and status in ('draft','validated','submitted','approved','published') order by case when status in ('draft','validated','submitted','approved') then 0 else 1 end,created_at desc limit 1",[dataset.id])).rows[0];
- const existing=new Set(version?(await db.query("select code from reference_item where dataset_version_id=$1",[version.id])).rows.map(x=>x.code):[]);
- const seen=new Set(),errors=[],parents=new Map();
- for(const row of rows){const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and Label are required; Code must use letters, numbers, dot, underscore or hyphen."});if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code in this file."});seen.add(code);if(parent){if(parent===code)errors.push({row:row.__row,message:"An item cannot be its own parent."});else if(!existing.has(parent)&&!rows.some(candidate=>clean(candidate.code,80).toUpperCase()===parent))errors.push({row:row.__row,message:"Parent code "+parent+" is not in the file or current working copy."});parents.set(code,parent);}if(row.metadata){try{const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata;if(!metadata||typeof metadata!=="object"||Array.isArray(metadata))throw new Error();}catch{errors.push({row:row.__row,message:"Metadata must be a valid JSON object."});}}for(const field of ["effective_from","effective_to"]){const value=clean(row[field],10);if(value&&!/^\d{4}-\d{2}-\d{2}$/.test(value))errors.push({row:row.__row,message:field+" must be a valid YYYY-MM-DD date."});}if(row.effective_from&&row.effective_to&&String(row.effective_from)>String(row.effective_to))errors.push({row:row.__row,message:"Effective-from date must not be after effective-to date."});}
- for(const [code,parent] of parents){const visited=new Set([code]);let cursor=parent;while(cursor&&parents.has(cursor)){if(visited.has(cursor)){errors.push({row:rows.find(x=>clean(x.code,80).toUpperCase()===code)?.__row||0,message:"Parent relationships contain a cycle involving "+code+"."});break;}visited.add(cursor);cursor=parents.get(cursor);}}
+ const existingRows=version?(await db.query("select child.code,parent.code parent_code from reference_item child left join reference_item parent on parent.id=child.parent_item_id and parent.dataset_version_id=child.dataset_version_id where child.dataset_version_id=$1",[version.id])).rows:[];
+ const existing=new Set(existingRows.map(x=>x.code));
+ const seen=new Set(),errors=[],parents=new Map(existingRows.filter(row=>row.parent_code).map(row=>[row.code,row.parent_code]));
+ const incomingCodes=new Set(rows.map(row=>clean(row.code,80).toUpperCase()));
+ for(const row of rows){
+  const code=clean(row.code,80).toUpperCase(),parent=clean(row.parent_code,80).toUpperCase();
+  if(!/^[A-Z0-9][A-Z0-9._-]{0,79}$/.test(code)||!clean(row.label,180))errors.push({row:row.__row,message:"Code and Label are required; Code must use letters, numbers, dot, underscore or hyphen."});
+  if(seen.has(code))errors.push({row:row.__row,message:"Duplicate code in this file."});seen.add(code);
+  if(parent){if(parent===code)errors.push({row:row.__row,message:"An item cannot be its own parent."});else if(!existing.has(parent)&&!incomingCodes.has(parent))errors.push({row:row.__row,message:"Parent code "+parent+" is not in the file or current working copy."});parents.set(code,parent);}else if(row.parent_code!==undefined)parents.delete(code);
+  if(row.metadata){try{const metadata=typeof row.metadata==="string"?JSON.parse(row.metadata):row.metadata;if(!metadata||typeof metadata!=="object"||Array.isArray(metadata))throw new Error();}catch{errors.push({row:row.__row,message:"Metadata must be a valid JSON object."});}}
+  for(const field of ["effective_from","effective_to"]){const value=clean(row[field],10);if(value&&!/^\d{4}-\d{2}-\d{2}$/.test(value))errors.push({row:row.__row,message:field+" must be a valid YYYY-MM-DD date."});}
+  if(row.effective_from&&row.effective_to&&String(row.effective_from)>String(row.effective_to))errors.push({row:row.__row,message:"Effective-from date must not be after effective-to date."});
+ }
+ const allCodes=new Set([...existing,...incomingCodes]);
+ for(const [code,parent] of parents){
+  if(!allCodes.has(parent)){errors.push({row:rows.find(x=>clean(x.code,80).toUpperCase()===code)?.__row||0,message:"Parent code "+parent+" is not in the working copy or import."});continue;}
+  const visited=new Set([code]);let cursor=parent;
+  while(cursor&&parents.has(cursor)){if(visited.has(cursor)){errors.push({row:rows.find(x=>clean(x.code,80).toUpperCase()===code)?.__row||0,message:"Parent relationships contain a cycle involving "+code+"."});break;}visited.add(cursor);cursor=parents.get(cursor);}
+ }
  return {filename:clean(filename,180),headers,mapping,rowCount:rows.length,sample:rows.slice(0,5).map(({__row,...row})=>row),errors,canImport:errors.length===0};
 }
 export async function importReferenceCsv(identity,key,filename,csv,mapping={},format="csv"){
