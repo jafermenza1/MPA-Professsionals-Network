@@ -276,9 +276,10 @@ export async function acceptServiceCompletion(requestId,userId,note,requestIdHea
     if(r.status==="completed"&&r.requester_accepted_at) return {...r,idempotent:true,nextAction:"This delivery is already accepted. You can leave feedback or review the engagement record."};
     if(r.status!=="in_progress" || !r.provider_completed_at) throw error(409,"The provider has not submitted completion for this engagement.","COMPLETION_NOT_SUBMITTED");
     const paid=(await db.query("select count(*)::int count from service_payment where request_id=$1 and amount>0",[requestId])).rows[0].count;
-    if(Number(paid)>0){
-      const settled=(await db.query("select 1 from service_payment where request_id=$1 and status='succeeded' order by created_at desc limit 1",[requestId])).rows[0];
-      if(!settled) throw error(409,"Payment must be verified before paid service delivery can be accepted.","PAYMENT_NOT_SETTLED");
+    const expectedAmount=Number(r.agreed_price||0);
+    if(expectedAmount>0||Number(paid)>0){
+      const settled=(await db.query("select 1 from service_payment where request_id=$1 and status='succeeded' and amount>0 and ($2::numeric<=0 or amount=$2::numeric) and ($3::text is null or upper(currency)=upper($3::text)) order by verified_at desc nulls last,created_at desc limit 1",[requestId,expectedAmount||null,r.agreed_currency||null])).rows[0];
+      if(!settled) throw error(409,"The agreed paid service must have a finance-verified successful payment for the agreed amount and currency before the requester can accept completion.","PAYMENT_NOT_SETTLED");
     }
     const outcome=String(note||"The requester accepted the submitted service outcome.").trim().slice(0,3000);
     const row=(await db.query("update service_request set requester_accepted_at=now(),status='completed',outcome_summary=$1,completed_at=now(),updated_at=now() where id=$2 returning *",[outcome,requestId])).rows[0];
