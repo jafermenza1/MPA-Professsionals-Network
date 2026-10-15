@@ -1,4 +1,5 @@
 import { getPool, withTransaction } from "../platform/db.js";
+import { createInAppNotification } from "../platform/notifications.js";
 import { queueWorkflowEmail } from "../platform/email-operations.js";
 import { hasCurrentActiveMembership, assertProfessionalIdentity, assertCurrentActiveMembership, assertOrganizationCapability } from "../platform/identity-policy.js";
 
@@ -10,7 +11,7 @@ async function audit(db,actor,action,type,id,requestId,metadata={}) {
 }
 async function notify(db,userId,eventCode,type,id,payload={}) {
   if(!userId)return;
-  await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload) values($1,$2,$3,$4,$5)",[userId,eventCode,type,id,payload]);
+  await createInAppNotification(db,userId,eventCode,type,id,payload);
 }
 async function activeMember(db,userId){
   return hasCurrentActiveMembership(db,userId);
@@ -187,8 +188,8 @@ export async function requestService(listingId,requesterId,input,requestId){
     await db.query("insert into service_request_event(request_id,actor_user_id,to_status,note) values($1,$2,'requested',$3)",[row.id,requesterId,input.message||null]);
     await audit(db,requesterId,"service.request_created","service_request",row.id,requestId,{listingId,organizationId:listing.organization_id||null});
     const recipients=listing.organization_id?(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[listing.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id):[listing.provider_user_id];
-    for(const recipient of new Set(recipients))if(recipient&&recipient!==requesterId){await notify(db,recipient,"service.request_received","service_request",row.id,{message:"A new service request needs a response.",nextAction:"Review the requested scope and accept or decline with an explanation."});await queueWorkflowEmail(db,recipient,"professional.workflow_update",{status:"new service request",nextAction:"Review the service request and accept, decline or ask for clarification"},"service_request",row.id);}
-    await queueWorkflowEmail(db,requesterId,"professional.workflow_update",{status:"requested",nextAction:"Track the provider response in your service requests"},"service_request",row.id);
+    for(const recipient of new Set(recipients))if(recipient&&recipient!==requesterId)await queueWorkflowEmail(db,recipient,"professional.workflow_update",{notificationEventCode:"service.request_received",category:"services",title:"New service request",status:"requested",message:"A new service request needs a response.",nextAction:"Review the requested scope and accept, decline or ask for clarification.",actionUrl:"/services",actionRequired:true,priority:"high"},"service_request",row.id);
+    await queueWorkflowEmail(db,requesterId,"professional.workflow_update",{notificationEventCode:"service.request_submitted",category:"services",title:"Service request submitted",status:"requested",message:"Your service request has been recorded.",nextAction:"Track the provider response in your service requests.",actionUrl:"/services"},"service_request",row.id);
     return {...row,nextAction:"Your request is recorded. The provider or authorized organization team must respond before delivery begins."};
   });
 }
