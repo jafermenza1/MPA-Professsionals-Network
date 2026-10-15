@@ -238,3 +238,16 @@ This checkpoint aligns the workflow matrix with the implementation inventory in 
 ### Final-gate policy
 
 The working branch remains unaccepted. Run the documented manual validation procedure only after the implementation increment is assembled, using a disposable PostgreSQL database for migration tests. Record the exact final commit SHA and separate results for migrations, unit/API tests, production build, browser journeys, authorization/privacy isolation, accessibility/mobile review, and PDF/XLSX opening. A committed test file is not a passing result. Do not weaken assertions, restore CI, merge, or deploy to create the appearance of acceptance.
+
+
+## Public support assistant and brand system — current implementation, acceptance pending
+
+| Journey | Code path | Expected behavior | Evidence state |
+|---|---|---|---|
+| Public support widget | web/components/support-bot.tsx, web/components/shell.tsx | Shared assistant on public and authenticated pages; visitor can ask a question and optionally request human follow-up | Implemented in branch; browser verification pending |
+| Knowledge answer | src/platform/support-bot.js, support_knowledge_article | Match only published entries in active categories; if no adequate match, state that no verified answer is available and retain the inquiry | Implemented in branch; answer-quality testing pending |
+| Inquiry contact and history | support_conversation, support_message | Store questions, responses, available contact details, contact consent, optional signed-in identity, and page path; authorized MPA support can review details | Implemented in branch; privacy/authorization tests pending |
+| Admin support | web/app/admin/support/page.tsx | Inbox, status changes, staff follow-up notes, category/article management and non-technical setup guide | Implemented in branch; browser and role-matrix tests pending |
+| Shared brand | web/public/brand/ | P inside mosque arch, light/dark logos and favicons, shared membership card logo, animated global brand mark | Implemented in branch; visual/print checks pending |
+
+Do not mark this workflow accepted until migration, API tests, admin-role negative tests, consent behavior, public fallback, responsive UI, reduced-motion behavior, and production build are run on the current branch head.
