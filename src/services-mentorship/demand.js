@@ -87,6 +87,8 @@ export async function withdrawDemandInterest(topicId,userId,reason,requestId){
   const updated=(await db.query("update marketplace_demand_interest set status='withdrawn',withdrawn_at=now(),withdrawal_reason=$1,updated_at=now() where id=$2 returning id,topic_id,interest_level,status,withdrawn_at,withdrawal_reason,updated_at",[clean(reason,1000)||null,interest.id])).rows[0];
   await db.query("insert into marketplace_demand_event(topic_id,actor_user_id,action,note,metadata) values($1,$2,'demand.interest_withdrawn',$3,$4)",[topicId,userId,updated.withdrawal_reason,{interestId:interest.id}]);
   await audit(db,userId,"marketplace.demand_interest_withdrawn","marketplace_demand_interest",interest.id,requestId,{topicId});
+  const owner=(await db.query("select d.requester_user_id from marketplace_demand_topic t left join marketplace_demand d on d.id=t.source_demand_id where t.id=$1",[topicId])).rows[0];
+  if(owner?.requester_user_id&&owner.requester_user_id!==userId)await notify(db,owner.requester_user_id,"marketplace.demand_interest_withdrawn","marketplace_demand_topic",topicId,{message:"An interest was withdrawn. Your published topic's aggregate interest count has been updated.",nextAction:"Review the current interest count and any remaining provider matches."});
   return {...updated,nextAction:"Your interest is withdrawn. You can express interest again while this topic is open."};
  });
 }
