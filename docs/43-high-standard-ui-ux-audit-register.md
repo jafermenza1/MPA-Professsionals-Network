@@ -83,6 +83,16 @@ These are source-level fixes only. They have not been built, typechecked, tested
 8. **Membership card:** real member data with long names, missing photo, real QR, light/dark logo, physical-card aspect ratio and print-to-PDF at actual size.
 9. **Automated acceptance:** add or adapt tests for new mobile navigation and theme behavior; run the existing full test suite, typecheck, lint and production build. Never delete or weaken tests to get a green result.
 
+### Privacy, consent and policy UX tranche — source implementation complete; acceptance pending
+
+- Added public policy routes for Privacy Notice, Terms of Use, Cookie Policy, Community Guidelines, Accessibility Statement, and privacy-request guidance. Policy copy is MPA-workflow-specific and explicitly awaits MPA approval/legal review.
+- Added a compact first-visit privacy choice prompt and persistent in-app Privacy control through the existing shell. No global footer was introduced. The interface offers Accept all, Reject optional, Customize, necessary-storage disclosure and cross-links to policy pages.
+- Added Terms agreement and Privacy Notice acknowledgement to both professional and organization registration, separately from optional cookie choices; sign-in now links to core policies.
+- The browser preference record is versioned and local only. The UI does not load trackers. Source review did not establish that an optional analytics or advertising provider is currently active, so future integrations must be inventoried and connected to the preference gate before activation.
+- **Known implementation gap:** terms acceptance is currently captured in the registration UI but durable server-side evidence/versioned re-acceptance has not been established. The privacy request page is guidance only; MPA must confirm its official privacy contact and response process.
+- Full details and acceptance criteria: `docs/44-privacy-consent-and-policy-ux.md`.
+- This tranche is source implementation only. No build, typecheck, lint, tests, browser run, accessibility verification, deployment or legal approval is claimed.
+
 ## Validation and release gate
 
 At the time of this document, no local/browser runtime was available through this GitHub-only workflow, and no TypeScript check, lint, build, full test run, browser run, accessibility audit or physical-size card print verification has been completed for the latest UI commits. GitHub status checks and PR workflow runs were empty for the inspected head. Therefore the work is **implementation in progress**, not release-ready. Keep PR #3 draft/open until checks and manual acceptance are recorded against the exact final head SHA.
