@@ -1,7 +1,7 @@
 "use client";
 import { FormFeedback } from "../../../components/form-feedback";
 import { FormEvent, useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { TagInput } from "../../../components/tag-input";
 import { api, ApiError } from "../../../lib/api";
 import { Card, Badge } from "../../../components/ui";
 
@@ -25,7 +25,6 @@ const shareable = [
 export default function JobInterestPage() {
   const [form, setForm] = useState({ contactName: "", contactEmail: "", contactPhone: "", targetRole: "", experience: "", location: "", workMode: "", availability: "", intent: "" });
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  const [skillDraft, setSkillDraft] = useState("");
   const [lookupReference, setLookupReference] = useState("");
   const [lookupToken, setLookupToken] = useState("");
   const [lookupBusy, setLookupBusy] = useState(false);
@@ -213,7 +212,7 @@ export default function JobInterestPage() {
           <label>Email (optional if phone provided)<input type="email" maxLength={320} value={form.contactEmail} onChange={e => update("contactEmail", e.target.value)} /></label>
           <label>Phone (optional if email provided)<input maxLength={80} value={form.contactPhone} onChange={e => update("contactPhone", e.target.value)} /></label>
           <label>Target role / occupation<input required maxLength={500} value={form.targetRole} onChange={e => update("targetRole", e.target.value)} placeholder="What kind of work are you seeking?" /></label>
-          <div className="grid" style={{gap:8}}><label htmlFor="job-interest-skill">Skills</label><div className="row" style={{gap:8,flexWrap:"wrap"}}><input id="job-interest-skill" maxLength={120} value={skillDraft} onChange={e=>setSkillDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();const value=skillDraft.trim();if(value&&!selectedSkills.some(item=>item.toLocaleLowerCase()===value.toLocaleLowerCase()))setSelectedSkills(items=>[...items,value]);setSkillDraft("");}}} placeholder="Add one skill at a time" style={{flex:"1 1 220px"}}/><button type="button" className="btn btn-ghost" onClick={()=>{const value=skillDraft.trim();if(value&&!selectedSkills.some(item=>item.toLocaleLowerCase()===value.toLocaleLowerCase()))setSelectedSkills(items=>[...items,value]);setSkillDraft("");}} disabled={!skillDraft.trim()}><Plus size={15}/> Add skill</button></div><div className="row" style={{gap:6,flexWrap:"wrap"}}>{selectedSkills.map(skill=><Badge key={skill}>{skill}<button type="button" aria-label={"Remove "+skill} onClick={()=>setSelectedSkills(items=>items.filter(item=>item!==skill))} style={{marginLeft:6,border:0,background:"transparent",color:"inherit",cursor:"pointer"}}><X size={12}/></button></Badge>)}</div><span className="muted">Add each skill separately. Duplicate entries are ignored; remove any selection before submitting.</span></div>
+          <TagInput label="Skills" value={selectedSkills} onChange={setSelectedSkills} placeholder="Add one skill at a time" help="Add each skill separately. Duplicate entries are ignored; remove any selection before submitting."/>
           <label>Preferred location<input maxLength={300} value={form.location} onChange={e => update("location", e.target.value)} placeholder="City or region" /></label>
           <label>Preferred work mode<select value={form.workMode} onChange={e=>update("workMode",e.target.value)}><option value="">No preference</option><option value="onsite">On-site</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option></select></label>
           <label>Availability<select value={form.availability} onChange={e=>update("availability",e.target.value)}><option value="">Not specified</option><option value="immediately">Immediately</option><option value="within_2_weeks">Within two weeks</option><option value="within_1_month">Within one month</option><option value="within_3_months">Within three months</option><option value="flexible">Flexible / to discuss</option></select></label>
