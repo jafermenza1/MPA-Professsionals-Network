@@ -16,9 +16,10 @@ test("report catalogue respects role scope and hides restricted personal/financi
 test("report catalogue includes the agreed core verification, recruitment, support, reference quality and usage reports",()=>{
  const admin=listReportCatalogue({sub:"admin",roles:["system_admin"],permissions:[]});
  const ids=new Set(admin.map(report=>report.id));
- for(const id of ["professional-verification","organization-verification","job-application-funnel","support-demand-response","reference-import-quality","platform-usage"])assert.ok(ids.has(id),"missing agreed report: "+id);
+ for(const id of ["membership-applications","professional-verification","organization-verification","job-application-funnel","job-seeker-demand","support-demand-response","reference-import-quality","platform-usage"])assert.ok(ids.has(id),"missing agreed report: "+id);
  const support=listReportCatalogue({sub:"support",roles:["supporting_staff"],permissions:[]});
  assert.ok(support.some(report=>report.id==="support-demand-response"));
+ assert.ok(support.some(report=>report.id==="job-seeker-demand"),"Support Desk may access only suppressed job-seeker demand aggregates");
  assert.ok(support.some(report=>report.id==="reference-import-quality"));
  assert.equal(support.some(report=>report.id==="member-directory"),false,"sensitive member details remain restricted");
  assert.equal(support.some(report=>report.id==="payment-reconciliation"),false,"finance reports remain restricted");
