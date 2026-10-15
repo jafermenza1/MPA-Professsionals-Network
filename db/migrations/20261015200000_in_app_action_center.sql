@@ -23,7 +23,7 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='notification_event_action_url_internal' AND conrelid='notification_event'::regclass) THEN
     ALTER TABLE notification_event ADD CONSTRAINT notification_event_action_url_internal
-      CHECK (action_url IS NULL OR (left(action_url,1)='/' AND left(action_url,2)<>'//' AND action_url !~ '[[:cntrl:]]'));
+      CHECK (action_url IS NULL OR (left(action_url,1)='/' AND left(action_url,2)<>'//' AND action_url !~ '[[:cntrl:]]' AND position(chr(92) in action_url)=0));
   END IF;
 END $$;
 
