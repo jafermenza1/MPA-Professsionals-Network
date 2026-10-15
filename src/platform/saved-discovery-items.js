@@ -59,7 +59,7 @@ export async function listDiscoveryItems(userId){
  const db=getPool();
  return (await db.query(`
  select s.item_type,s.item_id,s.created_at,
-   p.display_name title,pp.professional_title subtitle,'/network?profile='||s.item_id::text href
+   p.display_name title,pp.professional_title subtitle,'/network/'||s.item_id::text href
  from saved_discovery_item s
  join person p on p.user_id=s.item_id
  join professional_profile pp on pp.person_id=p.id
