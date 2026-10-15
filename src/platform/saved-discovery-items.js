@@ -75,7 +75,7 @@ export async function listDiscoveryItems(userId){
  select s.item_type,s.item_id,s.created_at,sl.title title,sl.service_category subtitle,'/services/'||sl.id::text href
  from saved_discovery_item s join service_listing sl on sl.id=s.item_id
  where s.user_id=$1 and s.item_type='service' and sl.status='published' and sl.moderation_status='approved'
-   and ((sl.organization_id is not null and exists(select 1 from organization o where o.id=sl.organization_id and o.verification_status='verified' and o.public_visible=true)) or (sl.organization_id is null and exists(select 1 from membership_record pm where pm.user_id=sl.provider_user_id and pm.status='active' and pm.start_date<=current_date and (pm.end_date is null or pm.end_date>=current_date))))
+   and ((sl.organization_id is not null and exists(select 1 from organization o where o.id=sl.organization_id and o.verification_status='verified')) or (sl.organization_id is null and exists(select 1 from membership_record pm where pm.user_id=sl.provider_user_id and pm.status='active' and pm.start_date<=current_date and (pm.end_date is null or pm.end_date>=current_date))))
    and ((sl.visibility='public') or (sl.visibility='members' and exists(select 1 from membership_record vm where vm.user_id=$1 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))
  union all
  select s.item_type,s.item_id,s.created_at,p.display_name title,mp.headline subtitle,'/mentorship/mentors/'||mp.user_id::text href
