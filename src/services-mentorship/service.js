@@ -174,18 +174,20 @@ export async function requestService(listingId,requesterId,input,requestId){
     else if(!(await activeMember(db,listing.provider_user_id))) throw error(404,"Service listing is not available.","NOT_FOUND");
     if(listing.visibility!=="public"&&!(await activeMember(db,requesterId))) throw error(403,"An active membership is required to request a member-only service.","MEMBERSHIP_REQUIRED");
     if(listing.provider_user_id===requesterId) throw error(409,"You cannot request your own service.","SELF_REQUEST");
+    const duplicate=(await db.query("select * from service_request where service_listing_id=$1 and requester_user_id=$2 and status in ('requested','accepted','in_progress') order by created_at desc limit 1 for update",[listingId,requesterId])).rows[0];
+    if(duplicate) return {...duplicate,idempotent:true,nextAction:duplicate.status==="requested"?"Wait for the provider to respond.":duplicate.status==="accepted"?"Confirm scope, timing and milestones.":"Track delivery and review the provider's submitted outcome."};
     if(listing.max_active_requests){
       const count=(await db.query("select count(*)::int count from service_request where service_listing_id=$1 and status in ('requested','accepted','in_progress')",[listingId])).rows[0].count;
       if(count>=listing.max_active_requests) throw error(409,"This service has reached its active request limit.","CAPACITY_REACHED");
     }
-    const duplicate=(await db.query("select * from service_request where service_listing_id=$1 and requester_user_id=$2 and status in ('requested','accepted','in_progress') order by created_at desc limit 1 for update",[listingId,requesterId])).rows[0];
-    if(duplicate) return {...duplicate,idempotent:true,nextAction:duplicate.status==="requested"?"Wait for the provider to respond.":duplicate.status==="accepted"?"Confirm scope, timing and milestones.":"Track delivery and review the provider's submitted outcome."};
     const proposedPrice=input.proposedPrice===undefined||input.proposedPrice===null?null:Number(input.proposedPrice);
     if(proposedPrice!==null&&(!Number.isFinite(proposedPrice)||proposedPrice<0)) throw error(400,"proposedPrice must be a non-negative number.","VALIDATION_ERROR");
     const row=(await db.query("insert into service_request(service_listing_id,requester_user_id,provider_user_id,status,message,scope,agreed_price,agreed_currency,completion_due_at,requested_start_at,requested_end_at) values($1,$2,$3,'requested',$4,$5,$6,$7,$8,$9,$10) returning *",[listingId,requesterId,listing.provider_user_id,input.message||null,input.scope||null,proposedPrice,input.currency?String(input.currency).toUpperCase():listing.currency,input.completionDueAt||null,input.requestedStartAt||null,input.requestedEndAt||null])).rows[0];
     await db.query("insert into service_request_event(request_id,actor_user_id,to_status,note) values($1,$2,'requested',$3)",[row.id,requesterId,input.message||null]);
-    await audit(db,requesterId,"service.request_created","service_request",row.id,requestId,{listingId});
-    return row;
+    await audit(db,requesterId,"service.request_created","service_request",row.id,requestId,{listingId,organizationId:listing.organization_id||null});
+    const recipients=listing.organization_id?(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[listing.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id):[listing.provider_user_id];
+    for(const recipient of new Set(recipients))if(recipient&&recipient!==requesterId)await notify(db,recipient,"service.request_received","service_request",row.id,{message:"A new service request needs a response.",nextAction:"Review the requested scope and accept or decline with an explanation."});
+    return {...row,nextAction:"Your request is recorded. The provider or authorized organization team must respond before delivery begins."};
   });
 }
 
