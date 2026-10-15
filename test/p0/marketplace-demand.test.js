@@ -100,6 +100,6 @@ test("P1 marketplace: Support Desk merges duplicate demand into a canonical requ
   "a canonical request cannot be merged into its already-merged duplicate"
  );
  const firstActivity=await marketplaceDemand.listMyDemand(secondRequester);
- assert.ok(firstActivity.some(row=>row.id===duplicate.id&&row.merged_into_demand_id===target.id),"requester must retain a private record and see the canonical link");
+ assert.ok(firstActivity.some(row=>row.id===duplicate.id&&row.merged_into_existing===true),"requester retains the original record and receives a privacy-safe merge indicator without the canonical private ID");
 });
 test.after(async()=>{await closePool();});
