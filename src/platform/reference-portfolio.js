@@ -10,7 +10,7 @@ export function assertReferenceAdmin(identity){
  if(!ADMIN_ROLES.some(role=>roles.includes(role))&&!permissions.includes("reference:update")&&!permissions.includes("reference:import")) throw fail(403,"Reference portfolio administration permission is required.","FORBIDDEN");
 }
 const clean=(v,max=180)=>String(v??"").trim().slice(0,max);
-function isIsoDate(value){if(!String.raw`/^\d{4}-\d{2}-\d{2}$/.test(String(value||"")))return false;const date=new Date(String(value)+"T00:00:00.000Z");return !Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===String(value);}
+function isIsoDate(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value||"")))return false;const date=new Date(String(value)+"T00:00:00.000Z");return !Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===String(value);}
 function csvEscape(value){const s=String(value??"");return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
 function parseCsv(source,mapping={},allowUnmapped=false){
  const rows=[];let row=[],cell="",quoted=false;
