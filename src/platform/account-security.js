@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import {getPool,withTransaction} from "./db.js";
 import {hashPassword,verifyPassword,validatePassword} from "../membership/identity.js";
 import {newSessionToken,hashSessionToken,sessionTokenPayload,signToken} from "./auth.js";
+import {createInAppNotification} from "./notifications.js";
 import {loadConfig} from "./config.js";
 function err(status,message,code="BUSINESS_RULE"){const e=new Error(message);e.statusCode=status;e.code=code;return e}
 const PRIVILEGED=new Set(["system_admin","super_admin","admin","reviewer","verification_reviewer","ethics_reviewer","appeal_reviewer","finance_officer"]);
@@ -27,6 +28,7 @@ export async function updateOwnCredentials(identity,input,requestId){
   let revokedOtherSessions=0;
   if(newPassword){await tx.query("update app_user set password_hash=$1,updated_at=now() where id=$2",[hashPassword(newPassword),userId]);const r=await tx.query("update auth_session set revoked_at=now() where user_id=$1 and id<>$2 and revoked_at is null",[userId,sessionId]);revokedOtherSessions=r.rowCount;await tx.query("update auth_session set credential_setup_required=false where id=$1 and user_id=$2",[sessionId,userId])}
   await tx.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'account.credentials.updated','app_user',$2,$3,'success',$4)",[userId,userId,requestId,JSON.stringify({usernameChanged,passwordChanged:Boolean(newPassword),recoverySession:recovery,otherSessionsRevoked:revokedOtherSessions})]);
+  if(newPassword||usernameInput!==undefined)await createInAppNotification(tx,userId,"security.credentials_changed","security_event",userId,{category:"security",critical:true,priority:"high",message:"Your account credentials were updated.",nextAction:"If you made this change, no further action is needed. If you did not, secure your account and contact MPA support.",actionUrl:"/profile",actionRequired:true});
   return {username:nextUsername,passwordChanged:Boolean(newPassword),otherSessionsRevoked:revokedOtherSessions,credentialSetupRequired:false};
  });
 }
