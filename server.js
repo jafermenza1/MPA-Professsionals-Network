@@ -19,6 +19,7 @@ import * as experience from "./src/platform/experience.js";
 import * as applicationTracking from "./src/platform/application-tracking.js";
 import * as publicOpportunity from "./src/platform/public-opportunity.js";
 import * as userAdmin from "./src/platform/user-admin.js";
+import * as emailOperations from "./src/platform/email-operations.js";
 import * as accountSecurity from "./src/platform/account-security.js";
 import * as referencePortfolio from "./src/platform/reference-portfolio.js";
 import { resolveAllowedOrigin } from "./src/platform/config.js";
@@ -113,6 +114,20 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==="GET" && req.url==="/readyz") return ok(res,{status:"ready",databaseConfigured:Boolean(config.databaseUrl)},requestId);
     const parts=pathParts(req.url);
     const p=parts.join("/");
+    if(req.method==="POST" && p==="api/v1/email/inbound-webhook") {
+      return ok(res,await emailOperations.receiveInboundEmail(await body(req),String(req.headers["x-email-webhook-secret"]||"")),requestId,201);
+    }
+    if(req.method==="GET" && p==="api/v1/admin/email/operations") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.getEmailOperations(identity.sub),requestId); }
+    if(req.method==="GET" && p==="api/v1/admin/email/messages") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.listEmailOutbox(identity.sub,{folder:query(req.url).get("folder")||"outbox",limit:query(req.url).get("limit")||100}),requestId); }
+    if(req.method==="GET" && p==="api/v1/admin/email/templates") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.listEmailTemplates(identity.sub),requestId); }
+    if(req.method==="PUT" && parts.length===6 && p.startsWith("api/v1/admin/email/templates/")) { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.saveEmailTemplate(identity.sub,parts[5],await body(req),requestId),requestId); }
+    if(req.method==="POST" && p==="api/v1/admin/email/drafts") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.saveEmailDraft(identity.sub,await body(req)),requestId,201); }
+    if(req.method==="POST" && parts.length===7 && p.startsWith("api/v1/admin/email/drafts/") && parts[6]==="queue") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.queueEmailDraft(identity.sub,parts[5],requestId),requestId,202); }
+    if(req.method==="POST" && p==="api/v1/admin/email/test") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.sendTestEmail(identity.sub,requestId),requestId); }
+    if(req.method==="POST" && p==="api/v1/admin/email/dispatch") { const identity=await auth(req); anyRole(identity,["system_admin"]); const b=await body(req); return ok(res,await emailOperations.dispatchEmailOutbox(identity.sub,{limit:b.limit||20}),requestId); }
+    if(req.method==="POST" && parts.length===7 && p.startsWith("api/v1/admin/email/messages/") && parts[6]==="retry") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.retryFailedEmail(identity.sub,parts[5]),requestId); }
+    if(req.method==="POST" && parts.length===7 && p.startsWith("api/v1/admin/email/verification-failures/") && parts[6]==="retry") { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.retryVerificationEmail(identity.sub,parts[5],requestId),requestId); }
+    if(req.method==="PATCH" && parts.length===6 && p.startsWith("api/v1/admin/email/inbox/")) { const identity=await auth(req); anyRole(identity,["system_admin"]); return ok(res,await emailOperations.updateInbox(identity.sub,parts[5],(await body(req)).action),requestId); }
     if(req.method==="POST" && p==="api/v1/public/opportunity-inquiries") { publicRateLimit(req,"public-inquiry",10,60000); return ok(res,await publicOpportunity.createPublicInquiry(await body(req),requestId,optionalIdentity(req)),requestId,201); }
     if(req.method==="GET" && p==="api/v1/public/opportunity-sharing-organizations") { publicRateLimit(req,"sharing-audience",30,60000); return ok(res,await publicOpportunity.listPublicSharingOrganizations(),requestId); }
     if(req.method==="POST" && parts.length===6 && p.startsWith("api/v1/public/opportunity-inquiries/") && parts[5]==="access") { publicRateLimit(req,"job-seeker-access",10,60000); const b=await body(req); return ok(res,await publicOpportunity.getPublicInquiry(parts[4],b.token||""),requestId); }
