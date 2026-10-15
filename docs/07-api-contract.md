@@ -264,3 +264,9 @@ The canonical product and acceptance contract is [In-App Notification Action Cen
 - `GET/PATCH /api/v1/notifications/preferences` — retains existing channel preferences and supports `inAppCategories` (category-to-boolean object) and `digestEnabled` (boolean). Digest sending is not implemented merely by storing this preference.
 
 Notification links must be safe internal relative paths, and destination APIs/pages must enforce authorization independently. Counts, read state and archive state are persisted in PostgreSQL. The existing email outbox/provider delivery state remains separate from in-app read state and provider acceptance is not proof of inbox delivery. The foundation is **not validated** until migrations, API/service tests, cross-user and cross-organization authorization tests, build and browser/accessibility checks pass on the current head.
+
+
+
+## Workflow notification routing — Increment 2
+
+The action-center event/recipient mapping and acceptance boundary are defined in [docs/45-workflow-notification-routing.md](45-workflow-notification-routing.md). Notifications must be created through the shared `createInAppNotification` policy or `queueWorkflowEmail` from within the same transaction as the persisted workflow transition. The producer chooses recipients from authoritative workflow relationships and current role/organization membership. Reviewer notifications link to the existing authorized queue; notification read/archive never changes workflow state. Security events bypass optional in-app/category preferences and remain visible in inbox/counts. Events/learning are not wired because those modules are not deployed. The new routing contract tests are committed but **not run**; migration, role-separated API, E2E, build, and accessibility acceptance remains open.
