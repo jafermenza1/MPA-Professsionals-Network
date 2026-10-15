@@ -240,7 +240,7 @@ export async function getDemandSummary(userId,topicId){
  const db=getPool();await staff(db,userId);
  const topic=(await db.query("select id,title,demand_type,category,status,interest_goal from marketplace_demand_topic where id=$1",[topicId])).rows[0];
  if(!topic)throw fail(404,"Demand topic not found.","NOT_FOUND");
- const counts=(await db.query("select interest_level,count(*)::int count from marketplace_demand_interest where topic_id=$1 group by interest_level",[topicId])).rows;
- const participants=(await db.query("select i.interest_level,count(*)::int count from marketplace_demand_interest i join marketplace_demand_topic t on t.id=i.topic_id where i.topic_id=$1 group by i.interest_level",[topicId])).rows;
+ const counts=(await db.query("select interest_level,count(*)::int count from marketplace_demand_interest where topic_id=$1 and status='active' group by interest_level",[topicId])).rows;
+ const participants=(await db.query("select i.interest_level,count(*)::int count from marketplace_demand_interest i join marketplace_demand_topic t on t.id=i.topic_id where i.topic_id=$1 and i.status='active' group by i.interest_level",[topicId])).rows;
  return {topic,counts,uniqueInterests:counts.reduce((n,r)=>n+Number(r.count),0),readyCount:counts.filter(r=>["ready_to_engage","can_provide"].includes(r.interest_level)).reduce((n,r)=>n+Number(r.count),0)};
 }
