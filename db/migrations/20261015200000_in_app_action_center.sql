@@ -27,6 +27,28 @@ BEGIN
   END IF;
 END $$;
 
+-- Backfill presentation metadata for historical events without deleting or rewriting event identity/history.
+UPDATE notification_event
+SET category = CASE
+      WHEN event_code LIKE 'membership.%' THEN 'membership'
+      WHEN event_code LIKE 'verification.%' THEN 'verification'
+      WHEN event_code LIKE 'opportunity.%' THEN 'opportunities'
+      WHEN event_code LIKE 'job.%' OR event_code LIKE 'job_application.%' OR event_code LIKE 'employer.%' THEN 'recruitment'
+      WHEN event_code LIKE 'organization.%' THEN 'organizations'
+      WHEN event_code LIKE 'mentor.%' OR event_code LIKE 'mentorship.%' THEN 'mentorship'
+      WHEN event_code LIKE 'service.%' THEN 'services'
+      WHEN event_code LIKE 'event.%' OR event_code LIKE 'learning.%' THEN 'events_learning'
+      WHEN event_code LIKE 'security.%' THEN 'security'
+      ELSE category
+    END,
+    title = coalesce(title, initcap(replace(replace(event_code,'.',' '),'_',' '))),
+    body = coalesce(body, payload->>'message', payload->>'summary', payload->>'nextAction', payload->>'next_action',
+      CASE WHEN payload ? 'status' THEN 'Status updated: ' || replace(replace(payload->>'status','_',' '),'-',' ')
+           ELSE 'There is an update to review in your MPA Network account.' END),
+    priority = CASE WHEN payload->>'priority' IN ('low','normal','high','urgent') THEN payload->>'priority' ELSE priority END,
+    action_required = action_required OR payload->>'actionRequired'='true' OR payload->>'action_required'='true'
+      OR coalesce(nullif(payload->>'nextAction',''),'')<>'' OR coalesce(nullif(payload->>'next_action',''),'')<>'';
+
 CREATE INDEX IF NOT EXISTS ix_notification_event_inbox
   ON notification_event(user_id, created_at DESC, id)
   WHERE archived_at IS NULL;
