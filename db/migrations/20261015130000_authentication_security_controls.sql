@@ -1,0 +1,17 @@
+-- Additive security migration; email verification, persistent challenges, shared rate limits and admin passkeys.
+alter table app_user add column if not exists email_verified_at timestamptz;
+alter table app_user add column if not exists registration_reference text;
+create unique index if not exists uq_app_user_registration_reference on app_user(registration_reference) where registration_reference is not null;
+alter table auth_session add column if not exists auth_method text not null default 'password';
+alter table auth_session drop constraint if exists ck_auth_session_auth_method;
+alter table auth_session add constraint ck_auth_session_auth_method check (auth_method in ('password','passkey','recovery'));
+create table if not exists email_verification_token (id uuid primary key default gen_random_uuid(),user_id uuid not null references app_user(id) on delete cascade,token_hash text not null unique,created_at timestamptz not null default now(),expires_at timestamptz not null,consumed_at timestamptz,delivery_attempted_at timestamptz,delivery_status text not null default 'pending' check (delivery_status in ('pending','sent','failed')),delivery_error_code text);
+create index if not exists ix_email_verification_user_active on email_verification_token(user_id,expires_at desc) where consumed_at is null;
+create table if not exists security_human_challenge (id uuid primary key default gen_random_uuid(),purpose text not null check (purpose in ('registration')),question text not null,answer_hash text not null,token_hash text unique,failed_attempts integer not null default 0 check (failed_attempts between 0 and 5),created_at timestamptz not null default now(),expires_at timestamptz not null,verified_at timestamptz,consumed_at timestamptz);
+create index if not exists ix_security_human_challenge_expiry on security_human_challenge(expires_at);
+create table if not exists security_rate_limit (bucket_key text primary key,window_started_at timestamptz not null,request_count integer not null check (request_count >= 0),expires_at timestamptz not null);
+create index if not exists ix_security_rate_limit_expiry on security_rate_limit(expires_at);
+create table if not exists admin_passkey_credential (id uuid primary key default gen_random_uuid(),user_id uuid not null references app_user(id) on delete cascade,credential_id text not null unique,public_key_jwk jsonb not null,sign_count bigint not null default 0 check (sign_count >= 0),transports text[] not null default '{}',display_name text not null default 'Administrator passkey',created_at timestamptz not null default now(),last_used_at timestamptz,revoked_at timestamptz);
+create index if not exists ix_admin_passkey_user_active on admin_passkey_credential(user_id,created_at desc) where revoked_at is null;
+create table if not exists admin_passkey_challenge (id uuid primary key default gen_random_uuid(),user_id uuid not null references app_user(id) on delete cascade,purpose text not null check (purpose in ('register','authenticate','recovery')),challenge text not null unique,created_at timestamptz not null default now(),expires_at timestamptz not null,consumed_at timestamptz,metadata jsonb not null default '{}');
+create index if not exists ix_admin_passkey_challenge_expiry on admin_passkey_challenge(expires_at);
