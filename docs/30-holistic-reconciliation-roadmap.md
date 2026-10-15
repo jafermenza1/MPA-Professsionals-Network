@@ -304,3 +304,10 @@ Implementation and acceptance details are recorded in docs/46-first-increment-wo
 - Added dedicated detail routes for professionals, organizations, services and mentors, with server-side visibility checks and text-first loading.
 - Migration `20261016200000_saved_discovery_items.sql` is committed to the branch but has not been applied to any database.
 - Validation is open: do not claim acceptance until migration-backed API tests, cross-account authorization tests, typecheck/build, browser, responsive and throttled-network checks pass on the exact head.
+
+
+## Increment 4 follow-up checkpoint — implemented, acceptance open
+
+Unified account-owned saved items now cover professional profiles, verified public organizations, visible service listings and eligible mentors, with a private `/saved` management page. The saved-job and saved-talent-search features are retained. Opportunity pagination now applies the established posting-scope rules in SQL before count and page slicing. Dedicated detail routes now exist for professionals, organizations, services and mentors; server routes re-check visibility and the organization detail endpoint omits membership/contact data. Low-bandwidth choices are bounded result pages, text-first cards and explicit loading/retry states.
+
+The schema migration is committed but not applied. Tests/typecheck/build/API/browser/accessibility/throttled-network checks have not been run. Increment 4 remains **implemented, not accepted**; keep PR #3 open/draft and do not merge or deploy before exact-head validation.
