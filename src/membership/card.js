@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS={
   background_style:"geometric",
   background_start:"#0A3258",
   background_end:"#174A78",
-  accent_color:"#97C024",
+  accent_color:"#E5F044",
   text_color:"#FFFFFF",
   show_membership_type:true
 };
