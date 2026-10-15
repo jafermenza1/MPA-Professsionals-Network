@@ -170,8 +170,8 @@ export async function importReferenceJson(identity,key,filename,jsonText,provide
 }
 export async function exportReferenceJson(identity,key){
  assertReferenceAdmin(identity);const db=getPool();const {dataset,version}=await datasetContext(db,key);
- const rows=(await db.query("select code,label,description,sort_order,active,parent_item_id,aliases,metadata,effective_from,effective_to from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
- const byId=new Map(rows.map(row=>[row.parent_item_id,row.code]));
+ const rows=(await db.query("select id,code,label,description,sort_order,active,parent_item_id,aliases,metadata,effective_from,effective_to from reference_item where dataset_version_id=$1 order by sort_order,label",[version.id])).rows;
+ const byId=new Map(rows.map(row=>[row.id,row.code]));
  return {filename:key+".json",json:JSON.stringify({datasetKey:key,version:version.version_label,items:rows.map(({parent_item_id,...row})=>({...row,parent_code:byId.get(parent_item_id)||null}))},null,2)};
 }
 
