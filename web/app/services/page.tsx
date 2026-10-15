@@ -2,6 +2,7 @@
 import { FormFeedback } from "../../components/form-feedback";
 import { humanStatus } from "../../lib/status-labels";
 import {FormEvent,useCallback,useEffect,useState} from "react";
+import Link from "next/link";
 import {Bookmark,Handshake,MessageSquareText,RefreshCw,Star} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
@@ -136,7 +137,7 @@ export default function Services(){
      <div className="tagline">Provider: {service.display_name||service.provider_name||"Verified member"}</div>
      {service.location_label&&<div className="tagline" style={{marginTop:6}}>Location: {service.location_label}</div>}
      <div className="tagline" style={{marginTop:6}}>Pricing: {service.pricing_model==="quote"?"Request a quote":service.pricing_model==="free"?"Free":service.price_amount!=null?`${service.currency||""} ${Number(service.price_amount).toLocaleString()} · ${service.pricing_model}`:service.pricing_model}</div>
-     <div className="row" style={{gap:8,marginTop:16,flexWrap:"wrap"}}><button className="btn btn-ghost" type="button" disabled={!savedItems.signedIn||savedItems.isSaving("service",service.id)} aria-pressed={savedItems.isSaved("service",service.id)} onClick={()=>void savedItems.toggle("service",service.id)}><Bookmark size={16}/>{savedItems.isSaved("service",service.id)?"Saved":"Save service"}</button><button className="btn btn-primary" type="button" onClick={()=>{setSelected(service);setMessage("");setNotice("");}}>Request this service</button></div>
+     <div className="row" style={{gap:8,marginTop:16,flexWrap:"wrap"}}><button className="btn btn-ghost" type="button" disabled={!savedItems.signedIn||savedItems.isSaving("service",service.id)} aria-pressed={savedItems.isSaved("service",service.id)} onClick={()=>void savedItems.toggle("service",service.id)}><Bookmark size={16}/>{savedItems.isSaved("service",service.id)?"Saved":"Save service"}</button><button className="btn btn-primary" type="button" onClick={()=>{setSelected(service);setMessage("");setNotice("");}}>Request this service</button><Link className="btn btn-ghost" href={"/services/"+encodeURIComponent(service.id)}>Full details</Link></div>
    </Card>)}</div>}
    {!loading&&!error&&items.length>0&&<DiscoveryPagination page={page} pageSize={pageSize} itemCount={items.length} hasMore={hasMore} disabled={loading} label="services" onPageChange={next=>void load(query,next)}/>}
    {selected&&<Card id="service-request"><div className="row"><div><div className="eyebrow">New service request</div><h2 className="h2">{selected.title}</h2></div><button className="btn btn-ghost" type="button" onClick={()=>setSelected(null)}>Close</button></div>
