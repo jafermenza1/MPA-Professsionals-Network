@@ -295,3 +295,18 @@ The installable-shell and safe-cache changes are recorded in [docs/46-first-incr
 The first workflow is the organization-registration draft in `web/app/register/page.tsx`. It persists only allowlisted representative/organization fields locally, expires after 24 hours, restores without secrets, supports explicit save retry and clear, and pauses autosave when another tab has a conflicting newer draft. Account creation is not queued or replayed: it requires an explicit online submit and a fresh human-check token. This increment does **not** claim server synchronization.
 
 Static safety contract tests were added at `test/platform/pwa-registration-draft.test.js`; they have not been run. Required evidence includes reload/offline recovery, expiry/malformed/storage failure, two-tab conflict choices, absence of secrets in storage, offline-submit denial, fresh challenge enforcement and timeout-after-commit behavior. Acceptance remains open pending tests/build/browser validation on the exact head.
+
+
+## Fast discovery experience — Increment 4 (IMPLEMENTED SLICE, NOT TESTED)
+
+| Discovery surface | Current implementation | Safety and acceptance boundary |
+|---|---|---|
+| Professionals | /network sends bounded limit/offset requests, displays 20 profiles per page and retains server visibility/verified-claim filters; saved searches remain account-backed | Validate paging overlap/skips, profile privacy, filter reset, saved-search ownership and mobile/keyboard states |
+| Opportunities | /jobs requests 20 results per page; API response carries page metadata; existing save/unsave and job alerts remain in place | Job service currently slices after viewer-scope filtering; validate authorization-equivalent paging and optimize SQL only with tests |
+| Services | /services uses existing server-side q/limit/offset and displays 20 results per page | Validate anonymous/member-only visibility, request boundaries, filters and paging |
+| Mentors | /mentorship requests bounded pages; existing membership, moderation and visibility rules remain authoritative | Validate paging and ensure private/member-only mentors are not exposed |
+| Organizations | New public /organizations/directory plus GET /api/v1/public/organizations, filtering verified + public organizations by query/type/location with bounded pages | Validate private/unverified exclusion, pagination and public profile links; private workspace API unchanged |
+| Saved items | Saved jobs are persisted by existing save/unsave endpoints; talent saved searches persist | **Gap:** saved professionals, organizations, services and mentors do not yet have owner-scoped persistence; do not claim unified saved items |
+| Low bandwidth | Bounded page sizes, text-first cards, no new media/recommendation runtime | Throttled-network, rendering, responsive and accessibility acceptance not run |
+
+**Evidence status: implementation committed; no tests/typecheck/build/browser/API validation run.** Increment 4 is not accepted until the exact-head acceptance checklist in docs/46-first-increment-workflow-routing-corrections.md is executed and recorded.
