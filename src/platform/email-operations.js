@@ -53,7 +53,7 @@ export async function queueWorkflowEmail(db,userId,templateCode,variables={},res
   const title=String(vars.title||templateCode||"Update").split(/[._-]+/).filter(Boolean).map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(" ");
   const body=String(vars.message||vars.summary||vars.nextAction||vars.next_action||(vars.status?("Status updated: "+String(vars.status).replace(/[_-]+/g," ").toLowerCase()):"There is an update to review in your MPA Network account.")).slice(0,1000);
   const priority=["low","normal","high","urgent"].includes(vars.priority)?vars.priority:"normal";
-  const actionRequired=vars.actionRequired===true||vars.action_required===true;
+  const actionRequired=vars.actionRequired===true||vars.action_required===true||Boolean(vars.nextAction||vars.next_action);
   const actionUrl=safeActionUrl(vars.actionUrl||vars.action_url);
   const dedupeKey=resourceId?String(templateCode+":"+resourceType+":"+resourceId).slice(0,240):null;
   const result=await db.query(`insert into notification_event(user_id,event_code,resource_type,resource_id,payload,category,title,body,priority,action_required,action_url,dedupe_key)
