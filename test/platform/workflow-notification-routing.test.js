@@ -83,6 +83,8 @@ test("reviewer routing excludes inactive accounts and organization drafts do not
  assert.match(verification,/u\.status='active' and \(exists\(select 1 from app_user_role/);
  assert.match(organizations,/u\.status='active' and \(exists\(select 1 from app_user_role/);
  assert.match(marketplace,/u\.status='active' and \(exists\(select 1 from app_user_role/);
+ assert.match(organizations,/join app_user u on u.id=om\.user_id where om\.organization_id=\$1 and om\.status='active' and u\.status='active'/);
+ assert.match(marketplace,/pu\.status provider_status/);
  const registration=organizations.slice(organizations.indexOf("export async function registerOrganization"),organizations.indexOf("export async function getOrganization"));
  assert.doesNotMatch(registration,/reviewer\.review_queue_update|organization\.review_queue_item/);
  assert.match(organizations,/organization verification queue and review the submitted evidence/);
