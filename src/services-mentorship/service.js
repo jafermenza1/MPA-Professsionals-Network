@@ -522,6 +522,17 @@ export async function addMentorTimeOff(profileId,userId,input,requestId){
   });
 }
 
+export async function getMentorProfile(userId,viewerId=null){
+ const db=getPool();
+ const row=(await db.query(`select mp.id,mp.user_id,p.display_name,mp.headline,mp.bio,mp.expertise,mp.languages,mp.mentoring_modes,mp.max_active_mentees
+ from mentor_profile mp join app_user u on u.id=mp.user_id join person p on p.user_id=mp.user_id
+ where mp.user_id=$1 and u.status='active' and mp.status='active' and mp.moderation_status='approved'
+ and exists(select 1 from membership_record mm where mm.user_id=mp.user_id and mm.status='active' and mm.start_date<=current_date and (mm.end_date is null or mm.end_date>=current_date))
+ and (mp.visibility='public' or (mp.visibility='members' and $2::uuid is not null and exists(select 1 from membership_record vm where vm.user_id=$2 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))`,[userId,viewerId||null])).rows[0];
+ if(!row)throw error(404,"Mentor profile not found or not visible.","NOT_FOUND");
+ return row;
+}
+
 export async function listMentors(viewerId,filters={}){
   const db=getPool();
   // The public endpoint must not disclose member-only mentor profiles. $1 is
