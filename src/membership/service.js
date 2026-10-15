@@ -90,7 +90,7 @@ export async function register(input,requestId){
   });
   if(verificationRequired){
     const delivery=await deliverEmailVerification(verificationMessage);
-    return {user:registered.user,registrationReference:registered.registrationReference,verificationRequired:true,verificationSent:Boolean(delivery.sent),developmentVerificationUrl:delivery.developmentVerificationUrl||undefined};
+    return {user:registered.user,registrationReference:registered.registrationReference,accountType:registered.accountType,roles:registered.roles,verificationRequired:true,verificationSent:Boolean(delivery.sent),developmentVerificationUrl:delivery.developmentVerificationUrl||undefined};
   }
   return {...registered,verificationRequired:false};
 }
