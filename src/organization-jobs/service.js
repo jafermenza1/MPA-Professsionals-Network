@@ -322,10 +322,15 @@ export async function listJobs(filters={},viewerId=null){
  }
  if(filters.industryReferenceItemId){args.push(filters.industryReferenceItemId);where.push("j.industry_reference_item_id=$"+args.length);}
  if(filters.occupationReferenceItemId){args.push(filters.occupationReferenceItemId);where.push("j.occupation_reference_item_id=$"+args.length);}
+ // Keep the existing jobScopeAllowed policy equivalent, but apply it inside SQL
+ // before count/limit/offset. This avoids loading all jobs and per-row membership queries.
+ args.push(viewerId||null);const viewerParam="$"+args.length;
+ where.push("(j.posting_scope='public' or (j.posting_scope in ('mpa_members','partner_network') and "+viewerParam+"::uuid is not null and exists(select 1 from membership_record m where m.user_id="+viewerParam+"::uuid and m.status='active')) or (j.posting_scope='organization_internal' and "+viewerParam+"::uuid is not null and exists(select 1 from organization_membership om where om.organization_id=j.organization_id and om.user_id="+viewerParam+"::uuid and om.status='active')))");
+ const predicate=where.join(" and ");
+ const total=Number((await db.query("select count(*)::int count from job j join organization o on o.id=j.organization_id where "+predicate,args)).rows[0]?.count||0);
  const limit=Math.min(Math.max(Number(filters.limit)||20,1),50),offset=Math.max(Number(filters.offset)||0,0);
- const rows=(await db.query("select j.id,j.title,j.description,j.employment_type,j.work_mode,j.location_label,j.visibility,j.posting_scope,j.department,j.seniority_level,j.positions_count,j.salary_min,j.salary_max,j.salary_currency,j.application_deadline,j.published_at,o.id organization_id,o.display_name organization_name from job j join organization o on o.id=j.organization_id where "+where.join(" and ")+" order by j.published_at desc",[...args])).rows;
- const visible=[]; for(const row of rows){ if(await jobScopeAllowed(db,row,viewerId)) visible.push(row); }
- return {items:visible.slice(offset,offset+limit),limit,offset,total:visible.length,hasMore:offset+limit<visible.length};
+ const rows=(await db.query("select j.id,j.title,j.description,j.employment_type,j.work_mode,j.location_label,j.visibility,j.posting_scope,j.department,j.seniority_level,j.positions_count,j.salary_min,j.salary_max,j.salary_currency,j.application_deadline,j.published_at,o.id organization_id,o.display_name organization_name from job j join organization o on o.id=j.organization_id where "+predicate+" order by j.published_at desc,j.id desc limit $"+(args.length+1)+" offset $"+(args.length+2),[...args,limit,offset])).rows;
+ return {items:rows,limit,offset,total,hasMore:offset+rows.length<total};
 }
 
 export async function getJob(jobId,viewerId=null){
