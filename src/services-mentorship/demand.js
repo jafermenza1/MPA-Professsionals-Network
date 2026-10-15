@@ -2,14 +2,14 @@ import { getPool, withTransaction } from "../platform/db.js";
 
 function fail(status,message,code="BUSINESS_RULE"){return Object.assign(new Error(message),{statusCode:status,code});}
 const STAFF_ROLES=["admin","system_admin","platform_admin","supporting_staff","reviewer"];
-const ORG_ROLES=["owner","administrator"];
+const ORG_ROLES=["owner","administrator","recruiter","project_manager","event_manager"];
 async function staff(db,userId){
  const [r,p]=await Promise.all([db.query("select role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[userId]),db.query("select permission_code from app_user_permission where user_id=$1",[userId])]);
  if(!r.rows.some(x=>STAFF_ROLES.includes(x.role_code))&&!p.rows.some(x=>["marketplace.moderate","services.moderate","mentorship.moderate"].includes(x.permission_code))) throw fail(403,"Marketplace Support Desk permission is required.","FORBIDDEN");
 }
 async function orgAccess(db,orgId,userId){
  const r=await db.query("select om.role_code,o.verification_status from organization_membership om join organization o on o.id=om.organization_id where om.organization_id=$1 and om.user_id=$2 and om.status='active'",[orgId,userId]);
- if(!r.rows[0]||!ORG_ROLES.includes(r.rows[0].role_code)) throw fail(403,"Only an active organization owner or administrator may submit organization demand.","ORGANIZATION_FORBIDDEN");
+ if(!r.rows[0]||!ORG_ROLES.includes(r.rows[0].role_code)) throw fail(403,"An active authorized organization team member is required to submit organization demand.","ORGANIZATION_FORBIDDEN");
  return r.rows[0];
 }
 async function audit(db,actor,action,type,id,requestId,metadata={}){
