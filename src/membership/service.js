@@ -98,15 +98,19 @@ export async function login(email,password,requestId,requestMeta={}){
   const recent=await db.query("select count(*)::int count from auth_login_attempt where identity_key=$1 and attempted_at>now()-interval '15 minutes' and succeeded=false",[identityKey]);
   if(recent.rows[0].count>=8) throw httpError(429,"Too many unsuccessful sign-in attempts. Try again later.","AUTH_RATE_LIMIT");
   const e=normalizeEmail(email);
-  const r=await db.query("select id,email,username,password_hash,status,email_verified_at from app_user where lower(email)=lower($1) or lower(username)=lower($1) order by case when lower(email)=lower($1) then 0 else 1 end limit 2",[e]);
+  const r=await db.query("select id,email,username,password_hash,status,email_verified_at,admin_passkey_enforced_at from app_user where lower(email)=lower($1) or lower(username)=lower($1) order by case when lower(email)=lower($1) then 0 else 1 end limit 2",[e]);
   const user=r.rows.length===1?r.rows[0]:null;
   if(!user || user.status!=="active" || !verifyPassword(password,user.password_hash)){
     await db.query("insert into auth_login_attempt(identity_key,ip_address,succeeded) values($1,$2,false)",[identityKey,requestMeta.ip||null]);
     throw httpError(401,"Invalid credentials.","UNAUTHENTICATED");
   }
   if(String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true"&&!user.email_verified_at) throw httpError(403,"Verify your email before signing in. Request a new verification link if needed.","EMAIL_VERIFICATION_REQUIRED");
-  await db.query("insert into auth_login_attempt(identity_key,ip_address,succeeded) values($1,$2,true)",[identityKey,requestMeta.ip||null]);
   const rs=await roles(db,user.id);
+  if(user.admin_passkey_enforced_at && rs.some(role=>["system_admin","admin"].includes(role))){
+    await audit(db,user.id,"account.login.passkey_required","account",user.id,requestId,{authMethod:"password"});
+    throw httpError(403,"This administrator account requires a passkey. Use administrator passkey sign-in or a single-use recovery code.","PASSKEY_REQUIRED");
+  }
+  await db.query("insert into auth_login_attempt(identity_key,ip_address,succeeded) values($1,$2,true)",[identityKey,requestMeta.ip||null]);
   await audit(db,user.id,"account.login","account",user.id,requestId);
   return {token:await tokenFor(db,user,rs,requestMeta),user:{id:user.id,email:user.email,roles:rs}};
 }
