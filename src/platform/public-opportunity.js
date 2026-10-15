@@ -61,26 +61,41 @@ export async function getPublicInquiry(reference,token){
  return {reference:r.public_reference,inquiryType:r.inquiry_type,jobTitle:r.job_title,hasLinkedJob:Boolean(r.job_id),status:r.status,contactName:r.contact_name,contactEmail:r.contact_email,contactPhone:r.contact_phone,intent:r.intent,details:r.details,employerSharingConsent:r.employer_sharing_consent===true,employerSharingScope:r.employer_sharing_scope,employerSharingOrganizationId:r.employer_sharing_organization_id||null,employerSharingFields:Array.isArray(r.employer_sharing_fields)?r.employer_sharing_fields:JSON.parse(r.employer_sharing_fields||"[]"),employerSharingConsentVersion:r.employer_sharing_consent_version||null,employerSharingConsentedAt:r.employer_sharing_consented_at||null,employerSharingRevokedAt:r.employer_sharing_revoked_at||null,nextStep:"Complete the detailed information below. Employer sharing is optional and private by default. You can review or revoke consent at any time."};
 }
 
-export async function updatePublicInquiryDetails(reference,token,input,requestId){
- return withTransaction(async db=>{
-  const r=await getByToken(db,reference,token);
-  if(["converted","declined","closed"].includes(r.status)) throw error(409,"This inquiry is no longer accepting additional details.","INQUIRY_CLOSED");
-  const details={
-    professionalSummary:clean(input.professionalSummary,5000),
-    experience:clean(input.experience,8000),
-    education:clean(input.education,5000),
-    skills:Array.isArray(input.skills)?input.skills.map(x=>clean(x,120)).filter(Boolean).slice(0,30):[],
-    availability:clean(input.availability,1000),
-    motivation:clean(input.motivation,5000),
-    preferredContact:clean(input.preferredContact,100),
-    attachmentsNote:clean(input.attachmentsNote,2000)
-  };
-  const updated=(await db.query("update public_opportunity_inquiry set details=$1,status=case when status='received' then 'considering' else status end,updated_at=now() where id=$2 returning public_reference,status,updated_at",[JSON.stringify(details),r.id])).rows[0];
-  await audit(db,null,"public_opportunity.inquiry_details_completed","public_opportunity_inquiry",r.id,requestId,{});
-  return {...updated,nextStep:"An authorized reviewer can now assess the inquiry. If the applicant is not an active member, the reviewer must explicitly choose whether to consider the application outside the member-only pathway."};
- });
+async function saveInquiryDetails(db,r,input,requestId,actorId=null){
+ if(["converted","declined","closed"].includes(r.status)) throw error(409,"This inquiry is no longer accepting additional details.","INQUIRY_CLOSED");
+ const details={
+  professionalSummary:clean(input.professionalSummary,5000),
+  experience:clean(input.experience,8000),
+  education:clean(input.education,5000),
+  skills:Array.isArray(input.skills)?input.skills.map(x=>clean(x,120)).filter(Boolean).slice(0,30):[],
+  availability:clean(input.availability,1000),
+  motivation:clean(input.motivation,5000),
+  preferredContact:clean(input.preferredContact,100),
+  attachmentsNote:clean(input.attachmentsNote,2000)
+ };
+ const updated=(await db.query("update public_opportunity_inquiry set details=$1,status=case when status='received' then 'considering' else status end,updated_at=now() where id=$2 returning public_reference,status,updated_at,details",[JSON.stringify(details),r.id])).rows[0];
+ await audit(db,actorId,"public_opportunity.inquiry_details_completed","public_opportunity_inquiry",r.id,requestId,{});
+ return {...updated,nextStep:"Your details are saved. An authorized reviewer can assess the inquiry. You can check status and sharing history from your linked account."};
 }
-
+export async function updatePublicInquiryDetails(reference,token,input,requestId){
+ return withTransaction(async db=>{const r=await getByToken(db,reference,token);return saveInquiryDetails(db,r,input,requestId,r.app_user_id||null);});
+}
+export async function listMyLinkedInquiries(userId){
+ return (await getPool().query("select i.public_reference reference,i.inquiry_type,status,i.created_at,i.updated_at,i.employer_sharing_consent,i.employer_sharing_organization_id,i.employer_sharing_revoked_at,case when i.status in ('converted','declined','closed') then 'Review the recorded outcome.' when i.employer_sharing_consent=true and i.employer_sharing_revoked_at is null then 'Review sharing history or revoke consent.' else 'Review your saved details or choose whether to share selected fields with one named organization.' end next_action from public_opportunity_inquiry i where i.app_user_id=$1 order by i.updated_at desc limit 100",[userId])).rows;
+}
+export async function getLinkedInquiryDetails(reference,userId){
+ const r=(await getPool().query("select i.*,j.title job_title from public_opportunity_inquiry i left join job j on j.id=i.job_id where i.public_reference=$1 and i.app_user_id=$2",[reference,userId])).rows[0];
+ if(!r)throw error(404,"No inquiry linked to this account has that reference.","NOT_FOUND");
+ return {reference:r.public_reference,inquiryType:r.inquiry_type,jobTitle:r.job_title,hasLinkedJob:Boolean(r.job_id),status:r.status,contactName:r.contact_name,contactEmail:r.contact_email,contactPhone:r.contact_phone,intent:r.intent,details:r.details,employerSharingConsent:r.employer_sharing_consent===true,employerSharingScope:r.employer_sharing_scope,employerSharingOrganizationId:r.employer_sharing_organization_id||null,employerSharingFields:Array.isArray(r.employer_sharing_fields)?r.employer_sharing_fields:JSON.parse(r.employer_sharing_fields||"[]"),employerSharingConsentedAt:r.employer_sharing_consented_at||null,employerSharingRevokedAt:r.employer_sharing_revoked_at||null,nextStep:"This inquiry is linked to your account. Update your details, review sharing history, or revoke consent from this secure workspace."};
+}
+export async function updateLinkedInquiryDetails(reference,userId,input,requestId){
+ return withTransaction(async db=>{const r=(await db.query("select * from public_opportunity_inquiry where public_reference=$1 and app_user_id=$2 for update",[reference,userId])).rows[0];if(!r)throw error(404,"No inquiry linked to this account has that reference.","NOT_FOUND");return saveInquiryDetails(db,r,input,requestId,userId);});
+}
+export async function getLinkedSharingHistory(reference,userId){
+ const inquiry=(await getPool().query("select id from public_opportunity_inquiry where public_reference=$1 and app_user_id=$2 and inquiry_type='job' and job_id is null",[reference,userId])).rows[0];
+ if(!inquiry)throw error(404,"No linked job-seeker demand was found for this account.","NOT_FOUND");
+ return (await getPool().query("select s.id share_id,o.display_name,o.legal_name,s.shared_fields,s.shared_at,s.revoked_at,s.revoke_reason from job_seeker_demand_share s join organization o on o.id=s.organization_id where s.inquiry_id=$1 order by s.shared_at desc",[inquiry.id])).rows.map(row=>({shareId:row.share_id,organizationName:row.display_name||row.legal_name,sharedFields:Array.isArray(row.shared_fields)?row.shared_fields:JSON.parse(row.shared_fields||"[]"),sharedAt:row.shared_at,revokedAt:row.revoked_at,revokeReason:row.revoke_reason,status:row.revoked_at?"revoked":"shared"}));
+}
 async function visibleInquiries(db,userId,filters={}){
  const admin=await hasRole(db,userId,["system_admin","admin","supporting_staff"]);
  if(!admin){
