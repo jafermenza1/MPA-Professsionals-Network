@@ -55,12 +55,12 @@ export async function answerPublicQuestion(input,context={}){
  await db.query("insert into support_message(conversation_id,sender_type,message_text) values($1,'visitor',$2)",[conversationId,question]);
  const articles=await db.query(`select a.*,c.name as category_name,c.id as category_id from support_knowledge_article a join support_knowledge_category c on c.id=a.category_id where a.is_published=true and c.is_active=true order by a.sort_order,a.updated_at desc limit 300`);
  const ranked=articles.rows.map(article=>({article,score:matchScore(question,article)})).sort((a,b)=>b.score-a.score);
- const best=ranked[0]?.score>=2?ranked[0].article:null;
+ const best=ranked[0]?.score>=3?ranked[0].article:null;
  const answer=best?best.answer:"I don’t have a verified answer for that question in the MPA help library yet. I’ve recorded your inquiry so the support team can review it. If you share contact details and consent to follow-up, they can get back to you.";
  const categoryId=best?.category_id||null;
  const contactable=consentToContact&&(Boolean(contactEmail)||Boolean(contactPhone));
  await db.query(`update support_conversation set user_id=coalesce($2,user_id),contact_name=coalesce($3,contact_name),contact_email=coalesce($4,contact_email),contact_phone=coalesce($5,contact_phone),preferred_contact=$6,consent_to_contact=$7,page_path=$8,status=case when $9 then 'open' else status end,category_id=coalesce($10,category_id),last_question=$11,updated_at=now() where id=$1`,
- [conversationId,context.userId||null,contactName,contactEmail,contactPhone,preferredContact,contactable,pagePath,Boolean(!best),categoryId,question]);
+ [conversationId,context.userId||null,contactName,contactEmail,contactPhone,preferredContact,contactable,pagePath,Boolean(!best||contactable),categoryId,question]);
  await db.query("insert into support_message(conversation_id,sender_type,message_text,knowledge_article_id) values($1,'bot',$2,$3)",[conversationId,answer,best?.id||null]);
  return {conversationRef:conversationReference,answer,answeredFromKnowledgeBase:Boolean(best),articleTitle:best?.title||null,needsHumanFollowUp:!best||contactable,contactSaved:Boolean(contactable),privacyNotice:"Your inquiry is visible to authorized MPA support staff. Contact details are used for follow-up only when you ask MPA to contact you."};
 }
