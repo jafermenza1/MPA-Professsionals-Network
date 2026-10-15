@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { withTransaction, getPool } from "../platform/db.js";
+import { createInAppNotification } from "../platform/notifications.js";
 import { signToken, newSessionToken, hashSessionToken, sessionTokenPayload } from "../platform/auth.js";
 import { loadConfig } from "../platform/config.js";
 import { nextTrackingReference } from "../platform/tracking-reference.js";
@@ -22,46 +23,10 @@ async function tokenFor(db,user,roles,requestMeta={}){
 function audit(db,actor,action,type,id,requestId,metadata={}){
   return db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor||null,action,type,id||null,requestId||null,metadata]);
 }
-function notificationCategory(eventCode){
-  const code=String(eventCode||"").toLowerCase();
-  if(code.startsWith("membership."))return "membership";
-  if(code.startsWith("verification."))return "verification";
-  if(code.startsWith("opportunity."))return "opportunities";
-  if(code.startsWith("organization."))return "organizations";
-  if(code.startsWith("job.")||code.startsWith("job_application.")||code.startsWith("employer."))return "recruitment";
-  if(code.startsWith("mentor.")||code.startsWith("mentorship."))return "mentorship";
-  if(code.startsWith("service."))return "services";
-  if(code.startsWith("event.")||code.startsWith("learning."))return "events_learning";
-  if(code.startsWith("security."))return "security";
-  return "system";
-}
-function notificationActionUrl(payload,resourceType,resourceId){
-  const explicit=String(payload?.actionUrl||payload?.action_url||"");
-  if(explicit.startsWith("/")&&!explicit.startsWith("//")&&!explicit.includes("\\")&&![...explicit].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127))return explicit;
-  if(!resourceId)return null;
-  const paths={membership_application:"/membership",membership_record:"/membership/card",verification_case:"/verification",
-    organization:"/organizations",job:"/jobs",job_application:"/jobs",service_request:"/services",service_listing:"/services",
-    mentorship_request:"/mentorship",mentorship_match:"/mentorship",professional_profile:"/profile"};
-  const path=paths[String(resourceType||"").toLowerCase()];
-  return path||null;
-}
 async function notify(db,userId,eventCode,resourceType,resourceId,payload={}){
-  const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled,coalesce(np.in_app_enabled,true) in_app_enabled,coalesce(np.in_app_categories,'{}'::jsonb) in_app_categories from app_user u left join notification_preference np on np.user_id=u.id where u.id=$1",[userId])).rows[0];
+  const user=(await db.query("select u.email,coalesce(np.email_enabled,true) email_enabled from app_user u left join notification_preference np on np.user_id=u.id where u.id=$1",[userId])).rows[0];
   if(!user)return;
-  const category=notificationCategory(eventCode);
-  const title=String(payload.title||eventCode||"Update").split(/[._-]+/).filter(Boolean).map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(" ");
-  const body=String(payload.message||payload.summary||payload.nextAction||payload.next_action||(payload.status?("Status updated: "+String(payload.status).replace(/[_-]+/g," ").toLowerCase()):"There is an update to review in your MPA Network account.")).slice(0,1000);
-  const priority=["low","normal","high","urgent"].includes(payload.priority)?payload.priority:"normal";
-  const actionRequired=payload.actionRequired===true||payload.action_required===true||Boolean(payload.nextAction||payload.next_action);
-  const actionUrl=notificationActionUrl(payload,resourceType,resourceId);
-  const dedupeKey=String(payload.dedupeKey||payload.dedupe_key||"").slice(0,240)||null;
-  if(user.in_app_enabled&&user.in_app_categories?.[category]!==false){
-    const inserted=await db.query(`insert into notification_event(user_id,event_code,resource_type,resource_id,payload,category,title,body,priority,action_required,action_url,dedupe_key)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      on conflict (user_id,dedupe_key) where dedupe_key is not null do nothing returning id`,
-      [userId,eventCode,resourceType||null,resourceId||null,payload,category,title,body,priority,actionRequired,actionUrl,dedupeKey]);
-    if(dedupeKey&&!inserted.rows[0])return;
-  }
+  await createInAppNotification(db,userId,eventCode,resourceType,resourceId,payload);
   if(user.email&&user.email_enabled)await db.query("insert into notification_outbox(channel,recipient,template_code,payload) values('email',$1,$2,$3)",[user.email,eventCode,payload]);
 }
 async function roles(db,userId){
