@@ -41,8 +41,6 @@ export async function registerOrganization(userId,input,requestId){
   await db.query("insert into organization_verification_case(organization_id,status,submitted_by,submitted_at) values($1,'draft',$2,null)",[org.id,userId]);
   await audit(db,userId,"organization.created","organization",org.id,requestId,{});
   await queueWorkflowEmail(db,userId,"organization.registration_received",{organizationId:org.id,organizationName:org.display_name,registrationReference:org.tracking_reference,status:"draft",nextAction:"Upload required private evidence and submit for organization review"},"organization",org.id);
-  const reviewers=(await db.query("select distinct ur.user_id from app_user_role ur join app_role r on r.id=ur.role_id join app_user u on u.id=ur.user_id where u.status='active' and r.role_code in ('reviewer','system_admin')")).rows;
-  for(const reviewer of reviewers) await queueWorkflowEmail(db,reviewer.user_id,"reviewer.review_queue_update",{workflowType:"organization verification",registrationReference:org.tracking_reference,status:"new organization registration",nextAction:"Review the organization verification queue"},"organization",org.id);
   return org;
  });
 }
