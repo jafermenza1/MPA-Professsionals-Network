@@ -16,8 +16,9 @@ async function audit(db,actor,action,type,id,requestId,metadata={}){
  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]);
 }
 async function notify(db,userId,eventCode,type,id,payload={}){
- if(!userId)return;
- await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload) values($1,$2,$3,$4,$5)",[userId,eventCode,type,id,payload]);
+ if(!userId)return {channel:"in_app",status:"not_recorded"};
+ const row=(await db.query("insert into notification_event(user_id,event_code,resource_type,resource_id,payload,delivery_channel,delivery_status) values($1,$2,$3,$4,$5,'in_app','recorded') returning id,delivery_channel,delivery_status",[userId,eventCode,type,id,payload])).rows[0];
+ return {channel:row.delivery_channel,status:row.delivery_status,eventId:row.id,externalDelivery:"not_configured"};
 }
 function clean(value,max){return String(value??"").trim().slice(0,max);}
 function required(value,label,max){const v=clean(value,max);if(!v)throw fail(400,label+" is required.","VALIDATION_ERROR");return v;}
@@ -45,7 +46,7 @@ export async function createDemand(userId,input,requestId){
 }
 export async function listMyDemand(userId){
  const db=getPool();
- return (await db.query("select d.id,d.demand_type,d.title,d.category,d.delivery_mode,d.location_label,d.desired_timing,d.status,d.outcome_code,d.outcome_note,d.created_at,d.updated_at,o.display_name organization_name from marketplace_demand d left join organization o on o.id=d.organization_id where d.requester_user_id=$1 or (d.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=d.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by d.created_at desc",[userId,ORG_ROLES])).rows;
+ return (await db.query("select d.id,d.demand_type,d.title,d.category,d.delivery_mode,d.location_label,d.desired_timing,d.status,d.outcome_code,d.outcome_note,d.merged_into_demand_id,d.created_at,d.updated_at,o.display_name organization_name from marketplace_demand d left join organization o on o.id=d.organization_id where d.requester_user_id=$1 or (d.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=d.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by d.created_at desc",[userId,ORG_ROLES])).rows;
 }
 export async function listPublishedTopics(filters={}){
  const args=[],where=["t.status='published'","(t.closes_at is null or t.closes_at>now())"];
@@ -101,6 +102,37 @@ export async function listReviewQueue(userId,filters={}){
  const args=status==="all"?[]:[status];
  return (await db.query("select d.*,o.display_name organization_name,p.display_name requester_name,(select count(*)::int from marketplace_demand_topic t where t.source_demand_id=d.id) topic_count from marketplace_demand d join person p on p.user_id=d.requester_user_id left join organization o on o.id=d.organization_id where "+where+" order by d.created_at asc limit 200",args)).rows;
 }
+export async function mergeDemand(duplicateDemandId,targetDemandId,actorId,requestId){
+ if(!targetDemandId||duplicateDemandId===targetDemandId)throw fail(400,"Choose a different existing request as the merge target.","MERGE_TARGET_INVALID");
+ return withTransaction(async db=>{
+  await staff(db,actorId);
+  const ids=[duplicateDemandId,targetDemandId].sort();
+  const locked=(await db.query("select * from marketplace_demand where id=any($1::uuid[]) order by id for update",[ids])).rows;
+  if(locked.length!==2)throw fail(404,"One of the demand requests was not found.","NOT_FOUND");
+  const duplicate=locked.find(row=>row.id===duplicateDemandId),target=locked.find(row=>row.id===targetDemandId);
+  if(duplicate.merged_into_demand_id===target.id&&duplicate.status==="closed"&&duplicate.outcome_code==="duplicate_merged")return {...duplicate,idempotent:true,mergedInto:{id:target.id,title:target.title},notificationStatus:"previously_recorded",nextAction:"This duplicate is already linked to the retained request."};
+  if(duplicate.merged_into_demand_id)throw fail(409,"This request was already merged. Follow its recorded canonical request instead.","ALREADY_MERGED");
+  if(["converted","closed","declined","topic_published"].includes(duplicate.status))throw fail(409,"Only an unresolved private demand request can be merged.","INVALID_STATE");
+  if(["converted","closed","declined"].includes(target.status)||target.merged_into_demand_id)throw fail(409,"Choose an unresolved canonical request that has not itself been merged.","MERGE_TARGET_INVALID");
+  if(duplicate.demand_type!==target.demand_type)throw fail(409,"Only requests of the same type can be merged.","MERGE_TYPE_MISMATCH");
+  if(duplicate.id===target.id)throw fail(400,"A request cannot be merged into itself.","MERGE_TARGET_INVALID");
+  const note=clean("Duplicate of retained request "+target.id,3000);
+  const updated=(await db.query("update marketplace_demand set status='closed',outcome_code='duplicate_merged',outcome_note=$1,merged_into_demand_id=$2,reviewed_by=$3,reviewed_at=now(),resolved_at=now(),updated_at=now() where id=$4 returning id,status,outcome_code,outcome_note,merged_into_demand_id,reviewed_by,reviewed_at,resolved_at,updated_at",[note,target.id,actorId,duplicate.id])).rows[0];
+  await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.duplicate_merged',$3,'closed',$4,$5)",[duplicate.id,actorId,duplicate.status,note,{mergedIntoDemandId:target.id,duplicateDemandId:duplicate.id,targetDemandId:target.id}]);
+  await db.query("insert into marketplace_demand_event(demand_id,actor_user_id,action,from_status,to_status,note,metadata) values($1,$2,'demand.duplicate_received',$3,$3,$4,$5)",[target.id,actorId,target.status,"A duplicate request was linked; original request history remains separate.",{duplicateDemandId:duplicate.id}]);
+  await audit(db,actorId,"marketplace.demand_duplicate_merged","marketplace_demand",duplicate.id,requestId,{mergedIntoDemandId:target.id,demandType:duplicate.demand_type});
+  const recipients=new Set([duplicate.requester_user_id,target.requester_user_id]);
+  if(duplicate.organization_id){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[duplicate.organization_id,ORG_ROLES])).rows;for(const member of team)recipients.add(member.user_id);}
+  if(target.organization_id){const team=(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[target.organization_id,ORG_ROLES])).rows;for(const member of team)recipients.add(member.user_id);}
+  const notificationResults=[];
+  for(const recipient of recipients){
+   const event=await notify(db,recipient,"marketplace.demand_duplicate_merged","marketplace_demand",duplicate.id,{message:"The Support Desk identified this request as a duplicate and linked it to an existing request. Your original submission and history remain preserved.",nextAction:"Follow the request status shown in your private activity. Contact the Support Desk if this does not reflect your need.",mergedIntoDemandId:target.id});
+   if(event.status==="recorded")notificationResults.push(event);
+  }
+  return {...updated,mergedInto:{id:target.id,title:target.title},notificationStatus:"in_app_recorded",notificationCount:notificationResults.length,externalDelivery:"not_configured",nextAction:"The original request is retained in history and linked to the canonical request. In-app status was recorded; email/SMS delivery is not configured."};
+ });
+}
+
 export async function reviewDemand(demandId,actorId,input,requestId){
  const status=input.status;
  const allowed=["under_review","clarification_needed","matched","topic_published","converted","closed","declined"];
@@ -110,6 +142,7 @@ export async function reviewDemand(demandId,actorId,input,requestId){
   await staff(db,actorId);
   const demand=(await db.query("select * from marketplace_demand where id=$1 for update",[demandId])).rows[0];
   if(!demand)throw fail(404,"Demand request not found.","NOT_FOUND");
+  if(demand.merged_into_demand_id)throw fail(409,"This request was merged into another request and cannot be reviewed separately.","ALREADY_MERGED");
   if(demand.status===status&&!input.publishTopic&&!input.internalNote&&!input.outcomeNote) return {...demand,idempotent:true,nextAction:status==="topic_published"?"Review incoming interest and provider matches.":status==="matched"?"Coordinate the accepted provider match.":"No further action is required unless the need changes."};
   if(status==="matched"&&!(await db.query("select 1 from marketplace_demand_provider_match where demand_id=$1 and status='accepted' limit 1",[demandId])).rowCount)throw fail(409,"A provider must accept a proposed match before this demand can be marked matched.","PROVIDER_MATCH_REQUIRED");
   if(["converted","closed","declined"].includes(demand.status))throw fail(409,"Resolved demand cannot be changed; record a new request if needs have changed.","INVALID_STATE");
