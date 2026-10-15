@@ -269,3 +269,11 @@ Added `web/app/live-network-feeds.tsx` and `web/app/live-network-feeds.module.cs
 
 
 Implementation detail: `e2e/homepage-live-feeds.spec.js` was added with three Playwright scenarios for all five feed sections, one-section API failure/retry while other feeds remain visible, and truthful empty states. This test file is committed but **has not been executed**; it is test intent, not validation evidence.
+
+
+## In-app notification action center — foundation checkpoint (15 October 2026)
+
+- Recorded the complete product decision, seven notification categories, role-aware recipient/privacy rules, interaction and delivery semantics, API surface, implementation inventory and acceptance plan in `docs/44-in-app-notification-action-center.md`.
+- Added an additive notification schema migration; an authenticated inbox service with counts, filtering, read/read-all/archive and audit events; API routes; a notification inbox page; a shared-shell unread badge; and category/title/body/action metadata for membership-generated notifications. Existing email operations and the notification outbox are retained.
+- Added storage/API support for per-category in-app preferences and optional digest preference; this does not implement scheduled digest delivery or prove category preference enforcement across every notification producer yet.
+- **Acceptance NOT RUN.** No tests, typecheck, production build, migration execution/rerun, browser or accessibility review is claimed. Workflow wiring across every category, administrator intervention aggregation, category preference enforcement across all producers, and cross-role privacy proof remain explicit follow-up. Keep PR #3 draft/open; do not merge or deploy.
