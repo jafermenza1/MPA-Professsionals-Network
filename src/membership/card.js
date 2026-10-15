@@ -67,7 +67,7 @@ export async function getMyMembershipCard(userId){
     settings:cardSettings
   };
 }
-export async function getMembershipCardForAdmin(membershipNumber){
+export async function getMembershipCardForAdmin(membershipNumber,actorId,requestId){
   const number=String(membershipNumber||"").trim().toUpperCase();
   if(!number||number.length>100||/[\u0000-\u001f\u007f]/.test(number)) throw fail(400,"Enter an existing membership ID.","INVALID_MEMBERSHIP_NUMBER");
   const db=getPool();
@@ -83,6 +83,7 @@ export async function getMembershipCardForAdmin(membershipNumber){
     order by m.start_date desc nulls last,m.created_at desc limit 1`,[number]);
   const row=r.rows[0];
   if(!row) throw fail(404,"No membership record matches that ID.","MEMBERSHIP_NOT_FOUND");
+  await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'membership.card_admin_issued','membership_record',$2,$3,'success',$4)",[actorId,row.membership_record_id,requestId,JSON.stringify({membershipNumber:row.membership_number})]);
   return {
     membershipRecordId:row.membership_record_id,membershipNumber:row.membership_number,
     memberName:row.member_name||"MPA Member",membershipType:row.membership_type,productCode:row.product_code,
