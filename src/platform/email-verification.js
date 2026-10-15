@@ -117,12 +117,12 @@ export async function verifyEmailToken(rawToken, requestId) {
     )).rows[0];
     if (!row) throw Object.assign(new Error("The verification link is invalid, expired, or already used. Request a new link."), { statusCode: 400, code: "EMAIL_VERIFICATION_INVALID" });
     await db.query("update email_verification_token set consumed_at=now() where user_id=$1 and consumed_at is null", [row.user_id]);
-    await db.query("update app_user set email_verified_at=coalesce(email_verified_at,now()),updated_at=now() where id=$1", [row.user_id]);
+    const verifiedUser = (await db.query("update app_user set email_verified_at=coalesce(email_verified_at,now()),updated_at=now() where id=$1 returning registration_reference", [row.user_id])).rows[0];
     await db.query(
       "insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,'account.email_verified','account',$2,$3,'success',$4)",
       [row.user_id, row.user_id, requestId || null, { method: "single_use_email_link" }]
     );
-    return { verified: true };
+    return { verified: true, registrationReference: verifiedUser?.registration_reference || null };
   });
 }
 
