@@ -193,10 +193,15 @@ test("Gate 2: Support Desk proposes a suitable provider and the provider respond
  assert.ok(candidates.some(x=>x.id===listing.id&&x.listing_type==="service"));
  const match=await marketplace.createDemandProviderMatch(demand.id,staff,{listingType:"service",listingId:listing.id,note:"The offer's scope aligns with the requested workflow support."},"gate2-match-propose");
  assert.equal(match.status,"proposed");
+ assert.equal(match.notificationStatus,"in_app_recorded");
+ assert.equal(match.externalDelivery,"not_configured");
+ assert.ok((await getPool().query("select 1 from notification_event where user_id=$1 and resource_id=$2 and event_code='marketplace.provider_match_proposed'",[provider,match.id])).rowCount>=1);
  assert.ok((await marketplace.listMyDemandProviderMatches(provider)).some(x=>x.id===match.id&&!x.is_requester));
  await assert.rejects(marketplace.respondToDemandProviderMatch(match.id,requester,"accepted","Not the provider","gate2-match-outsider"),e=>e.code==="FORBIDDEN");
  const accepted=await marketplace.respondToDemandProviderMatch(match.id,provider,"accepted","We can help and will contact the requester to confirm the scope.","gate2-match-accept");
  assert.equal(accepted.status,"accepted");
+ assert.equal(accepted.notificationStatus,"in_app_recorded");
+ assert.equal(accepted.externalDelivery,"not_configured");
  const requesterView=(await marketplace.listMyDemandProviderMatches(requester)).find(x=>x.id===match.id);
  assert.equal(requesterView.status,"accepted");
  assert.equal((await marketplace.listReviewQueue(staff,{status:"matched"})).some(x=>x.id===demand.id),true);
