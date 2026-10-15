@@ -35,7 +35,7 @@ export default function Register(){
  useEffect(()=>{void loadChallenge();},[]);
 
  function saveOrganizationDraft(){
-  const draft={legalName:form.orgLegalName.trim(),displayName:form.orgDisplayName.trim(),organizationType:form.orgType.trim(),description:form.orgDescription.trim(),website:form.orgWebsite.trim(),email:form.orgEmail.trim(),phone:form.orgPhone.trim(),addressText:form.orgAddress.trim(),savedAt:Date.now()};
+  const draft={legalName:form.orgLegalName.trim(),displayName:form.orgDisplayName.trim(),organizationType:form.orgType.trim(),description:form.orgDescription.trim(),website:form.orgWebsite.trim(),email:form.orgEmail.trim(),phone:form.orgPhone.trim(),addressText:form.orgAddress.trim(),savedAt:Date.now(),expiresAt:Date.now()+DRAFT_TTL_MS};
   localStorage.setItem(ORGANIZATION_DRAFT_KEY,JSON.stringify(draft));
  }
 
