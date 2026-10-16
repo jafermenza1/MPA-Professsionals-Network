@@ -200,7 +200,7 @@ export default function Mentorship(){
          <label>Until<input type="time" value={mentorEnd} onChange={e=>setMentorEnd(e.target.value)}/></label>
          <button className="btn btn-ghost" type="button" onClick={()=>void saveMentorAvailability()}>Save availability</button>
        </div>
-       {(ownMentorProfile.availability||[]).map((slot,i)=><p className="muted" key={i}>{["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][slot.day_of_week]} · {String(slot.start_time).slice(0,5)}–{String(slot.end_time).slice(0,5)} · {slot.timezone}</p>)}
+       {(ownMentorProfile.availability||[]).map(slot=><p className="muted" key={`${slot.day_of_week}:${slot.start_time}:${slot.end_time}:${slot.timezone}`}>{["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][slot.day_of_week]} · {String(slot.start_time).slice(0,5)}–{String(slot.end_time).slice(0,5)} · {slot.timezone}</p>)}
        <div className="row">
          {["draft","paused"].includes(ownMentorProfile.status)&&<button className="btn btn-primary" type="button" onClick={()=>void changeMentorProfileStatus("active")}>Activate profile</button>}
          {ownMentorProfile.status==="active"&&<button className="btn btn-ghost" type="button" onClick={()=>void changeMentorProfileStatus("paused")}>Pause profile</button>}
