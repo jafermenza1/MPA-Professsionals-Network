@@ -52,7 +52,8 @@ export default function JobSeekerDemandSupportPage() {
   useEffect(() => { void load(); }, [load]);
 
   function updateChoice(id: string, patch: Partial<Choice>) {
-    setChoices(current => ({ ...current, [id]: { organizationId: "", fields: [], ...current[id], ...patch } }));
+    const defaults: Choice = { organizationId: "", fields: [] };
+    setChoices(current => ({ ...current, [id]: { ...defaults, ...current[id], ...patch } }));
   }
   async function share(item: Demand) {
     const choice = choices[item.id];
