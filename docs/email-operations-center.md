@@ -9,7 +9,7 @@ Set these values in the API process environment or deployment secret manager. Do
 - `PUBLIC_APP_URL`: the exact public HTTPS origin, without a path, query, fragment, or credentials.
 - `RESEND_API_KEY`: server-only Resend API key.
 - `EMAIL_FROM`: sender address on a domain verified with Resend.
-- `EMAIL_VERIFICATION_REQUIRED=true`: enable mandatory email verification only after the final tests below pass and provider delivery is confirmed. Keep the sample value disabled for local development.
+- Email verification is always enforced by the API. Configure delivery before production registration; do not disable the activation gate. Local development returns a development-only link when no provider is configured.
 - `EMAIL_INBOUND_WEBHOOK_SECRET`: a long random secret for the normalized inbound-mail webhook, only when inbound email is configured.
 - Optional signed delivery-webhook alternative: `EMAIL_DELIVERY_WEBHOOK_URL` and `EMAIL_DELIVERY_WEBHOOK_SECRET`. The receiver must verify the documented HMAC-SHA256 signature and bearer secret.
 

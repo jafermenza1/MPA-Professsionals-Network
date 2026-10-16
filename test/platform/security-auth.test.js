@@ -53,7 +53,7 @@ test("WebAuthn assertion with a mismatched challenge is rejected",async()=>{
   const userId=registered.user.id;createdUsers.push(userId);
   const db=getPool();
   await db.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code='system_admin' on conflict do nothing",[userId]);
-  await db.query("update app_user set admin_passkey_enforced_at=now() where id=$1",[userId]);
+  await db.query("update app_user set email_verified_at=now(),admin_passkey_enforced_at=now() where id=$1",[userId]);
   const credentialId=Buffer.from("credential-"+suffix).toString("base64url");
   await db.query("insert into admin_passkey_credential(user_id,credential_id,public_key_jwk) values($1,$2,$3)",[userId,credentialId,{kty:"EC",crv:"P-256",x:Buffer.alloc(32,1).toString("base64url"),y:Buffer.alloc(32,2).toString("base64url"),ext:true}]);
   await beginAdminPasskeyAuthentication(email);
@@ -74,7 +74,7 @@ test("email verification is one-time and blocks unverified login",async()=>{
   await db.query("update app_user set email_verified_at=null where id=$1",[userId]);
   const verification=await withTransaction(tx=>createEmailVerification(tx,userId,email,registered.registrationReference));
   const previous=process.env.EMAIL_VERIFICATION_REQUIRED;
-  process.env.EMAIL_VERIFICATION_REQUIRED="true";
+  process.env.EMAIL_VERIFICATION_REQUIRED="false";
   try {
     await assert.rejects(membership.login(email,"Security-email-password-12345","security-email-login"),error=>error.code==="EMAIL_VERIFICATION_REQUIRED");
   } finally {
@@ -82,8 +82,12 @@ test("email verification is one-time and blocks unverified login",async()=>{
   }
   assert.deepEqual(await verifyEmailToken(verification.token,"security-email-verify"),{verified:true,registrationReference:registered.registrationReference});
   await assert.rejects(verifyEmailToken(verification.token,"security-email-replay"),error=>error.code==="EMAIL_VERIFICATION_INVALID");
-  const login=await membership.login(email,"Security-email-password-12345","security-email-login-after-verify");
-  assert.equal(typeof login.token,"string");
+  const previousJwtSecret=process.env.JWT_SECRET;
+  process.env.JWT_SECRET=previousJwtSecret||"security-email-test-secret-with-more-than-32-characters";
+  try{
+    const login=await membership.login(email,"Security-email-password-12345","security-email-login-after-verify");
+    assert.equal(typeof login.token,"string");
+  }finally{if(previousJwtSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousJwtSecret;}
 });
 
 test("administrator recovery codes are single-use and create a restricted recovery session",async()=>{
@@ -92,15 +96,19 @@ test("administrator recovery codes are single-use and create a restricted recove
   const userId=registered.user.id;createdUsers.push(userId);
   const db=getPool();
   await db.query("insert into app_user_role(user_id,role_id) select $1,id from app_role where role_code='system_admin' on conflict do nothing",[userId]);
-  await db.query("update app_user set admin_passkey_enforced_at=now() where id=$1",[userId]);
+  await db.query("update app_user set email_verified_at=now(),admin_passkey_enforced_at=now() where id=$1",[userId]);
   const code="RECOVERY-"+suffix.toUpperCase();
   await db.query("insert into admin_passkey_recovery_code(user_id,code_hash) values($1,$2)",[userId,hashSecurityToken(code)]);
-  const recovered=await recoverAdminPasskey(email,code,{ip:"198.51.100.24",userAgent:"security-test"},"security-auth-test-recovery");
-  assert.equal(typeof recovered.token,"string");
-  const recoveredIdentity=verifyToken(recovered.token,loadConfig().jwtSecret);
-  const session=(await db.query("select auth_method from auth_session where id=$1 and user_id=$2",[recoveredIdentity.sid,userId])).rows[0];
-  assert.equal(session.auth_method,"recovery");
-  await assert.rejects(recoverAdminPasskey(email,code,{ip:"198.51.100.24"},"security-auth-test-replay"),error=>error.code==="RECOVERY_INVALID");
+  const previousJwtSecret=process.env.JWT_SECRET;
+  process.env.JWT_SECRET=previousJwtSecret||"security-recovery-test-secret-with-more-than-32-characters";
+  try{
+    const recovered=await recoverAdminPasskey(email,code,{ip:"198.51.100.24",userAgent:"security-test"},"security-auth-test-recovery");
+    assert.equal(typeof recovered.token,"string");
+    const recoveredIdentity=verifyToken(recovered.token,loadConfig().jwtSecret);
+    const session=(await db.query("select auth_method from auth_session where id=$1 and user_id=$2",[recoveredIdentity.sid,userId])).rows[0];
+    assert.equal(session.auth_method,"recovery");
+    await assert.rejects(recoverAdminPasskey(email,code,{ip:"198.51.100.24"},"security-auth-test-replay"),error=>error.code==="RECOVERY_INVALID");
+  }finally{if(previousJwtSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousJwtSecret;}
 });
 
 

@@ -3,7 +3,8 @@ import {FormEvent,useState} from "react";
 import {useRouter} from "next/navigation";
 import {Fingerprint,KeyRound,LogIn,ShieldCheck} from "lucide-react";
 import {Card} from "../../components/ui";
-import {api} from "../../lib/api";
+import {EmailVerificationGate} from "../../components/email-verification-gate";
+import {api,ApiError} from "../../lib/api";
 import {useUiStore} from "../../lib/store";
 
 function fromB64url(value:string):Uint8Array{
@@ -34,6 +35,7 @@ export default function Login(){
  const [busy,setBusy]=useState(false);
  const [passkeyBusy,setPasskeyBusy]=useState(false);
  const [recoveryMode,setRecoveryMode]=useState(false);
+ const [verificationRequired,setVerificationRequired]=useState(false);
  const [recoveryCode,setRecoveryCode]=useState("");
  async function finishLogin(token:string,passkeyEnrollmentRequired=false){
    setToken(token);
@@ -45,9 +47,10 @@ export default function Login(){
  async function submit(e:FormEvent){
    e.preventDefault();setBusy(true);setError("");
    try{const r=await api<any>("/api/v1/auth/login",{method:"POST",body:JSON.stringify({email,password})});await finishLogin(r.token,Boolean(r.passkeyEnrollmentRequired));}
-   catch(err){setError(err instanceof Error?err.message:"We could not sign you in. Please try again.");}
+  catch(err){if(err instanceof ApiError&&err.code==="EMAIL_VERIFICATION_REQUIRED"){setEmail(email.includes("@")?email:"");setPassword("");setVerificationRequired(true);setError("");}else setError(err instanceof Error?err.message:"We could not sign you in. Please try again.");}
    finally{setBusy(false);}
  }
+ if(verificationRequired)return <EmailVerificationGate email={email} message="Your credentials are correct, but your email address is not verified. Request a fresh activation link or verify the latest email before signing in."/>;
  async function signInWithPasskey(){
    setPasskeyBusy(true);setError("");
    try{

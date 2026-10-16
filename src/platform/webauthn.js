@@ -167,8 +167,8 @@ export async function finishAdminPasskeyRegistration(identity,payload,requestId)
 export async function beginAdminPasskeyAuthentication(emailInput) {
   const config=relyingParty(),email=String(emailInput||"").trim().toLowerCase(),db=getPool();
   if(!email||email.length>320)fail(400,"Enter your administrator email address.","VALIDATION_ERROR");
-  const user=(await db.query("select id,email,status,admin_passkey_enforced_at from app_user where lower(email)=lower($1)",[email])).rows[0];
-  if(!user||user.status!=="active"||!user.admin_passkey_enforced_at)fail(401,"No usable administrator passkey was found. Check the email or use the documented recovery process.","PASSKEY_NOT_AVAILABLE");
+  const user=(await db.query("select id,email,status,email_verified_at,admin_passkey_enforced_at from app_user where lower(email)=lower($1)",[email])).rows[0];
+  if(!user||user.status!=="active"||!user.email_verified_at||!user.admin_passkey_enforced_at)fail(401,"No usable administrator passkey was found. Check the email or use the documented recovery process.","PASSKEY_NOT_AVAILABLE");
   const roles=(await db.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[user.id])).rows.map(x=>x.role_code);
   if(!roles.some(role=>["system_admin","admin"].includes(role)))fail(401,"No usable administrator passkey was found.","PASSKEY_NOT_AVAILABLE");
   const credentials=(await db.query("select credential_id,transports from admin_passkey_credential where user_id=$1 and revoked_at is null",[user.id])).rows;
@@ -180,8 +180,8 @@ export async function beginAdminPasskeyAuthentication(emailInput) {
 
 export async function finishAdminPasskeyAuthentication(emailInput,payload,requestMeta={},requestId) {
   const config=relyingParty(),email=String(emailInput||"").trim().toLowerCase(),db=getPool();
-  const user=(await db.query("select id,email,username,status,admin_passkey_enforced_at from app_user where lower(email)=lower($1)",[email])).rows[0];
-  if(!user||user.status!=="active"||!user.admin_passkey_enforced_at)fail(401,"Passkey authentication failed.","UNAUTHENTICATED");
+  const user=(await db.query("select id,email,username,status,email_verified_at,admin_passkey_enforced_at from app_user where lower(email)=lower($1)",[email])).rows[0];
+  if(!user||user.status!=="active"||!user.email_verified_at||!user.admin_passkey_enforced_at)fail(401,"Passkey authentication failed.","UNAUTHENTICATED");
   const challenge=(await db.query(`
     update admin_passkey_challenge set consumed_at=now()
     where id=(select id from admin_passkey_challenge
@@ -219,8 +219,8 @@ export async function recoverAdminPasskey(emailInput,codeInput,requestMeta={},re
   const email=String(emailInput||"").trim().toLowerCase(),code=String(codeInput||"").trim().toUpperCase(),db=getPool();
   if(!email||!code||code.length>64)fail(401,"Recovery could not be completed.","RECOVERY_INVALID");
   return withTransaction(async tx=>{
-    const user=(await tx.query("select id,email,username,status,admin_passkey_enforced_at from app_user where lower(email)=lower($1) for update",[email])).rows[0];
-    if(!user||user.status!=="active"||!user.admin_passkey_enforced_at)fail(401,"Recovery could not be completed.","RECOVERY_INVALID");
+    const user=(await tx.query("select id,email,username,status,email_verified_at,admin_passkey_enforced_at from app_user where lower(email)=lower($1) for update",[email])).rows[0];
+    if(!user||user.status!=="active"||!user.email_verified_at||!user.admin_passkey_enforced_at)fail(401,"Recovery could not be completed.","RECOVERY_INVALID");
     const roles=(await tx.query("select r.role_code from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=$1",[user.id])).rows.map(x=>x.role_code);
     if(!roles.some(role=>["system_admin","admin"].includes(role)))fail(401,"Recovery could not be completed.","RECOVERY_INVALID");
     const recovery=(await tx.query("select id from admin_passkey_recovery_code where user_id=$1 and code_hash=$2 and consumed_at is null for update",[user.id,hashText(code)])).rows[0];

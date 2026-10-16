@@ -38,6 +38,7 @@ type Profile = {
   has_active_membership?: boolean;
   profile_picture_file_id?: string | null;
 };
+type MembershipApplication={id:string;tracking_reference?:string|null;application_type:string;status:string;created_at:string;updated_at:string;fee_snapshot?:{productName?:string;productCode?:string;amount?:number|string;currency?:string}|null};
 type Preferences = {
   email_enabled: boolean;
   sms_enabled: boolean;
@@ -103,6 +104,7 @@ export default function Profile() {
     clearToken = useUiStore((s) => s.clearToken),
     language = useUiStore((s) => s.language);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [membershipApplications,setMembershipApplications]=useState<MembershipApplication[]>([]);
   const [form, setForm] = useState(blank);
   const [organizationOnly, setOrganizationOnly] = useState(false);
   const [profilePictureUrl, setProfilePictureUrl] = useState("");
@@ -144,6 +146,7 @@ export default function Profile() {
   const load = useCallback(async () => {
     if (!token) {
       setProfile(null);
+      setMembershipApplications([]);
       setOrganizationOnly(false);
       setError("");
       return;
@@ -163,12 +166,14 @@ export default function Profile() {
         return;
       }
       setOrganizationOnly(false);
-      const [prefs, tp, tv] = await Promise.all([
+      const [prefs, tp, tv, membershipApps] = await Promise.all([
         api<Preferences>("/api/v1/notifications/preferences", {}, token),
         api<TalentProfile>("/api/v1/me/talent-profile", {}, token),
         api<TalentVisibility>("/api/v1/me/talent-visibility", {}, token),
+        api<MembershipApplication[]>("/api/v1/membership/applications/me", {}, token),
       ]);
       setProfile(me);
+      setMembershipApplications(Array.isArray(membershipApps)?membershipApps:[]);
       setPreferences(prefs);
       setTalentProfile(tp);
       setTalentVisibility({ ...emptyTalentVisibility, ...tv });
@@ -421,6 +426,7 @@ export default function Profile() {
   }
   const update = (key: keyof typeof blank, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+  const latestMembershipApplication=membershipApplications[0];
   if (organizationOnly) return (
     <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
       <Card>
@@ -428,6 +434,28 @@ export default function Profile() {
         <h1 className="h1">This account uses an organization profile.</h1>
         <p className="muted">Professional directory profiles are separate from organization profiles. This account cannot access or edit a professional profile. Open the organization workspace to manage organizations you are authorized to access.</p>
         <p><a className="btn btn-primary" href="/organizations">Open organization workspace</a></p>
+      </Card>
+    </div>
+  );
+  if(profile&&profile.has_active_membership===false&&latestMembershipApplication)return (
+    <div className={`grid ${styles.page}`} style={{gap:18,minWidth:0,width:"100%"}}>
+      <Card>
+        <div className="eyebrow">Membership application</div>
+        <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}>
+          <h1 className="h1">Your application is already on file.</h1>
+          <Badge tone={["rejected","withdrawn"].includes(latestMembershipApplication.status)?"gold":"slate"}>{latestMembershipApplication.status.replaceAll("_"," ")}</Badge>
+        </div>
+        <p className="muted">Your professional profile stays read-only until membership review, payment verification and activation are complete. Continue the existing application instead of starting a duplicate.</p>
+        <div className="grid grid-2" style={{gap:12,padding:14,border:"1px solid var(--border)",borderRadius:10}}>
+          <div><span className="muted">Application reference</span><p><strong>{latestMembershipApplication.tracking_reference||latestMembershipApplication.id}</strong></p></div>
+          <div><span className="muted">Plan at submission</span><p><strong>{latestMembershipApplication.fee_snapshot?.productName||latestMembershipApplication.fee_snapshot?.productCode||"Membership plan"}</strong>{latestMembershipApplication.fee_snapshot?.amount!=null?` · ${latestMembershipApplication.fee_snapshot.currency||""} ${latestMembershipApplication.fee_snapshot.amount}`:""}</p></div>
+          <div><span className="muted">Last updated</span><p><strong>{new Date(latestMembershipApplication.updated_at||latestMembershipApplication.created_at).toLocaleString()}</strong></p></div>
+          <div><span className="muted">Next step</span><p><strong>{latestMembershipApplication.status==="correction_required"?"Respond to the requested correction":latestMembershipApplication.status==="payment_pending"?"Review payment instructions and submit evidence":latestMembershipApplication.status==="paid"?"Wait for activation after payment verification":"Track the existing application"}</strong></p></div>
+        </div>
+        <div className="row" style={{flexWrap:"wrap",marginTop:16}}>
+          <a className="btn btn-primary" href="/membership#my-applications">Continue application</a>
+          <a className="btn btn-ghost" href="/track">View application timeline</a>
+        </div>
       </Card>
     </div>
   );

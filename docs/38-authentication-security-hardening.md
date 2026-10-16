@@ -28,7 +28,7 @@ The application calls Resend's HTTPS email API directly; no extra mailer server 
 
 The application POSTs a JSON payload containing `to`, `template`, `subject`, `text`, `html`, `verificationUrl`, `registrationReference`, and `expiresInHours`. It sends the configured secret as a Bearer credential and an HMAC-SHA256 signature of the exact serialized body in `x-mpa-payload-signature`. The receiver must verify the signature using constant-time comparison, validate the recipient and template, send the message, and return a 2xx response only when it has accepted the message for delivery. Do not expose this endpoint or secret to browser code.
 
-For local development, set `EMAIL_VERIFICATION_REQUIRED=true` to exercise the email gate. Without a delivery provider, the development-only response provides a verification URL for local testing. Production does not return verification tokens or links to the browser.
+Email verification is mandatory in development and production: registration does not issue a session until the address is verified, password/passkey/recovery sign-in rejects unverified accounts, and the shared API authentication gate blocks pre-existing unverified sessions. In local development, when no email provider is configured, registration and resend return a development-only verification URL. Production requires `PUBLIC_APP_URL` plus a configured Resend sender or signed delivery webhook; registration preflights that configuration before creating an account. Do not disable the gate with an environment flag.
 
 ## First-party human challenge and request throttling
 

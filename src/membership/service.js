@@ -8,7 +8,7 @@ import { hashPassword, verifyPassword, normalizeEmail, normalizePhone, normalize
 import { assertProfessionalProfileCapability } from "../platform/identity-policy.js";
 import { membershipEndDate } from "../platform/membership-duration.js";
 import { consumeHumanChallenge } from "../platform/security-controls.js";
-import { createEmailVerification, deliverEmailVerification } from "../platform/email-verification.js";
+import { assertEmailDeliveryConfigured, createEmailVerification, deliverEmailVerification } from "../platform/email-verification.js";
 
 export function generateMembershipNumber(date=new Date()) { return `MPA-${date.getUTCFullYear()}-${randomUUID().slice(0,8).toUpperCase()}`; }
 
@@ -63,8 +63,8 @@ export async function bootstrapAdmin(input){
   return withTransaction(async db=>{
     const existing=await db.query("select id,email,status from app_user where lower(email)=lower($1)",[email]);
     let user=existing.rows[0];
-    if(user && user.status!=="active") await db.query("update app_user set status='active',updated_at=now() where id=$1",[user.id]);
-    if(!user) user=(await db.query("insert into app_user(username,email,password_hash,status) values($1,$1,$2,'active') returning id,email,status",[email, hashPassword(password)])).rows[0];
+    if(user) await db.query("update app_user set status='active',email_verified_at=coalesce(email_verified_at,now()),updated_at=now() where id=$1",[user.id]);
+    if(!user) user=(await db.query("insert into app_user(username,email,password_hash,status,email_verified_at) values($1,$1,$2,'active',now()) returning id,email,status,email_verified_at",[email, hashPassword(password)])).rows[0];
     const role=(await db.query("select id from app_role where role_code='system_admin'")).rows[0];
     if(!role) throw httpError(500,"System administrator role is unavailable.","BOOTSTRAP_ROLE_MISSING");
     await db.query("insert into app_user_role(user_id,role_id) values($1,$2) on conflict do nothing",[user.id,role.id]);
@@ -81,11 +81,12 @@ export async function register(input,requestId){
   if(input.passwordConfirmation!==undefined&&String(input.passwordConfirmation)!==String(input.password||"")) throw httpError(400,"Password confirmation does not match.","PASSWORD_CONFIRMATION_MISMATCH");
   const accountType=input.accountType==="organization"||input.accountType==="organization_representative"?"organization_representative":"professional";
   const roleCode=accountType==="organization_representative"?"organization_representative":"member";
-  const verificationRequired=String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true";
+  const verificationRequired=true;
   const humanChallengeRequired=String(process.env.HUMAN_CHALLENGE_REQUIRED||"false").toLowerCase()==="true"||loadConfig().nodeEnv==="production";
   let verificationMessage=null;
   const registered=await withTransaction(async db=>{
     if(humanChallengeRequired || input.humanCheckToken) await consumeHumanChallenge(db,input.humanCheckToken);
+    assertEmailDeliveryConfigured();
     const identity=await db.query(`
       select u.id from app_user u where lower(u.email)=lower($1)
       union
@@ -111,7 +112,7 @@ export async function register(input,requestId){
   });
   if(verificationRequired){
     const delivery=await deliverEmailVerification(verificationMessage);
-    return {user:registered.user,registrationReference:registered.registrationReference,accountType:registered.accountType,roles:registered.roles,verificationRequired:true,verificationSent:Boolean(delivery.sent),developmentVerificationUrl:delivery.developmentVerificationUrl||undefined};
+    return {user:registered.user,person:registered.person,registrationReference:registered.registrationReference,accountType:registered.accountType,roles:registered.roles,verificationRequired:true,verificationSent:Boolean(delivery.sent),developmentVerificationUrl:delivery.developmentVerificationUrl||undefined};
   }
   return {...registered,verificationRequired:false};
 }
@@ -127,7 +128,7 @@ export async function login(email,password,requestId,requestMeta={}){
     await db.query("insert into auth_login_attempt(identity_key,ip_address,succeeded) values($1,$2,false)",[identityKey,requestMeta.ip||null]);
     throw httpError(401,"Invalid credentials.","UNAUTHENTICATED");
   }
-  if(String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true"&&!user.email_verified_at) throw httpError(403,"Verify your email before signing in. Request a new verification link if needed.","EMAIL_VERIFICATION_REQUIRED");
+  if(!user.email_verified_at) throw httpError(403,"Verify your email before signing in. Request a new verification link if needed.","EMAIL_VERIFICATION_REQUIRED");
   const rs=await roles(db,user.id);
   if(user.admin_passkey_enforced_at && rs.some(role=>["system_admin","admin"].includes(role))){
     await audit(db,user.id,"account.login.passkey_required","account",user.id,requestId,{authMethod:"password"});

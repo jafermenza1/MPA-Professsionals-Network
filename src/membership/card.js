@@ -38,11 +38,12 @@ async function settings(db=getPool()){
 export async function getMyMembershipCard(userId){
   const db=getPool();
   const r=await db.query(`select m.id membership_record_id,m.membership_number,m.status,m.start_date,m.end_date,m.card_token_version,
-      p.name membership_type,p.product_code,p.id membership_product_id,
+      p.name membership_type,p.product_code,p.id membership_product_id,coalesce((a.fee_snapshot->>'renewalRequired')::boolean,p.renewal_required) renewal_required,
       coalesce(nullif(person.display_name,''),concat_ws(' ',person.first_name,person.middle_name,person.last_name)) member_name,
       pr.profile_picture_file_id
     from membership_record m
     join membership_product p on p.id=m.membership_product_id
+    left join membership_application a on a.id=m.application_id
     join app_user u on u.id=m.user_id
     left join person on person.user_id=u.id
     left join professional_profile pr on pr.person_id=person.id
@@ -60,6 +61,7 @@ export async function getMyMembershipCard(userId){
     membershipType:row.membership_type,
     productCode:row.product_code,
     status:getMembershipCardStatus(row),
+    renewalRequired:Boolean(row.renewal_required),
     startDate:row.start_date,
     endDate:row.end_date,
     profilePictureFileId:row.profile_picture_file_id,

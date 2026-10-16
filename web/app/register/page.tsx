@@ -2,6 +2,7 @@
 import {FormEvent,useEffect,useState} from "react";
 import {ArrowRight,Building2,RefreshCw,UserRound} from "lucide-react";
 import {Card} from "../../components/ui";
+import {EmailVerificationGate} from "../../components/email-verification-gate";
 import {api} from "../../lib/api";
 import {useUiStore} from "../../lib/store";
 
@@ -154,7 +155,7 @@ export default function Register(){
   }finally{setBusy(false);}
  }
 
- if(verificationMessage)return <div className="auth-page"><Card><div className="eyebrow">Email verification</div><h1 className="h1">Check your email</h1><p className="muted">{verificationMessage}</p><p className="muted">Your application reference will be shown after your email is verified. Organization approval is a separate review decision.</p>{verificationUrl&&<p><a className="btn btn-primary" href={verificationUrl}>Verify email (development only)</a></p>}<div className="auth-links"><a href="/login">Continue to login</a></div></Card></div>;
+ if(verificationMessage)return <EmailVerificationGate email={form.email} message={verificationMessage+" Your application reference will be shown after your email is verified. Organization approval is a separate review decision."} developmentVerificationUrl={verificationUrl}/>;
 
  if(registered)return <div className="auth-page"><Card><div className="eyebrow">Account registration</div><h1 className="h1">Your account was created successfully.</h1><div className="form-success" aria-live="polite" aria-atomic="true"><b>Registration confirmed</b><p>Welcome, {registered.displayName}. Your account is ready and you are signed in.</p></div><div className="grid" style={{gap:10,marginTop:16}}><p><b>Account status</b><br/><code>Account created</code></p><p><b>Email</b><br/>{registered.email}</p><p className="muted">Membership or organization approval is a separate process from account creation and email verification.</p></div>{draftWarning&&kind==="organization"&&<div className="form-error" aria-live="polite" aria-atomic="true">Your account is ready, but this browser could not save the organization details. Keep them available and re-enter them in the organization workspace.</div>}<div className="grid grid-2" style={{marginTop:18}}><a className="btn btn-primary" href="/dashboard">Open my dashboard <ArrowRight size={16}/></a><a className="btn btn-ghost" href={kind==="professional"?"/membership":"/organizations?register=1"}>{kind==="professional"?"Continue to membership":"Review organization registration"} <ArrowRight size={16}/></a></div></Card></div>;
 

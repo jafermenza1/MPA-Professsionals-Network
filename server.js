@@ -70,7 +70,7 @@ async function auth(req){
       where s.id=$1 and s.revoked_at is null and s.expires_at>now()
       group by s.id,u.id,u.status`,[identity.sid]);
     if(!r.rows[0]||r.rows[0].status!=="active"||r.rows[0].user_id!==identity.sub) throw Object.assign(new Error("Session expired or revoked."),{statusCode:401});
-    if(String(process.env.EMAIL_VERIFICATION_REQUIRED||"false").toLowerCase()==="true"&&!r.rows[0].email_verified_at) throw Object.assign(new Error("Verify your email before continuing."),{statusCode:403,code:"EMAIL_VERIFICATION_REQUIRED"});
+    if(!r.rows[0].email_verified_at) throw Object.assign(new Error("Verify your email before continuing."),{statusCode:403,code:"EMAIL_VERIFICATION_REQUIRED"});
     // Authorization must use current database roles, never stale role claims from a signed token.
     identity.roles=withCurrentRoles(identity,Array.isArray(r.rows[0].roles)?r.rows[0].roles:JSON.parse(r.rows[0].roles||"[]")).roles;
     identity.permissions=(await db.query("select permission_code from app_user_permission where user_id=$1",[identity.sub])).rows.map(row=>row.permission_code);

@@ -19,7 +19,9 @@ test("Phase 1 completes registration, profile and application identity flow",asy
   },"phase1-test-register");
   userId=registered.user.id;
   assert.equal(registered.person.first_name,"Phase");
-  assert.ok(registered.token);
+  assert.equal(registered.verificationRequired,true);
+  assert.equal(registered.token,undefined,"registration must not issue a session before email verification");
+  assert.equal((await getPool().query("select id from auth_session where user_id=$1",[userId])).rowCount,0);
 
   const me=await membership.getMe(userId);
   assert.equal(me.email,email);
