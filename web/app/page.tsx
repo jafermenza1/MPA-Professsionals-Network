@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight, UserCheck, BriefcaseBusiness, GraduationCap, Building2,
@@ -38,22 +39,23 @@ function MpaMark() {
   );
 }
 function ArchBackdrop() {
+  const backdropId = useId();
   return (
     <div className={styles.archBackdrop} aria-hidden="true">
       <svg viewBox="0 0 1400 1200" fill="none" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="mpaArchLineGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+          <linearGradient id={`${backdropId}-arch-gradient`} x1="0%" y1="100%" x2="0%" y2="0%">
             <stop offset="0%" stopColor="#0A3258" stopOpacity=".08" />
             <stop offset="55%" stopColor="#1B4D80" stopOpacity=".35" />
             <stop offset="100%" stopColor="#97C024" stopOpacity=".7" />
           </linearGradient>
-          <pattern id="mpaGridDots" width="30" height="30" patternUnits="userSpaceOnUse">
+          <pattern id={`${backdropId}-grid-dots`} width="30" height="30" patternUnits="userSpaceOnUse">
             <circle cx="2" cy="2" r="1" fill="#0A3258" opacity=".2" />
           </pattern>
         </defs>
-        <rect width="1400" height="1200" fill="url(#mpaGridDots)" />
+        <rect width="1400" height="1200" fill={`url(#${backdropId}-grid-dots)`} />
         <path d="M200 1200V500C200 250 500 100 700 100C900 100 1200 250 1200 500V1200"
-          stroke="url(#mpaArchLineGradient)" strokeWidth="2.5" strokeDasharray="6 8" />
+          stroke={`url(#${backdropId}-arch-gradient)`} strokeWidth="2.5" strokeDasharray="6 8" />
         <path d="M400 1200V600C400 380 550 220 700 220C850 220 1000 380 1000 600V1200"
           stroke="#0A3258" strokeWidth="1.5" opacity=".18" />
       </svg>
@@ -73,13 +75,14 @@ function Reveal({ children, delay = 0, className = "" }: { children: React.React
 }
 
 export default function Home() {
+  const landingId = useId();
   const reduceMotion = useReducedMotion();
   return (
     <div className={styles.page}>
       <ArchBackdrop />
       <div className={styles.ambientGlow} aria-hidden="true" />
 
-      <section className={styles.hero} aria-labelledby="landing-title">
+      <section className={styles.hero} aria-labelledby={`${landingId}-title`}>
         <motion.div className={styles.logoIntro} initial={reduceMotion ? false : { scale: 0.82, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.75, ease: "easeOut" }}>
           <MpaMark />
@@ -89,7 +92,7 @@ export default function Home() {
           <span className={styles.liveDot} />
           MPA Professionals Network
         </motion.div>
-        <motion.h1 id="landing-title" className={styles.heroTitle}
+        <motion.h1 id={`${landingId}-title`} className={styles.heroTitle}
           initial={reduceMotion ? false : { y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.18 }}>
           Connecting trusted talent with{" "}
@@ -113,10 +116,10 @@ export default function Home() {
         </motion.div>
       </section>
 
-      <section className={styles.section} aria-labelledby="journeys-title">
+      <section className={styles.section} aria-labelledby={`${landingId}-journeys`}>
         <Reveal className={styles.sectionHeading}>
           <p className={styles.eyebrow}>A clear place to start</p>
-          <h2 id="journeys-title">How can we help you today?</h2>
+          <h2 id={`${landingId}-journeys`}>How can we help you today?</h2>
           <span className={styles.headingRule} />
         </Reveal>
         <div className={styles.journeyGrid}>
@@ -137,11 +140,11 @@ export default function Home() {
 
       <LiveNetworkFeeds />
 
-      <section className={styles.section} aria-labelledby="capabilities-title">
+      <section className={styles.section} aria-labelledby={`${landingId}-capabilities`}>
         <div className={styles.capabilityPanel}>
           <Reveal className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Real value, not just a directory</p>
-            <h2 id="capabilities-title">What the platform helps you do</h2>
+            <h2 id={`${landingId}-capabilities`}>What the platform helps you do</h2>
             <span className={styles.headingRule} />
           </Reveal>
           <div className={styles.capabilityGrid}>
