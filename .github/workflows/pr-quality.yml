@@ -32,7 +32,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Lint all JS/TS application and test sources
-        run: npx --yes @biomejs/biome@2.2.4 check --max-diagnostics=1000 --formatter-enabled=false web src test e2e scripts server.js
+        run: npx --yes @biomejs/biome@2.2.4 check --max-diagnostics=5000 --formatter-enabled=false web src test e2e scripts server.js
 
   typecheck:
     name: TypeScript type check
