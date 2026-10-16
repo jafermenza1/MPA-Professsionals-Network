@@ -162,7 +162,7 @@ export default function Jobs(){
      </Card>
      <div id="job-card" className="grid">
        {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" onClick={()=>void loadJobs(filters,page)} type="button" style={{marginLeft:8}}>Retry</button></div>}
-       {notice&&<p className="muted" role="status">{notice}{!token&&<a href="/login?next=/jobs"> Sign in</a>}</p>}
+       {notice&&<p className="muted" aria-live="polite" aria-atomic="true">{notice}{!token&&<a href="/login?next=/jobs"> Sign in</a>}</p>}
        {loading&&<Card><div className="row"><RefreshCw size={18}/><p className="muted">Loading current opportunities…</p></div></Card>}
        {!loading&&!error&&jobs.length===0&&<Card><h2 className="h2">No matching opportunities</h2><p className="muted">There are no published opportunities matching these filters right now. Try clearing filters or check again later.</p><button type="button" className="btn btn-ghost" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters)}}>Clear filters</button></Card>}
        {jobs.map(job=><Card key={job.id}>
