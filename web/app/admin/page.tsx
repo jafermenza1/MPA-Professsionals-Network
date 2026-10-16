@@ -242,7 +242,7 @@ export default function AdminPage() {
               : []),
           ] as [typeof tab, string, number][]
         ).map(([key, label, count]) => (
-          <button
+          <button type="button"
             key={key}
             className={
               "btn admin-tab " + (tab === key ? "btn-primary" : "btn-ghost")
@@ -288,17 +288,17 @@ export default function AdminPage() {
                 <p className="muted">{d.description}</p>
               </div>
               <div className="row" style={{ justifyContent: "flex-end" }}>
-                <button className="btn btn-ghost" onClick={() => setEditing(d)}>
+                <button type="button" className="btn btn-ghost" onClick={() => setEditing(d)}>
                   <Edit3 size={15} /> Edit
                 </button>
-                <button
+                <button type="button"
                   className="btn btn-primary"
                   onClick={() => launch(d)}
                   disabled={!d.active}
                 >
                   <PlayCircle size={15} /> Play
                 </button>
-                <button
+                <button type="button"
                   className="btn btn-ghost"
                   onClick={() => patchCase(d, !d.active)}
                 >
@@ -331,7 +331,7 @@ export default function AdminPage() {
                 <div className="muted">{g.description}</div>
                 <small className="muted">{g.steps.length} guided steps</small>
               </div>
-              <button
+              <button type="button"
                 className="btn btn-ghost"
                 onClick={() => patchGuide(g, !g.active)}
               >
@@ -380,13 +380,13 @@ export default function AdminPage() {
                   </small>
                 </div>
                 <div className="row" style={{ justifyContent: "flex-end" }}>
-                  <button
+                  <button type="button"
                     className="btn btn-ghost"
                     onClick={() => decideInquiry(i, "considering", true)}
                   >
                     Consider non-member
                   </button>
-                  <button
+                  <button type="button"
                     className="btn btn-primary"
                     onClick={() =>
                       decideInquiry(i, "invited", i.consider_non_member)
@@ -394,7 +394,7 @@ export default function AdminPage() {
                   >
                     Invite / continue
                   </button>
-                  <button
+                  <button type="button"
                     className="btn btn-ghost"
                     onClick={() => decideInquiry(i, "declined", false)}
                   >
@@ -546,7 +546,7 @@ function CaseEditor({
             style={field}
           />
         </label>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
+        <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
           <Save size={15} /> {saving ? "Saving…" : "Save changes"}
         </button>
       </aside>
