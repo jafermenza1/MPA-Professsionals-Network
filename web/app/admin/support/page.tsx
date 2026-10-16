@@ -2,7 +2,7 @@
 import {useEffect,useMemo,useState,type FormEvent} from "react";
 import {api,ApiError} from "../../../lib/api";
 import {useUiStore} from "../../../lib/store";
-import {BookOpen,Inbox,Plus,Save,CheckCircle2,MessageSquareText,Users,ChevronRight} from "lucide-react";
+import {BookOpen,Inbox,Plus,Save,CheckCircle2,MessageSquareText,Users,ChevronRight,ShieldCheck} from "lucide-react";
 import styles from "./support.module.css";
 type Category={id:string;slug:string;name:string;description:string;sortOrder:number;isActive:boolean};
 type Article={id:string;categoryId:string;categoryName:string;title:string;questionExamples:string[];keywords:string[];answer:string;sourceNote:string;sortOrder:number;isPublished:boolean};
