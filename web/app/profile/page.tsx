@@ -63,7 +63,7 @@ type TalentProfile = {
   portfolio_url?: string | null;
   experience?: { employer_name?: string | null; role_title: string; start_date?: string | null; end_date?: string | null; is_current: boolean; description?: string | null; visibility?: string }[];
 };
-type ExperienceDraft = { employerName: string; roleTitle: string; startDate: string; endDate: string; currentRole: boolean; description: string; visibility: string };
+type ExperienceDraft = { draftKey: string; employerName: string; roleTitle: string; startDate: string; endDate: string; currentRole: boolean; description: string; visibility: string };
 type TalentVisibility = {
   user_id: string;
   directory_visible: boolean;
@@ -191,7 +191,7 @@ export default function Profile() {
         certifications: Array.isArray(tp.certifications) ? tp.certifications.join("\n") : "",
         portfolioUrl: tp.portfolio_url || "",
       });
-      setExperienceDrafts((tp.experience || []).map((item) => ({ employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
+      setExperienceDrafts((tp.experience || []).map((item) => ({ draftKey: crypto.randomUUID(), employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
       setForm({
         firstName: me.first_name || "",
         middleName: me.middle_name || "",
@@ -342,7 +342,7 @@ export default function Profile() {
         token,
       );
       setTalentProfile(saved);
-      setExperienceDrafts((saved.experience || []).map((item) => ({ employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
+      setExperienceDrafts((saved.experience || []).map((item) => ({ draftKey: crypto.randomUUID(), employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
       setNotice("Professional directory profile saved.");
     } catch (e) {
       setError(
@@ -708,9 +708,9 @@ export default function Profile() {
                 <p className="muted">Structured education records, managed classifications, languages, and traceable portfolio items are edited in the guided section below. This replaces the previous comma-separated and free-text credential fields.</p>
               </div>
               <div className="grid" style={{ gap: 12, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-                <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><div><h3 className="h2">Work experience</h3><p className="muted">Describe relevant roles, dates, responsibilities, and outcomes. You can keep entries member-only or make them part of your public-safe profile.</p></div><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => [...rows, { employerName: "", roleTitle: "", startDate: "", endDate: "", currentRole: false, description: "", visibility: "members" }])}>Add experience</button></div>
+                <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><div><h3 className="h2">Work experience</h3><p className="muted">Describe relevant roles, dates, responsibilities, and outcomes. You can keep entries member-only or make them part of your public-safe profile.</p></div><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => [...rows, { draftKey: crypto.randomUUID(), employerName: "", roleTitle: "", startDate: "", endDate: "", currentRole: false, description: "", visibility: "members" }])}>Add experience</button></div>
                 {experienceDrafts.length === 0 && <p className="muted">No work experience entries added. Add one to improve your professional profile.</p>}
-                {experienceDrafts.map((item, index) => <div className="grid" key={index} style={{ gap: 10, padding: 12, border: "1px solid var(--border)", borderRadius: 12, minWidth: 0 }}>
+                {experienceDrafts.map((item, index) => <div className="grid" key={item.draftKey} style={{ gap: 10, padding: 12, border: "1px solid var(--border)", borderRadius: 12, minWidth: 0 }}>
                   <div className="row" style={{ justifyContent: "space-between" }}><b>Experience {index + 1}</b><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => rows.filter((_, i) => i !== index))}>Remove</button></div>
                   <div className="grid grid-2"><label>Role / job title<input required value={item.roleTitle} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, roleTitle: e.target.value } : row))} maxLength={180}/></label><label>Employer / organization<input value={item.employerName} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, employerName: e.target.value } : row))} maxLength={180}/></label><label>Start date<input type="date" value={item.startDate} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, startDate: e.target.value } : row))}/></label><label>End date<input type="date" value={item.endDate} disabled={item.currentRole} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, endDate: e.target.value } : row))}/></label></div>
                   <label style={{ display: "flex", alignItems: "center", gap: 8 }}><input type="checkbox" checked={item.currentRole} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, currentRole: e.target.checked, endDate: e.target.checked ? "" : row.endDate } : row))}/>I currently work in this role</label>
