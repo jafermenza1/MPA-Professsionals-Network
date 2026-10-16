@@ -9,7 +9,7 @@ const sha256 = value => createHash("sha256").update(value).digest("hex");
 const fail = (status,message,code) => Object.assign(new Error(message),{statusCode:status,code});
 export function validatePrivateUploadName(value){
   const name=path.basename(String(value||"").replace(/\\/g,"/")).trim();
-  if(!name||name.length>180||/[\u0000-\u001f\u007f]/.test(name)) throw fail(400,"A valid file name is required.","INVALID_FILE");
+  if(!name||name.length>180||/\p{Cc}/u.test(name)) throw fail(400,"A valid file name is required.","INVALID_FILE");
   return name;
 }
 export function validatePrivateUploadBytes(type,bytes){
