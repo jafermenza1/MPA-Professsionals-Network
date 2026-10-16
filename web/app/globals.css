@@ -25,3 +25,12 @@
 :where(img,svg,video,canvas){max-width:100%}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 @media(max-width:600px){.card{padding:16px;border-radius:16px}.h2{font-size:21px}.btn{min-height:42px}.top-actions{gap:5px}.top-actions .icon-btn{width:34px;height:34px}.mobile-more-panel{max-height:calc(100dvh - 90px);overflow-y:auto}}
+:root{--focus-ring:#0A3258;--control-border:#64748B}
+.dark{--focus-ring:#E5F044;--control-border:#8B9CAF}
+:where(a,button,input,select,textarea,summary,[role="button"],[tabindex]):focus-visible{outline:3px solid var(--focus-ring);outline-offset:3px}
+:where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){border-color:var(--control-border)}
+:where(input,textarea)::placeholder{color:var(--muted);opacity:1}
+.form-stack label,.form-grid label:not(.row){min-width:0;color:var(--text);line-height:1.45}
+.form-grid label:not(.row){display:grid;gap:7px}
+.form-stack input:not([type="checkbox"]):not([type="radio"]),.form-stack select,.form-stack textarea,.form-grid input:not([type="checkbox"]):not([type="radio"]),.form-grid select,.form-grid textarea{width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--control-border);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px;line-height:1.4}
+.form-stack :is(input,select,textarea,button):focus-visible,.form-grid :is(input,select,textarea,button):focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px;box-shadow:none}
