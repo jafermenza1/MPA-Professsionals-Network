@@ -54,7 +54,7 @@ export function AdminWorkspace({ children }: { children: React.ReactNode }) {
     <aside className={styles.sidebar} aria-label="Administration navigation">
       <div className={styles.brand}><span className={styles.brandMark}><Building2 size={19} /></span><div><strong>MPA operations</strong><span>Administration workspace</span></div></div>
       <nav className={styles.nav} aria-label="Admin workspaces">
-        {navDestinations.map(({ href, label, description, icon: Icon, exact }) => {
+        {navDestinations.map(({ href, label, description, icon: Icon, exact = false }) => {
           const active = exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
           return <Link key={href} href={href} aria-current={active ? "page" : undefined} className={active ? styles.active : styles.link}>
             <Icon size={18} aria-hidden="true" /><span className={styles.linkText}><strong>{label}</strong><small>{description}</small></span>
