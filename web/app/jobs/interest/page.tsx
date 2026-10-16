@@ -6,6 +6,7 @@ import { api, ApiError } from "../../../lib/api";
 import { Card, Badge } from "../../../components/ui";
 
 type Inquiry = { id: string; public_reference: string; continuationToken: string; nextStep?: string };
+function getPublicReference(value: Inquiry | null): string | null { return value?.public_reference ?? null; }
 type ConsentResult = { employer_sharing_consent: boolean; nextStep?: string };
 type ShareHistory = { shareId: string; organizationName: string; sharedFields: string[]; sharedAt: string; revokedAt?: string | null; status: string };
 type SharingOrganization = { id: string; display_name?: string | null; legal_name?: string | null };
@@ -227,7 +228,7 @@ export default function JobInterestPage() {
           {shareWithEmployers ? <div style={{ display: "grid", gap: 8, marginTop: 10 }}><label>Specific verified organization authorized to receive selected fields<select required value={selectedOrganizationId} onChange={e => setSelectedOrganizationId(e.target.value)} disabled={sharingOrganizationsLoading || busy || processingConsent}><option value="">Choose a verified organization</option>{organizationOptions.map(org => <option key={org.id} value={org.id}>{org.label}</option>)}</select></label>{sharingOrganizationsLoading ? <p role="status" className="muted">Loading verified organizations…</p> : null}{sharingOrganizationsError ? <FormFeedback kind="error" message={sharingOrganizationsError} onRetry={() => setSharingOrganizationsReload(value => value + 1)} /> : null}{!sharingOrganizationsLoading && !sharingOrganizationsError && !sharingOrganizations.length ? <p role="alert" className="muted">No public verified organizations are currently available. You can still submit your request privately; employer-sharing consent will remain off.</p> : null}{shareable.map(([field,label]) => <label key={field} style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="checkbox" checked={shareFields.includes(field)} onChange={e => toggleField(field,e.target.checked)} />{label}</label>)}</div> : null}
         </Card>
         {error ? <p role="alert" style={{ color: "var(--danger, #b91c1c)" }}>{error}</p> : null}
-        {notice ? <FormFeedback kind="success" message={notice}>{inquiry?.public_reference ? <p>Keep this reference to check your request later: <strong>{inquiry.public_reference}</strong></p> : null}</FormFeedback> : null}
+        {notice ? <FormFeedback kind="success" message={notice}>{getPublicReference(inquiry) ? <p>Keep this reference to check your request later: <strong>{getPublicReference(inquiry)}</strong></p> : null}</FormFeedback> : null}
         <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
           <button className="btn btn-primary" type="submit" disabled={busy || processingConsent}>{busy ? "Submitting…" : "Submit job-interest request"}</button>
           <a className="btn btn-ghost" href="/jobs">Return to listed jobs</a>
