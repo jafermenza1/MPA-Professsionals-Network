@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState, type CSSProperties } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { api, ApiError } from "../../lib/api";
-import { useUiStore } from "../../lib/store";
+import { api, ApiError } from "../../../lib/api";
+import { useUiStore } from "../../../lib/store";
 import styles from "./card.module.css";
 
 type CardSettings = {
