@@ -1,6 +1,6 @@
 "use client";
 import { FormFeedback } from "../../components/form-feedback";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Card, Badge } from "../../components/ui";
 import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
@@ -20,6 +20,7 @@ const groups={nationality:"professional_nationalities",occupation:"professional_
 function selected(refs:ProfileRef[]|undefined,type:string){return refs?.find(r=>r.relation_type===type);}
 function asDraft(e:Education):EducationDraft{return {draftKey:crypto.randomUUID(),educationLevelItemId:e.education_level_item_id||"",educationLevelCustom:e.education_level_custom||"",institutionItemId:e.institution_item_id||"",institutionCustom:e.institution_name_custom||"",fieldOfStudyItemId:e.field_of_study_item_id||"",fieldOfStudyCustom:e.field_of_study_custom||"",qualificationItemId:e.qualification_item_id||"",qualificationCustom:e.qualification_custom||"",graduationYear:e.graduation_year==null?"":String(e.graduation_year),startYear:e.start_year==null?"":String(e.start_year),completionYear:e.completion_year==null?"":String(e.completion_year),currentlyStudying:Boolean(e.currently_studying),explanation:e.explanation||"",visibility:e.visibility||"private"};}
 export default function GuidedProfessionalProfile({onNationalitySaved}:{onNationalitySaved:(value:string)=>void}){
+ const profileFormId=useId();
  const token=useUiStore(s=>s.token);
  const [refs,setRefs]=useState<RefItem[]>([]),[profile,setProfile]=useState<Profile>({}),[education,setEducation]=useState<EducationDraft[]>([]),[portfolio,setPortfolio]=useState<Portfolio[]>([]),[account,setAccount]=useState<AccountProfile>({});
  const [selectedRefs,setSelectedRefs]=useState<Record<string,string>>({}),[customRefs,setCustomRefs]=useState<Record<string,string>>({}),[languageIds,setLanguageIds]=useState<string[]>([]),[otherLanguage,setOtherLanguage]=useState(""),[skillIds,setSkillIds]=useState<string[]>([]),[otherSkills,setOtherSkills]=useState(""),[referenceSearch,setReferenceSearch]=useState<Record<string,string>>({}),[languageSearch,setLanguageSearch]=useState(""),[educationSearch,setEducationSearch]=useState<Record<string,string>>({});
@@ -165,14 +166,14 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
      {renderReferenceField("industry","Industry",groups.industry)}
      {renderReferenceField("experience_range","Years of experience",groups.experience_range)}
     </div>
-    <div className="grid" style={{gap:8}}><label htmlFor="p1-language-search">Languages</label>
-     <input id="p1-language-search" value={languageSearch} onChange={e=>setLanguageSearch(e.target.value)} placeholder="Search languages or known aliases"/>
+    <div className="grid" style={{gap:8}}><label htmlFor={`${profileFormId}-language-search`}>Languages</label>
+     <input id={`${profileFormId}-language-search`} value={languageSearch} onChange={e=>setLanguageSearch(e.target.value)} placeholder="Search languages or known aliases"/>
      <div className="grid grid-2" style={{gap:6}}>{searchOptions(groups.language,languageSearch).slice(0,80).map(item=><label key={item.id} className="row" style={{alignItems:"center",gap:8,padding:"6px 8px",border:"1px solid var(--border)",borderRadius:8}}><input type="checkbox" checked={languageIds.includes(item.id)} onChange={e=>setLanguageIds(ids=>e.target.checked?[...new Set([...ids,item.id])]:ids.filter(id=>id!==item.id))}/><span>{item.label}</span></label>)}</div>
      <p className="muted">Selected languages</p><div className="row" style={{gap:6,flexWrap:"wrap"}}>{languageIds.map(id=>{const item=byId.get(id);return item?<span key={id} className="row" style={{gap:6,alignItems:"center",border:"1px solid var(--border)",borderRadius:999,padding:"4px 10px"}}>{item.label}<button type="button" className="btn btn-ghost" onClick={()=>setLanguageIds(ids=>ids.filter(value=>value!==id))} aria-label={"Remove "+item.label}>×</button></span>:null;})}</div>
      {languageIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Other language(s), separated by commas<input required value={otherLanguage} onChange={e=>setOtherLanguage(e.target.value)} maxLength={500} placeholder="For example, Somali, Tigrinya"/></label>:null}
     </div>
-    <div className="grid" style={{gap:8}}><label htmlFor="p1-skill-search">Professional skills</label>
-     <input id="p1-skill-search" value={referenceSearch.skill||""} onChange={e=>setReferenceSearch(v=>({...v,skill:e.target.value}))} placeholder="Search skills or aliases"/>
+    <div className="grid" style={{gap:8}}><label htmlFor={`${profileFormId}-skill-search`}>Professional skills</label>
+     <input id={`${profileFormId}-skill-search`} value={referenceSearch.skill||""} onChange={e=>setReferenceSearch(v=>({...v,skill:e.target.value}))} placeholder="Search skills or aliases"/>
      <div className="grid grid-2" style={{gap:6}}>{searchOptions(groups.skill,referenceSearch.skill||"").slice(0,100).map(item=><label key={item.id} className="row" style={{alignItems:"center",gap:8,padding:"6px 8px",border:"1px solid var(--border)",borderRadius:8}}><input type="checkbox" checked={skillIds.includes(item.id)} onChange={e=>setSkillIds(ids=>e.target.checked?[...new Set([...ids,item.id])]:ids.filter(id=>id!==item.id))}/><span>{item.label}</span></label>)}</div>
      <p className="muted">Selected skills</p><div className="row" style={{gap:6,flexWrap:"wrap"}}>{skillIds.map(id=>{const item=byId.get(id);return item?<span key={id} className="row" style={{gap:6,alignItems:"center",border:"1px solid var(--border)",borderRadius:999,padding:"4px 10px"}}>{item.label}<button type="button" className="btn btn-ghost" onClick={()=>setSkillIds(ids=>ids.filter(value=>value!==id))} aria-label={"Remove "+item.label}>×</button></span>:null;})}</div>
      {skillIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Other skill(s), separated by commas<input required value={otherSkills} onChange={e=>setOtherSkills(e.target.value)} maxLength={1000} placeholder="For example, a specialist skill not listed"/></label>:null}

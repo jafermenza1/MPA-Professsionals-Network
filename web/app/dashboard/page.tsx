@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useEffect,useId,useState} from "react";
 import {useRouter} from "next/navigation";
 import {ArrowRight,ArrowUpRight,BriefcaseBusiness,Building2,CheckCircle2,ClipboardList,Clock3,FileCheck2,LayoutDashboard,LogOut,RefreshCw,ShieldCheck,UserRound,UsersRound,WalletCards} from "lucide-react";
 import {Badge} from "../../components/ui";
@@ -28,6 +28,7 @@ function responseCount(value:unknown){return Array.isArray(value)?value.length:0
 function readableFields(value:unknown){if(Array.isArray(value))return value.map(item=>String(item).replaceAll("_"," ")).join(", ");return typeof value==="string"?value.replaceAll("_"," "):"";}
 
 export default function Dashboard(){
+ const dashboardId=useId();
   const router=useRouter();
   const token=useUiStore(state=>state.token),hydrated=useUiStore(state=>state.hydrated),clearToken=useUiStore(state=>state.clearToken);
   const [data,setData]=useState<DashboardData|null>(null);
@@ -253,8 +254,8 @@ export default function Dashboard(){
         </section>
 
 
-        {roles.some(role=>["member","professional"].includes(role))&&<section className={styles.section} aria-labelledby="membership-clarity">
-          <div className={styles.sectionHeading}><div><div className={styles.kicker}>Membership and trust</div><h2 id="membership-clarity">Your status, in plain language</h2></div><a className="btn btn-ghost" href="/membership">Manage membership <ArrowRight size={14}/></a></div>
+        {roles.some(role=>["member","professional"].includes(role))&&<section className={styles.section} aria-labelledby={`${dashboardId}-membership-clarity`}>
+          <div className={styles.sectionHeading}><div><div className={styles.kicker}>Membership and trust</div><h2 id={`${dashboardId}-membership-clarity`}>Your status, in plain language</h2></div><a className="btn btn-ghost" href="/membership">Manage membership <ArrowRight size={14}/></a></div>
           <div className={styles.rows}>
             <div className={styles.activity}><span className={styles.activityIcon}><WalletCards size={17}/></span><span className={styles.activityBody}><b>Is my membership active?</b><small>{profile?.has_active_membership?"Yes. Your membership is currently active.":"No active membership was found. Check your application or apply to join."}</small></span><Badge tone={profile?.has_active_membership?"green":"gold"}>{profile?.has_active_membership?"Active":"Not active"}</Badge></div>
             <div className={styles.activity}><span className={styles.activityIcon}><FileCheck2 size={17}/></span><span className={styles.activityBody}><b>Has my payment been received and verified?</b><small>{(data?.memberClarity?.applications||[]).some(a=>a.payment?.status==="approved"||a.payment?.status==="verified"||a.payment?.status==="succeeded")?"A payment is marked verified.":(data?.memberClarity?.applications||[]).some(a=>a.payment?.status==="pending")?"Payment evidence is recorded and waiting for an authorized finance decision.":(data?.memberClarity?.applications||[]).some(a=>a.status==="payment_pending")?"Payment is still required for an approved application.":"No payment verification is recorded for your current applications."}</small></span><a href="/membership" className={styles.secondaryLink}>View payments <ArrowRight size={14}/></a></div>
