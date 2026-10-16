@@ -70,7 +70,7 @@ export async function joinDemandTopic(topicId,userId,input,requestId){
   if(!row){const current=(await db.query("select id,topic_id,interest_level,comment,status,withdrawn_at,created_at,updated_at from marketplace_demand_interest where topic_id=$1 and user_id=$2",[topicId,userId])).rows[0];return {...current,idempotent:true};}
   await db.query("insert into marketplace_demand_event(topic_id,actor_user_id,action,note,metadata) values($1,$2,'demand.interest_recorded',$3,$4)",[topicId,userId,comment,{interestLevel:level,restored:prior?.status==="withdrawn"}]);
   await audit(db,userId,"marketplace.demand_interest_recorded","marketplace_demand_topic",topicId,requestId,{interestLevel:level,restored:prior?.status==="withdrawn"});
-  const owner=(await db.query("select d.requester_user_id,d.source_demand_id from marketplace_demand_topic t left join marketplace_demand d on d.id=t.source_demand_id where t.id=$1",[topicId])).rows[0];
+  const owner=(await db.query("select d.requester_user_id from marketplace_demand_topic t left join marketplace_demand d on d.id=t.source_demand_id where t.id=$1",[topicId])).rows[0];
   if(owner?.requester_user_id&&owner.requester_user_id!==userId) await notify(db,owner.requester_user_id,"marketplace.demand_interest_received","marketplace_demand_topic",topicId,{message:"Someone expressed interest in your published demand topic.",nextAction:"Review your demand status or contact the Support Desk for matching."});
   return row;
  });

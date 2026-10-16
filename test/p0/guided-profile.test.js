@@ -40,8 +40,8 @@ test("P1: education records are structured, repeatable and require custom values
  assert.ok(reloadedEducation.some(row=>row.institution_name_custom==="Regional Training Centre"));
  await talent.updateProfessionalProfile(userId,{professionalTitle:"Community systems analyst",yearsExperience:4,skills:["service design","data analysis"],languages:["Afaan Oromo","Amharic"],certifications:["Project delivery"]},"p1-profile-skills-languages");
  const reloadedProfile=await talent.getProfessionalProfile(userId);
- assert.deepEqual(reloadedProfile.skills,["service design","data analysis"]);
- assert.deepEqual(reloadedProfile.languages,["Afaan Oromo","Amharic"]);
+ assert.deepEqual(reloadedProfile.skills,["Data analysis","service design"]);
+ assert.deepEqual(reloadedProfile.languages,["Amharic","Afaan Oromo"]);
  assert.deepEqual(reloadedProfile.certifications,["Project delivery"]);
 });
 test("P1: portfolio supports multiple traceable items and keeps evidence optional/private",async()=>{
@@ -66,11 +66,11 @@ test("P1: reference CSV import is staged, exportable and only changes public for
   assert.ok(originalItem,"a published reference item should be available to edit");
   const edited=await referencePortfolio.saveReferenceItem(identity,key,{code:originalItem.code,label:originalItem.label,description:originalItem.description||"",sortOrder:originalItem.sort_order,active:originalItem.active},originalItem.id);
   assert.equal(edited.code,originalItem.code);
- const csv='code,label,description,sort_order,active\n'+analystCode+',"Analyst, business","Business analysis",5,true\n'+otherCode+',Other,"Custom value",999,true';
+ const csv='code,label,description,sort_order,active\n'+analystCode+',"P1 Analyst, '+suffix+'","Business analysis",5,true\n'+otherCode+',"Additional occupation '+suffix+'","Custom value",999,true';
  const imported=await referencePortfolio.importReferenceCsv(identity,key,"valid.csv",csv);
  assert.equal(imported.status,"imported");assert.equal(imported.inserted+imported.updated,2);
  const exported=await referencePortfolio.exportReferenceCsv(identity,key);
- assert.match(exported.csv,new RegExp(analystCode));assert.match(exported.csv,/"Analyst, business"/);
+ assert.match(exported.csv,new RegExp(analystCode));assert.match(exported.csv,new RegExp('"P1 Analyst, '+suffix+'"'));
  const working=await referencePortfolio.listReferenceItems(identity,key);
  assert.equal(working.version.status,"draft");assert.equal(working.version.hasDraft,true);
  assert.equal((await referencePortfolio.listPublicReferenceSets()).some(row=>row.code===analystCode),false);

@@ -80,7 +80,7 @@ export async function listMyOrganizations(userId){
    coalesce((select jsonb_agg(r.evidence_type order by r.sort_order) from organization_verification_requirement r where r.active=true and r.required=true and (r.organization_type=o.organization_type or r.organization_type is null)),'[]'::jsonb) required_evidence,
    coalesce((select jsonb_agg(r.evidence_type order by r.sort_order) from organization_verification_requirement r where coalesce(o.verification_status,'unverified')<>'verified' and coalesce(vc.status,'draft')<>'verified' and r.active=true and r.required=true and (r.organization_type=o.organization_type or r.organization_type is null) and not exists(select 1 from organization_verification_evidence e where e.case_id=vc.id and e.evidence_type=r.evidence_type)),'[]'::jsonb) missing_evidence
   from organization o join organization_membership om on om.organization_id=o.id
-  left join lateral (select * from organization_verification_case c where c.organization_id=o.id order by c.created_at desc limit 1) vc on true
+  left join lateral (select * from organization_verification_case c where c.organization_id=o.id order by c.submitted_at desc limit 1) vc on true
   where om.user_id=$1 and om.status='active' order by o.created_at desc`,[userId])).rows;
 }
 

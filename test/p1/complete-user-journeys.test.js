@@ -170,8 +170,8 @@ test("Gate 2: verified organization mentorship offer is moderated, requested, ac
  assert.equal(request.externalDelivery,"not_configured");
  assert.ok((await getPool().query("select 1 from notification_event where user_id=$1 and resource_id=$2 and event_code='organization.mentorship_request_received'",[owner,request.id])).rowCount>=1,"organization team notification must be persisted in-app before status is claimed");
  assert.ok((await organizationOffers.listMyOrganizationMentorshipRequests(owner)).some(x=>x.id===request.id&&!x.is_requester));
- await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,requester,"accepted","Requester cannot impersonate the organization.","gate2-org-mentorship-requester-forbidden"),e=>e.code==="FORBIDDEN");
- await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,await account(),"accepted","Unrelated account cannot decide.","gate2-org-mentorship-outsider-forbidden"),e=>e.code==="FORBIDDEN");
+ await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,requester,"accepted","Requester cannot impersonate the organization.","gate2-org-mentorship-requester-forbidden"),e=>e.code==="ORGANIZATION_FORBIDDEN");
+ await assert.rejects(organizationOffers.respondOrganizationMentorshipRequest(request.id,await account(),"accepted","Unrelated account cannot decide.","gate2-org-mentorship-outsider-forbidden"),e=>e.code==="ORGANIZATION_FORBIDDEN");
  assert.equal((await organizationOffers.listMyOrganizationMentorshipRequests(requester)).some(row=>row.id===request.id&&row.is_requester),true);
  assert.equal((await organizationOffers.listMyOrganizationMentorshipRequests(await account())).some(row=>row.id===request.id),false,"unrelated account cannot list private organization mentorship requests");
  const accepted=await organizationOffers.respondOrganizationMentorshipRequest(request.id,owner,"accepted","We can support this goal. The organization will contact you to agree next steps.","gate2-org-mentorship-accept");

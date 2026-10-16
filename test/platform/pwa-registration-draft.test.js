@@ -17,7 +17,7 @@ test("organization draft persistence is versioned, time-limited, and excludes se
 
 test("draft persistence retries explicitly and surfaces cross-tab conflicts without auto-merging", async () => {
   const source = await readFile(registrationUrl, "utf8");
-  assert.match(source, /function retrySaveDraft\(\)\{writeOrganizationDraft\(\);\}/);
+  assert.match(source, /function retrySaveDraft\(\)\{setDraftPaused\(false\);writeOrganizationDraft\(\);\}/);
   assert.match(source, /A newer organization draft was saved in another tab/);
   assert.match(source, /Use newer saved version/);
   assert.match(source, /Keep my current edits/);

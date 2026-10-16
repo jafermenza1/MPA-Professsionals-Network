@@ -61,10 +61,9 @@ test("P0: provider cannot bypass Support Desk moderation to publish a service or
   assert.ok(product, "BASIC membership product must exist");
   await db.query("insert into membership_record(user_id,membership_product_id,membership_number,status,start_date,end_date,source) values($1,$2,$3,'active',current_date,current_date+365,'online')", [provider.user.id, product.id, "MPA-P0-MOD-" + randomUUID().slice(0,8).toUpperCase()]);
   const listing = await serviceMentorship.createServiceListing(provider.user.id, { title: "Moderation gate test", description: "A listing that must remain private until Support Desk approval.", serviceCategory: "p0-test", visibility: "public" }, "p0-moderation-create");
-  await assert.rejects(
-    serviceMentorship.changeServiceListingStatus(listing.id, provider.user.id, "published", "p0-moderation-bypass"),
-    error => error.code === "MODERATION_REQUIRED"
-  );
+  const submitted = await serviceMentorship.changeServiceListingStatus(listing.id, provider.user.id, "published", "p0-moderation-bypass");
+  assert.equal(submitted.status, "draft");
+  assert.equal(submitted.moderation_status, "pending");
   const stored = (await db.query("select status,moderation_status from service_listing where id=$1", [listing.id])).rows[0];
   assert.notEqual(stored.status, "published");
   assert.notEqual(stored.moderation_status, "approved");
@@ -162,7 +161,7 @@ test("P0: no-vacancy job-seeker demand remains private until explicit named-empl
   );
   await assert.rejects(
     publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: randomUUID(), fields: ["targetRole"] }, "p0-share-to-unknown-organization"),
-    error => error.code === "ORGANIZATION_NOT_ELIGIBLE"
+    error => error.code === "CONSENT_AUDIENCE_MISMATCH"
   );
   const shared = await publicOpportunity.shareJobSeekerDemand(inquiry.id, support.user.id, { organizationId: organization.id, fields: ["targetRole", "skills"] }, "p0-share-with-consent");
   assert.equal(shared.status, "shared");

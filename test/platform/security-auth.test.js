@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { getPool, closePool, withTransaction } from "../../src/platform/db.js";
 import * as membership from "../../src/membership/service.js";
-import { hashSessionToken } from "../../src/platform/auth.js";
+import { verifyToken } from "../../src/platform/auth.js";
+import { loadConfig } from "../../src/platform/config.js";
 import { issueHumanChallenge, verifyHumanChallenge, consumeHumanChallenge, enforcePersistentRateLimit, hashSecurityToken } from "../../src/platform/security-controls.js";
 import { recoverAdminPasskey, beginAdminPasskeyAuthentication, finishAdminPasskeyAuthentication } from "../../src/platform/webauthn.js";
 import { createEmailVerification, verifyEmailToken, assertEmailDeliveryConfigured } from "../../src/platform/email-verification.js";
@@ -96,7 +97,8 @@ test("administrator recovery codes are single-use and create a restricted recove
   await db.query("insert into admin_passkey_recovery_code(user_id,code_hash) values($1,$2)",[userId,hashSecurityToken(code)]);
   const recovered=await recoverAdminPasskey(email,code,{ip:"198.51.100.24",userAgent:"security-test"},"security-auth-test-recovery");
   assert.equal(typeof recovered.token,"string");
-  const session=(await db.query("select auth_method from auth_session where token_hash=$1",[hashSessionToken(recovered.token)])).rows[0];
+  const recoveredIdentity=verifyToken(recovered.token,loadConfig().jwtSecret);
+  const session=(await db.query("select auth_method from auth_session where id=$1 and user_id=$2",[recoveredIdentity.sid,userId])).rows[0];
   assert.equal(session.auth_method,"recovery");
   await assert.rejects(recoverAdminPasskey(email,code,{ip:"198.51.100.24"},"security-auth-test-replay"),error=>error.code==="RECOVERY_INVALID");
 });
@@ -182,6 +184,6 @@ test("organization registration creates an organization-only account without a p
 
 test.after(async()=>{
   const db=getPool();
-  for(const userId of createdUsers){await db.query("delete from audit_log where actor_user_id=$1",[userId]);await db.query("delete from app_user where id=$1",[userId]);}
+  for(const userId of createdUsers){await db.query("delete from app_user_role where user_id=$1",[userId]);await db.query("update app_user set status='suspended',admin_passkey_enforced_at=null where id=$1",[userId]);}
   await closePool();
 });

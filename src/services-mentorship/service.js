@@ -1,7 +1,7 @@
 import { getPool, withTransaction } from "../platform/db.js";
 import { createInAppNotification } from "../platform/notifications.js";
 import { queueWorkflowEmail } from "../platform/email-operations.js";
-import { hasCurrentActiveMembership, assertProfessionalIdentity, assertCurrentActiveMembership, assertOrganizationCapability } from "../platform/identity-policy.js";
+import { hasCurrentActiveMembership, hasProfessionalIdentity, assertProfessionalIdentity, assertCurrentActiveMembership, assertOrganizationCapability } from "../platform/identity-policy.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
 const PROFESSIONAL_CLAIMS=["professional_certification","education","employment","experience","service_capability"];
@@ -657,7 +657,7 @@ export async function changeMentorshipStatus(mentorshipId,userId,status,note,req
   if(!["active","paused","completed","cancelled"].includes(status)) throw error(400,"Unsupported mentorship status.","VALIDATION_ERROR");
   return withTransaction(async db=>{
     const m=await mentorshipParticipant(db,mentorshipId,userId);
-    if(m.status===status)return {...m,idempotent:true,nextAction=status==="active"?"Agree the next goal or session.":status==="paused"?"Resume when both participants are ready, or record a final outcome.":"This mentorship relationship is resolved."};
+    if(m.status===status)return {...m,idempotent:true,nextAction:status==="active"?"Agree the next goal or session.":status==="paused"?"Resume when both participants are ready, or record a final outcome.":"This mentorship relationship is resolved."};
     if(["cancelled","completed"].includes(status)&&String(note||"").trim().length<4)throw error(400,"Add a short outcome note so both participants understand how this relationship is ending.","OUTCOME_NOTE_REQUIRED");
     if(!allowedMentorshipTransition(m.status,status)) throw error(409,"Invalid mentorship lifecycle transition.","INVALID_STATE");
     if(status==="completed"){const pending=(await db.query("select count(*)::int count from mentorship_goal where mentorship_id=$1 and status in ('planned','in_progress')",[mentorshipId])).rows[0].count;if(Number(pending)>0)throw error(409,"Resolve or cancel all open goals before completing this mentorship.","GOALS_STILL_OPEN");}
