@@ -45,7 +45,7 @@ export default function MembershipCardPage(){
     return ()=>{cancelled=true;if(url)URL.revokeObjectURL(url);};
   },[token,card?.profilePictureFileId]);
   if(!token) return <main className={styles.shell}><section className={styles.panel}><h1>Membership ID</h1><p>Sign in with your member account to view and print your card.</p><a className={styles.primary} href={"/login?next="+encodeURIComponent(membershipNumber?"/membership/card?membershipNumber="+membershipNumber:"/membership/card")}>Sign in</a></section></main>;
-  if(loading) return <main className={styles.shell}><p role="status">Loading membership card…</p></main>;
+  if(loading) return <main className={styles.shell}><p aria-live="polite" aria-atomic="true">Loading membership card…</p></main>;
   if(error||!card) return <main className={styles.shell}><section className={styles.panel}><h1>Membership card unavailable</h1><p role="alert">{error||"No membership record is available for this account."}</p><a href="/membership">Open membership</a></section></main>;
   const s=card.settings;
   const verifyUrl=origin+card.verificationPath;

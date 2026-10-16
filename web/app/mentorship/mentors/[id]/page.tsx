@@ -21,6 +21,6 @@ export default function PublicMentorProfile(){
  {values(item.expertise).length>0&&<div><h2 className="h2">Expertise</h2><div className="row" style={{flexWrap:"wrap"}}>{values(item.expertise).map(x=><Badge key={x}>{x}</Badge>)}</div></div>}
  {values(item.languages).length>0&&<p className="tagline"><Languages size={15}/> Languages: {values(item.languages).join(", ")}</p>}
  {values(item.mentoring_modes).length>0&&<p className="tagline">Mentoring modes: {values(item.mentoring_modes).join(", ")}</p>}
- <p className="muted">Mentorship requests still use the MPA mentorship workflow, eligibility checks and mentor acceptance process.</p><Link className="btn btn-primary" href="/mentorship">Open mentorship workspace</Link>{saved.savedError&&<p role="status" className="form-error">{saved.savedError}</p>}</Card>}
+ <p className="muted">Mentorship requests still use the MPA mentorship workflow, eligibility checks and mentor acceptance process.</p><Link className="btn btn-primary" href="/mentorship">Open mentorship workspace</Link>{saved.savedError&&<p aria-live="polite" aria-atomic="true" className="form-error">{saved.savedError}</p>}</Card>}
  </main>;
 }
