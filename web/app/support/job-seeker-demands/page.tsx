@@ -80,7 +80,7 @@ export default function JobSeekerDemandSupportPage() {
       <button className="btn btn-ghost" type="button" onClick={() => void load()} disabled={loading}>{loading ? "Refreshing…" : "Refresh queue"}</button>
     </div>
     {error ? <Card><p role="alert">{error}</p><button className="btn btn-ghost" type="button" onClick={() => void load()}>Retry</button></Card> : null}
-    {notice ? <Card><p role="status">{notice}</p></Card> : null}
+    {notice ? <Card><p aria-live="polite" aria-atomic="true">{notice}</p></Card> : null}
     {!loading && !items.length && !error ? <Card><h2 className="h2">No no-vacancy requests in the queue</h2><p className="muted">New requests will appear here after applicants submit a job-interest request.</p></Card> : null}
     {items.map(item => {
       const raw = item.employer_sharing_fields;
