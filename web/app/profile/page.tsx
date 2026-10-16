@@ -101,8 +101,8 @@ export default function Profile() {
   const token = useUiStore((s) => s.token),
     clearToken = useUiStore((s) => s.clearToken),
     language = useUiStore((s) => s.language);
-  const [profile, setProfile] = useState<Profile | null>(null),
-    [form, setForm] = useState(blank),
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [form, setForm] = useState(blank);
   const [organizationOnly, setOrganizationOnly] = useState(false);
   const [profilePictureUrl, setProfilePictureUrl] = useState("");
   const [uploadingPicture, setUploadingPicture] = useState(false);
