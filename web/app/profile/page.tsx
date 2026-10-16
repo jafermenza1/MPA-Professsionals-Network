@@ -835,7 +835,7 @@ export default function Profile() {
               ))}
             </div>
             <div style={{ marginTop: 14 }}>
-              <button
+              <button type="button"
                 className="btn btn-primary"
                 onClick={savePreferences}
                 disabled={savingPreferences}
@@ -892,7 +892,7 @@ export default function Profile() {
               </div>
             </div>
           </Card>
-          <button
+          <button type="button"
             className="btn btn-ghost"
             onClick={async () => {
               try {

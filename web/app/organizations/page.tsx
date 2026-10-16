@@ -936,7 +936,7 @@ export default function Organizations() {
                           />
                         </label>
                       </div>
-                      <button
+                      <button type="button"
                         className="btn btn-primary"
                         disabled={
                           reviewingOrg === row.organization_id ||

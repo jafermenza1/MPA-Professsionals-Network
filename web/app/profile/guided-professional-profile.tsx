@@ -177,7 +177,7 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
      <p className="muted">Selected skills</p><div className="row" style={{gap:6,flexWrap:"wrap"}}>{skillIds.map(id=>{const item=byId.get(id);return item?<span key={id} className="row" style={{gap:6,alignItems:"center",border:"1px solid var(--border)",borderRadius:999,padding:"4px 10px"}}>{item.label}<button type="button" className="btn btn-ghost" onClick={()=>setSkillIds(ids=>ids.filter(value=>value!==id))} aria-label={"Remove "+item.label}>×</button></span>:null;})}</div>
      {skillIds.some(id=>byId.get(id)?.code==="OTHER")?<label>Other skill(s), separated by commas<input required value={otherSkills} onChange={e=>setOtherSkills(e.target.value)} maxLength={1000} placeholder="For example, a specialist skill not listed"/></label>:null}
     </div>
-    <button className="btn btn-primary" disabled={saving||loading}>{saving?"Saving…":"Save classifications, skills and languages"}</button>
+    <button type="submit" className="btn btn-primary" disabled={saving||loading}>{saving?"Saving…":"Save classifications, skills and languages"}</button>
    </form>
   </Card>
   <Card>
@@ -198,7 +198,7 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
       <label>Additional explanation <span className="muted">(optional)</span><textarea value={draft.explanation} maxLength={1200} rows={2} onChange={e=>setEducationDrafts(rows=>rows.map((row,i)=>i===index?{...row,explanation:e.target.value}:row))} placeholder="For example, part-time study or an equivalent qualification"/></label>
      </div>
     </div>)}
-    <div className="row" style={{gap:10,flexWrap:"wrap"}}><button type="button" className="btn btn-ghost" onClick={()=>setEducationDrafts(rows=>[...rows,blankEducation()])}>Add education record</button><button className="btn btn-primary" disabled={saving}>{saving?"Saving…":"Save education records"}</button></div>
+    <div className="row" style={{gap:10,flexWrap:"wrap"}}><button type="button" className="btn btn-ghost" onClick={()=>setEducationDrafts(rows=>[...rows,blankEducation()])}>Add education record</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving?"Saving…":"Save education records"}</button></div>
    </form>
   </Card>
   <Card>
@@ -234,7 +234,7 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
      {uploading?<p role="status">Uploading and checking your evidence… keep this page open.</p>:null}
      {portfolioDraft.evidenceFileId?<p role="status"><Badge>Upload confirmed</Badge> Private evidence is ready to attach: {portfolioDraft.evidenceLabel||"selected file"} <button type="button" className="btn btn-ghost" onClick={()=>setPortfolioDraft(d=>({...d,evidenceFileId:"",evidenceLabel:""}))}>Remove attachment</button></p>:<p className="muted">No evidence uploaded. You can still save the portfolio item.</p>}
     </div>
-    <button className="btn btn-primary" disabled={saving||uploading}>{saving?"Saving…":"Save portfolio item"}</button>
+    <button type="submit" className="btn btn-primary" disabled={saving||uploading}>{saving?"Saving…":"Save portfolio item"}</button>
    </form>
   </Card>
   {error?<FormFeedback kind="error" message={error} onRetry={()=>void refresh()} retryLabel="Reload saved information"/>:null}
