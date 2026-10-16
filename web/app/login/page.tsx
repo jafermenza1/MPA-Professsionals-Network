@@ -11,6 +11,7 @@ function fromB64url(value:string):Uint8Array{
  const binary=atob(normalized+"=".repeat((4-normalized.length%4)%4));
  return Uint8Array.from(binary,char=>char.charCodeAt(0));
 }
+function toWebAuthnBuffer(value:Uint8Array):ArrayBuffer{return value.slice().buffer as ArrayBuffer;}
 function toB64url(value:ArrayBuffer):string{
  const bytes=new Uint8Array(value);let binary="";
  for(const byte of bytes)binary+=String.fromCharCode(byte);
@@ -53,7 +54,7 @@ export default function Login(){
      if(!email.includes("@"))throw new Error("Enter the administrator email address to use passkey sign-in.");
      if(!window.isSecureContext||!navigator.credentials||!("PublicKeyCredential" in window))throw new Error("Passkeys require a supported browser and HTTPS (localhost is allowed for development).");
      const options=await api<PasskeyOptions>("/api/v1/auth/passkeys/options",{method:"POST",body:JSON.stringify({email})});
-     const publicKey:PublicKeyCredentialRequestOptions={...options.publicKey,challenge:fromB64url(options.publicKey.challenge),allowCredentials:options.publicKey.allowCredentials.map(item=>({...item,id:fromB64url(item.id)}))};
+     const publicKey:PublicKeyCredentialRequestOptions={...options.publicKey,challenge:toWebAuthnBuffer(fromB64url(options.publicKey.challenge)),allowCredentials:options.publicKey.allowCredentials.map(item=>({...item,id:toWebAuthnBuffer(fromB64url(item.id))}))};
      const credential=await navigator.credentials.get({publicKey}) as PublicKeyCredential|null;
      if(!credential)throw new Error("Passkey sign-in was cancelled.");
      const result=await api<{token:string}>("/api/v1/auth/passkeys/verify",{method:"POST",body:JSON.stringify({email,credential:serializeAssertion(credential)})});
