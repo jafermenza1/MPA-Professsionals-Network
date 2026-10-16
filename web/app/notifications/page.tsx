@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import {useCallback,useEffect,useState} from "react";
-import {Bell,CheckCheck,Clock3,ExternalLink,Filter,NotificationInbox,RefreshCw,Archive,ArrowRight,AlertTriangle} from "lucide-react";
+import {Bell,CheckCheck,Clock3,ExternalLink,Filter,Inbox,RefreshCw,Archive,ArrowRight,AlertTriangle} from "lucide-react";
 import {api,ApiError} from "../../lib/api";
 import {useUiStore} from "../../lib/store";
 
