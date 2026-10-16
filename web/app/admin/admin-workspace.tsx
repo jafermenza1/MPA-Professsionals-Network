@@ -11,13 +11,13 @@ import styles from "./admin-workspace.module.css";
 const destinations = [
   { href: "/admin", label: "Overview", description: "Review and administration", icon: Activity, exact: true },
   { href: "/admin/members", label: "Members", description: "Imports and member records", icon: Users },
-    href: "/admin/membership-card", label: "Membership card", description: "Credential appearance", icon: ShieldCheck },
-    href: "/admin/reference-portfolio", label: "Reference data", description: "Governed profile options", icon: BookOpenCheck },
-    href: "/admin/marketplace", label: "Marketplace", description: "Demand and listing review", icon: ClipboardList },
-    href: "/admin/reports", label: "Reports", description: "Reporting and exports", icon: FileBarChart },
-    href: "/admin/email", label: "Email operations", description: "Queues, templates and delivery", icon: Mail },
-    href: "/admin/security", label: "Admin security", description: "Passkeys and recovery", icon: Fingerprint },
-    href: "/admin/support", label: "Support", description: "Inquiries and knowledge base", icon: MessageSquareText },
+  { href: "/admin/membership-card", label: "Membership card", description: "Credential appearance", icon: ShieldCheck },
+  { href: "/admin/reference-portfolio", label: "Reference data", description: "Governed profile options", icon: BookOpenCheck },
+  { href: "/admin/marketplace", label: "Marketplace", description: "Demand and listing review", icon: ClipboardList },
+  { href: "/admin/reports", label: "Reports", description: "Reporting and exports", icon: FileBarChart },
+  { href: "/admin/email", label: "Email operations", description: "Queues, templates and delivery", icon: Mail },
+  { href: "/admin/security", label: "Admin security", description: "Passkeys and recovery", icon: Fingerprint },
+  { href: "/admin/support", label: "Support", description: "Inquiries and knowledge base", icon: MessageSquareText },
 ] as const;
 
 export function AdminWorkspace({ children }: { children: React.ReactNode }) {
