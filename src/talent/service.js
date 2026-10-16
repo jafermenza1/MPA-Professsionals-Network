@@ -1,6 +1,12 @@
 import { getPool, withTransaction } from "../platform/db.js";
+import { assertProfessionalProfileCapability } from "../platform/identity-policy.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
+
+async function assertProfessionalProfileAccess(db,userId,options={}){
+ try { await assertProfessionalProfileCapability(db,userId,options); }
+ catch (cause) { throw error(cause.statusCode||403,cause.message,cause.code||"BUSINESS_RULE"); }
+}
 function limitValue(v){ return Math.min(Math.max(Number(v)||25,1),100); }
 export const ELIGIBLE_VERIFICATION_CLAIMS=["professional_certification","education","employment","experience","service_capability"];
 export function isEligibleVerifiedClaim(code){ return ELIGIBLE_VERIFICATION_CLAIMS.includes(String(code||"").toLowerCase()); }
@@ -9,28 +15,57 @@ export function allowedTalentInquiryTransition(from,to){ return ({"requested":["
 async function audit(db,actor,action,type,id,requestId,metadata={}){ await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]); }
 
 
+async function resolveLegacyReferenceValues(db,relationType,values){
+ const domain=relationType==="skill"?"skill":"language";
+ const rows=(await db.query("select ri.id,ri.code,ri.label,ri.aliases from reference_item ri join reference_dataset_version rv on rv.id=ri.dataset_version_id join reference_dataset rd on rd.id=rv.dataset_id where rd.domain=$1 and rd.status='active' and rv.status='published' and ri.active=true",[domain])).rows;
+ const normalize=value=>String(value||"").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim();
+ const byAlias=new Map();for(const row of rows){byAlias.set(normalize(row.label),row);byAlias.set(normalize(row.code),row);for(const alias of Array.isArray(row.aliases)?row.aliases:[])byAlias.set(normalize(alias),row);}
+ const resolved=[],custom=[];
+ for(const value of Array.from(new Set((Array.isArray(values)?values:[]).map(x=>String(x||"").trim()).filter(Boolean)))){const match=byAlias.get(normalize(value));if(match&&match.code!=="OTHER")resolved.push({relationType,referenceItemId:match.id,customValue:""});else if(match?.code==="OTHER"||!match)custom.push(value);}
+ if(custom.length){const other=rows.find(row=>row.code==="OTHER");if(!other)throw error(400,"This reference list needs an administrator-managed Other option before custom values can be saved.","REFERENCE_OTHER_UNAVAILABLE");resolved.push({relationType,referenceItemId:other.id,customValue:Array.from(new Set(custom.map(x=>x.trim()))).join(", ")});}
+ return resolved;
+}
 export async function updateProfessionalProfile(userId,input,requestId){
  return withTransaction(async db=>{
+  await assertProfessionalProfileAccess(db,userId,{requireActiveMembership:true});
   const p=(await db.query("select pp.id from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1 for update",[userId])).rows[0];
   if(!p) throw error(404,"Professional profile not found.","NOT_FOUND");
   const years=input.yearsExperience===null||input.yearsExperience===undefined?null:Number(input.yearsExperience);
   if(years!==null&&(!Number.isInteger(years)||years<0)) throw error(400,"yearsExperience must be a non-negative integer.","VALIDATION_ERROR");
   if(input.availabilityStatus!==undefined&&input.availabilityStatus!==null&&input.availabilityStatus!==""&&!["not_specified","available","limited","unavailable"].includes(input.availabilityStatus)) throw error(400,"availabilityStatus must be not_specified, available, limited or unavailable.","VALIDATION_ERROR");
   if(input.visibility!==undefined&&input.visibility!==null&&!["private","members","public"].includes(input.visibility)) throw error(400,"visibility must be private, members or public.","VALIDATION_ERROR");
-  const skills=Array.isArray(input.skills)?input.skills.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
-  const languages=Array.isArray(input.languages)?input.languages.map(x=>String(x).trim()).filter(Boolean).slice(0,20):null;
+  const skills=Array.isArray(input.skills)?Array.from(new Map(input.skills.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,40):null;
+  const languages=Array.isArray(input.languages)?Array.from(new Map(input.languages.map(x=>String(x).trim()).filter(Boolean).map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,20):null;
   const certifications=Array.isArray(input.certifications)?input.certifications.map(x=>String(x).trim()).filter(Boolean).slice(0,40):null;
+  const structuredReferences=Array.isArray(input.references)?[...input.references]:[];
+  const fullReferenceUpdate=Array.isArray(input.references);
+  if(!fullReferenceUpdate&&Array.isArray(input.skills))structuredReferences.push(...await resolveLegacyReferenceValues(db,"skill",input.skills));
+  if(!fullReferenceUpdate&&Array.isArray(input.languages))structuredReferences.push(...await resolveLegacyReferenceValues(db,"language",input.languages));
+  const referenceTypesToUpdate=fullReferenceUpdate?["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range","skill"]:[...(Array.isArray(input.skills)?["skill"]:[]),...(Array.isArray(input.languages)?["language"]:[])];
   const portfolioUrl=input.portfolioUrl===undefined?null:String(input.portfolioUrl||"").trim();
   if(portfolioUrl){let parsed;try{parsed=new URL(portfolioUrl)}catch{throw error(400,"portfolioUrl must be a valid HTTPS URL.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"portfolioUrl must use HTTPS.","VALIDATION_ERROR")}
   await db.query("update professional_profile set professional_title=coalesce($1,professional_title),years_experience=coalesce($2,years_experience),availability_status=coalesce($3,availability_status),location_label=coalesce($4,location_label),directory_summary=coalesce($5,directory_summary),headline=coalesce($6,headline),bio=coalesce($7,bio),directory_visibility=coalesce($8,directory_visibility),education_summary=coalesce($9,education_summary),qualifications=coalesce($10,qualifications),skills=coalesce($11::jsonb,skills),languages=coalesce($12::jsonb,languages),certifications=coalesce($13::jsonb,certifications),portfolio_url=coalesce($14,portfolio_url),updated_at=now() where id=$15",[input.professionalTitle||null,years,input.availabilityStatus||null,input.locationLabel||null,input.directorySummary||null,input.headline||null,input.bio||null,input.visibility||null,input.educationSummary===undefined?null:String(input.educationSummary||"").trim(),input.qualifications===undefined?null:String(input.qualifications||"").trim(),skills===null?null:JSON.stringify(skills),languages===null?null:JSON.stringify(languages),certifications===null?null:JSON.stringify(certifications),portfolioUrl,p.id]);
-  if(Array.isArray(input.references)){
-   for(const ref of input.references){
-    const allowed=["occupation","industry","education_level","qualification_type","field_of_study"];
+  if(referenceTypesToUpdate.length){
+   const allowed=["occupation","industry","education_level","qualification_type","field_of_study","nationality","language","institution","experience_range","skill"];
+   for(const relationType of referenceTypesToUpdate) await db.query("delete from professional_profile_reference where profile_id=$1 and relation_type=$2",[p.id,relationType]);
+   const seenReferences=new Set();
+   for(const ref of structuredReferences){
     if(!allowed.includes(ref.relationType)) throw error(400,"Unsupported professional reference relation.","INVALID_REFERENCE");
-    const item=(await db.query("select ri.id from reference_item ri join reference_dataset_version rv on rv.id=ri.dataset_version_id join reference_dataset rd on rd.id=rv.dataset_id where ri.id=$1 and rv.status='published' and rd.domain=$2 and ri.active=true",[ref.referenceItemId,ref.relationType])).rows[0];
+    const referenceKey=ref.relationType+":"+ref.referenceItemId;
+    if(seenReferences.has(referenceKey)) continue;
+    seenReferences.add(referenceKey);
+    const item=(await db.query("select ri.id,ri.code from reference_item ri join reference_dataset_version rv on rv.id=ri.dataset_version_id join reference_dataset rd on rd.id=rv.dataset_id where ri.id=$1 and rv.status='published' and rd.domain=$2 and ri.active=true",[ref.referenceItemId,ref.relationType])).rows[0];
     if(!item) throw error(400,"Reference item is not from a published dataset for the requested relation.","INVALID_REFERENCE");
-    await db.query("delete from professional_profile_reference where profile_id=$1 and relation_type=$2",[p.id,ref.relationType]);
-    await db.query("insert into professional_profile_reference(profile_id,reference_item_id,relation_type,is_primary) values($1,$2,$3,true)",[p.id,ref.referenceItemId,ref.relationType]);
+    const customValue=String(ref.customValue||"").trim();
+    if(item.code==="OTHER"&&!customValue) throw error(400,"Enter a value after selecting Other.","OTHER_VALUE_REQUIRED");
+    if(item.code!=="OTHER"&&customValue) throw error(400,"Custom values are accepted only when Other is selected.","UNEXPECTED_CUSTOM_VALUE");
+    await db.query("insert into professional_profile_reference(profile_id,reference_item_id,relation_type,is_primary,custom_value) values($1,$2,$3,$4,$5)",[p.id,ref.referenceItemId,ref.relationType,["language","skill"].includes(ref.relationType)?false:true,customValue||null]);
+   }
+   for(const relationType of ["skill","language"]){
+    const rows=(await db.query("select pr.custom_value,ri.label,ri.code,ri.aliases from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id join reference_dataset_version rv on rv.id=ri.dataset_version_id where pr.profile_id=$1 and pr.relation_type=$2 and rv.status='published' order by ri.label",[p.id,relationType])).rows;
+    const values=rows.flatMap(row=>row.code==="OTHER"?String(row.custom_value||"").split(","): [row.label]).map(value=>String(value||"").trim()).filter(Boolean);
+    const deduped=Array.from(new Map(values.map(value=>[value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g," ").trim(),value])).values()).slice(0,relationType==="skill"?40:20);
+    await db.query("update professional_profile set "+(relationType==="skill"?"skills":"languages")+"=$1::jsonb,updated_at=now() where id=$2",[JSON.stringify(deduped),p.id]);
    }
   }
   if(Array.isArray(input.experience)){
@@ -50,34 +85,38 @@ export async function updateProfessionalProfile(userId,input,requestId){
   await audit(db,userId,"talent.profile_updated","professional_profile",p.id,requestId,{referenceCount:Array.isArray(input.references)?input.references.length:0,experienceCount:Array.isArray(input.experience)?input.experience.length:0});
   const saved=(await db.query("select id,professional_title,headline,bio,years_experience,availability_status,location_label,directory_summary,directory_visibility as visibility,education_summary,qualifications,skills,languages,certifications,portfolio_url,completion_percent from professional_profile where id=$1",[p.id])).rows[0];
   saved.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[p.id])).rows;
+  saved.references=(await db.query("select pr.relation_type,pr.reference_item_id,pr.custom_value,ri.code,ri.label,ri.aliases from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.profile_id=$1 order by pr.relation_type",[p.id])).rows;
   return saved;
  });
 }
 
 export async function getProfessionalProfile(userId){
  const db=getPool();
+ await assertProfessionalProfileAccess(db,userId);
  const row=(await db.query("select pp.id,pp.professional_title,pp.years_experience,pp.availability_status,pp.location_label,pp.directory_summary,pp.headline,pp.bio,pp.directory_visibility as visibility,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.completion_percent from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1",[userId])).rows[0];
  if(!row) throw error(404,"Professional profile not found.","NOT_FOUND");
  row.experience=(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description,visibility from professional_experience where profile_id=$1 order by is_current desc,start_date desc nulls last,created_at desc",[row.id])).rows;
+ row.references=(await db.query("select pr.relation_type,pr.reference_item_id,pr.custom_value,ri.code,ri.label from professional_profile_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.profile_id=$1 order by pr.relation_type",[row.id])).rows;
  return row;
 }
 
 export async function updateVisibility(userId,input,requestId){
  return withTransaction(async db=>{
+  await assertProfessionalProfileAccess(db,userId,{requireActiveMembership:true});
   const row=(await db.query("insert into verification_visibility(user_id,directory_visible,show_identity_badge,show_professional_badge,show_experience_badge,show_location,show_experience,show_contact) values($1,coalesce($2,false),coalesce($3,false),coalesce($4,false),coalesce($5,false),coalesce($6,false),coalesce($7,false),coalesce($8,false)) on conflict(user_id) do update set directory_visible=coalesce($2,verification_visibility.directory_visible),show_identity_badge=coalesce($3,verification_visibility.show_identity_badge),show_professional_badge=coalesce($4,verification_visibility.show_professional_badge),show_experience_badge=coalesce($5,verification_visibility.show_experience_badge),show_location=coalesce($6,verification_visibility.show_location),show_experience=coalesce($7,verification_visibility.show_experience),show_contact=coalesce($8,verification_visibility.show_contact),updated_at=now() returning *",[userId,input.directoryVisible,input.showIdentityBadge,input.showProfessionalBadge,input.showExperienceBadge,input.showLocation,input.showExperience,input.showContact])).rows[0];
   await audit(db,userId,"talent.visibility_updated","verification_visibility",row.id,requestId,{directoryVisible:row.directory_visible});
   return row;
  });
 }
 
-export async function getVisibility(userId){ const db=getPool(); const r=await db.query("select * from verification_visibility where user_id=$1",[userId]); return r.rows[0]||{user_id:userId,directory_visible:false}; }
+export async function getVisibility(userId){ const db=getPool(); await assertProfessionalProfileAccess(db,userId); const r=await db.query("select * from verification_visibility where user_id=$1",[userId]); return r.rows[0]||{user_id:userId,directory_visible:false}; }
 
 function viewerVisibilityClause(viewerIsMember){ return viewerIsMember ? "(pp.directory_visibility in ('members','public'))" : "pp.directory_visibility='public'"; }
 
 export async function searchTalent(viewerId,filters={}){
  const db=getPool();
- const viewerIsMember=viewerId?Boolean((await db.query("select 1 from membership_record where user_id=$1 and status='active' limit 1",[viewerId])).rows[0]):false;
- const args=[]; const where=["m.status='active'", "vv.directory_visible=true", viewerVisibilityClause(viewerIsMember)];
+ const viewerIsMember=viewerId?Boolean((await db.query("select 1 from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) and start_date<=current_date and (end_date is null or end_date>=current_date) limit 1",[viewerId])).rows[0]):false;
+ const args=[]; const where=["m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)", "vv.directory_visible=true", viewerVisibilityClause(viewerIsMember)];
  if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(pp.professional_title ilike $"+args.length+" or pp.headline ilike $"+args.length+" or pp.directory_summary ilike $"+args.length+" or p.display_name ilike $"+args.length+")"); }
  const refFilter=(param,relation)=>{ if(filters[param]){ args.push(String(filters[param])); where.push("exists (select 1 from professional_profile_reference prf join reference_item ri on ri.id=prf.reference_item_id where prf.profile_id=pp.id and prf.relation_type='"+relation+"' and (ri.code=$"+args.length+" or ri.id::text=$"+args.length+"))"); } };
  refFilter("occupation","occupation"); refFilter("industry","industry"); refFilter("educationLevel","education_level"); refFilter("qualificationType","qualification_type"); refFilter("fieldOfStudy","field_of_study");
@@ -89,7 +128,7 @@ export async function searchTalent(viewerId,filters={}){
  "(case when vv.show_location then pp.location_label else null end) location_label,"+
  "vv.show_location,vv.show_identity_badge,vv.show_professional_badge,vv.show_experience_badge,vv.show_experience,"+
  "(select count(*)::int from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability')) verified_claim_count "+
- "from app_user u join person p on p.user_id=u.id join professional_profile pp on pp.person_id=p.id join membership_record m on m.user_id=u.id and m.status='active' join verification_visibility vv on vv.user_id=u.id "+
+ "from app_user u join person p on p.user_id=u.id join professional_profile pp on pp.person_id=p.id join membership_record m on m.user_id=u.id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date) join verification_visibility vv on vv.user_id=u.id "+
  "where "+where.join(" and ")+" order by pp.professional_title nulls last,p.display_name limit "+limit+" offset "+offset;
  const rows=(await db.query(sql,args)).rows;
  return {items:rows,limit,offset};
@@ -97,14 +136,16 @@ export async function searchTalent(viewerId,filters={}){
 
 export async function getTalent(userId,viewerId){
  const db=getPool();
- const viewerMember=viewerId?Boolean((await db.query("select 1 from membership_record where user_id=$1 and status='active' limit 1",[viewerId])).rows[0]):false;
+ const viewerMember=viewerId?Boolean((await db.query("select 1 from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date) and start_date<=current_date and (end_date is null or end_date>=current_date) limit 1",[viewerId])).rows[0]):false;
  const where=viewerMember?"pp.directory_visibility in ('members','public')":"pp.directory_visibility='public'";
- const row=(await db.query("select u.id user_id,p.display_name,pp.id profile_id,pp.professional_title,pp.headline,pp.bio,pp.directory_summary,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.years_experience,pp.availability_status,case when vv.show_location then pp.location_label else null end location_label,case when vv.show_contact and u.id=$2 then p.phone else null end phone,vv.show_identity_badge,vv.show_professional_badge,vv.show_experience_badge,vv.show_experience from app_user u join person p on p.user_id=u.id join professional_profile pp on pp.person_id=p.id join membership_record m on m.user_id=u.id and m.status='active' join verification_visibility vv on vv.user_id=u.id where u.id=$1 and vv.directory_visible=true and "+where+" and exists (select 1 from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability'))",[userId,viewerId||null])).rows[0];
+ const row=(await db.query("select u.id user_id,p.display_name,pp.id profile_id,pp.professional_title,pp.headline,pp.bio,pp.directory_summary,pp.education_summary,pp.qualifications,pp.skills,pp.languages,pp.certifications,pp.portfolio_url,pp.years_experience,pp.availability_status,case when vv.show_location then pp.location_label else null end location_label,case when vv.show_contact and u.id=$2 then p.phone else null end phone,vv.show_identity_badge,vv.show_professional_badge,vv.show_experience_badge,vv.show_experience from app_user u join person p on p.user_id=u.id join professional_profile pp on pp.person_id=p.id join membership_record m on m.user_id=u.id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date) join verification_visibility vv on vv.user_id=u.id where u.id=$1 and vv.directory_visible=true and "+where+" and exists (select 1 from verification_claim vc join verification_case vcase on vcase.id=vc.case_id where vcase.subject_user_id=u.id and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability'))",[userId,viewerId||null])).rows[0];
  if(!row) throw error(404,"Professional not found or not visible.","NOT_FOUND");
- const refs=(await db.query("select prf.relation_type,ri.code,ri.label,ri.dataset_version_id from professional_profile_reference prf join reference_item ri on ri.id=prf.reference_item_id where prf.profile_id=$1 order by prf.relation_type,prf.is_primary desc,ri.label",[row.profile_id])).rows;
+ const refs=(await db.query("select prf.relation_type,ri.code,ri.label,prf.custom_value,ri.dataset_version_id from professional_profile_reference prf join reference_item ri on ri.id=prf.reference_item_id where prf.profile_id=$1 order by prf.relation_type,prf.is_primary desc,ri.label",[row.profile_id])).rows;
  const claims=(await db.query("select distinct vc.claim_code_snapshot claim_code from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=$1 and vc.status='verified' and lower(vc.claim_code_snapshot) in ('professional_certification','education','employment','experience','service_capability')",[userId])).rows;
  const experience=row.show_experience?(await db.query("select id,employer_name,role_title,start_date,end_date,is_current,description from professional_experience where profile_id=$1 and visibility=any($2::text[]) order by start_date desc nulls last",[row.profile_id,viewerMember?["members","public"]:["public"]])).rows:[];
- return {...row,references:refs,verifiedClaims:claims,experience};
+ const education=(await db.query(`select e.id,coalesce(nullif(e.education_level_custom,''),el.label) education_level,coalesce(nullif(e.institution_name_custom,''),ins.label) institution,coalesce(nullif(e.field_of_study_custom,''),fs.label) field_of_study,coalesce(nullif(e.qualification_custom,''),q.label) qualification,e.graduation_year,e.start_year,e.completion_year,e.currently_studying,e.explanation,e.visibility from professional_education e join reference_item el on el.id=e.education_level_item_id left join reference_item ins on ins.id=e.institution_item_id left join reference_item fs on fs.id=e.field_of_study_item_id left join reference_item q on q.id=e.qualification_item_id where e.profile_id=$1 and e.visibility=any($2::text[]) order by e.currently_studying desc,e.completion_year desc nulls last`,[row.profile_id,viewerMember?["members","public"]:["public"]])).rows;
+ const portfolio=(await db.query("select pi.id,pi.title,pi.item_type,pi.description,pi.external_url,pi.visibility,pi.started_on,pi.completed_on,pi.review_status,pi.created_at,pi.updated_at,coalesce((select jsonb_agg(jsonb_build_object('relationType',pr.relation_type,'code',ri.code,'label',ri.label) order by pr.relation_type,ri.label) from professional_portfolio_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.portfolio_item_id=pi.id),'[]'::jsonb) references from professional_portfolio_item pi where pi.profile_id=$1 and pi.visibility=any($2::text[]) order by pi.created_at desc",[row.profile_id,viewerMember?["members","public"]:["public"]])).rows;
+ return {...row,references:refs,verifiedClaims:claims,experience,education,portfolio};
 }
 
 export async function saveSearch(userId,input,requestId){
@@ -117,12 +158,12 @@ export async function createTalentInquiry(requesterId,input,requestId){
   return withTransaction(async db=>{
     if(!input.professionalUserId||!input.subject||!input.message) throw error(400,"professionalUserId, subject and message are required.","VALIDATION_ERROR");
     if(requesterId===input.professionalUserId) throw error(400,"You cannot inquire about your own professional profile.","SELF_INQUIRY");
-    const member=(await db.query("select 1 from membership_record where user_id=$1 and status='active'",[requesterId])).rows[0];
+    const member=(await db.query("select 1 from membership_record where user_id=$1 and status='active' and start_date<=current_date and (end_date is null or end_date>=current_date)",[requesterId])).rows[0];
     if(!member) throw error(403,"An active membership is required to contact a professional.","MEMBERSHIP_REQUIRED");
     const target=(await db.query(`
       select u.id
       from app_user u
-      join membership_record m on m.user_id=u.id and m.status='active'
+      join membership_record m on m.user_id=u.id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)
       join verification_visibility vv on vv.user_id=u.id and vv.directory_visible=true
       join person p on p.user_id=u.id
       join professional_profile pp on pp.person_id=p.id and pp.directory_visibility in ('members','public')
@@ -196,4 +237,81 @@ export async function closeTalentInquiry(inquiryId,userId,requestId){
     await audit(db,userId,"talent.inquiry_closed","talent_inquiry",inquiryId,requestId);
     return updated;
   });
+}
+
+
+function cleanOptional(value,max=2000){const out=String(value??"").trim();if(out.length>max)throw error(400,"One of the submitted fields is too long.","VALIDATION_ERROR");return out||null;}
+async function profileIdFor(db,userId){await assertProfessionalProfileAccess(db,userId,{requireActiveMembership:true});const row=(await db.query("select pp.id from professional_profile pp join person p on p.id=pp.person_id where p.user_id=$1",[userId])).rows[0];if(!row)throw error(404,"Professional profile not found.","NOT_FOUND");return row.id;}
+async function validReference(db,id,domain,{required=false,custom=""}={}){
+ if(!id){if(required&&!String(custom||"").trim())throw error(400,"Choose a reference value or select Other and enter your own value.","REFERENCE_REQUIRED");return null;}
+ const row=(await db.query("select ri.id,ri.code from reference_item ri join reference_dataset_version v on v.id=ri.dataset_version_id join reference_dataset d on d.id=v.dataset_id where ri.id=$1 and v.status='published' and d.domain=$2 and d.status='active' and ri.active=true",[id,domain])).rows[0];
+ if(!row)throw error(400,"A selected reference value is no longer available. Refresh the options and try again.","INVALID_REFERENCE");
+ if(row.code==="OTHER"&&!String(custom||"").trim())throw error(400,"You selected Other. Enter the value in the field shown beside it.","OTHER_VALUE_REQUIRED");
+ if(row.code!=="OTHER"&&String(custom||"").trim())throw error(400,"Custom text is allowed only after selecting Other.","UNEXPECTED_CUSTOM_VALUE");
+ return row;
+}
+export async function getProfessionalEducation(userId){
+ const db=getPool();const profileId=await profileIdFor(db,userId);
+ return (await db.query(`select e.id,e.education_level_item_id,e.education_level_custom,e.institution_item_id,e.institution_name_custom,e.field_of_study_item_id,e.field_of_study_custom,e.qualification_item_id,e.qualification_custom,e.graduation_year,e.start_year,e.completion_year,e.currently_studying,e.explanation,e.visibility,
+ el.label education_level_label,ins.label institution_label,fs.label field_of_study_label,q.label qualification_label
+ from professional_education e
+ join reference_item el on el.id=e.education_level_item_id
+ left join reference_item ins on ins.id=e.institution_item_id
+ left join reference_item fs on fs.id=e.field_of_study_item_id
+ left join reference_item q on q.id=e.qualification_item_id
+ where e.profile_id=$1 order by e.currently_studying desc,e.completion_year desc nulls last,e.created_at desc`,[profileId])).rows;
+}
+export async function saveProfessionalEducation(userId,input,requestId){
+ const entries=Array.isArray(input?.education)?input.education:[];
+ if(entries.length>30)throw error(400,"A maximum of 30 education records is allowed.","VALIDATION_ERROR");
+ return withTransaction(async db=>{
+  const profileId=await profileIdFor(db,userId);
+  const checked=[];
+  for(const e of entries){
+   const levelCustom=cleanOptional(e.educationLevelCustom,180),institutionCustom=cleanOptional(e.institutionCustom,240),fieldCustom=cleanOptional(e.fieldOfStudyCustom,180),qualificationCustom=cleanOptional(e.qualificationCustom,180);
+   const level=await validReference(db,e.educationLevelItemId,"education_level",{required:true,custom:levelCustom});
+   const institution=await validReference(db,e.institutionItemId,"institution",{required:true,custom:institutionCustom});
+   const field=await validReference(db,e.fieldOfStudyItemId,"field_of_study",{required:true,custom:fieldCustom});
+   const qualification=await validReference(db,e.qualificationItemId,"qualification_type",{custom:qualificationCustom});
+   const year=e.graduationYear===""||e.graduationYear==null?null:Number(e.graduationYear);
+   const startYear=e.startYear===""||e.startYear==null?null:Number(e.startYear);
+   const completionYear=e.currentlyStudying?null:(e.completionYear===""||e.completionYear==null?(year===null?null:year):Number(e.completionYear));
+   const currentlyStudying=e.currentlyStudying===true;
+   const explanation=cleanOptional(e.explanation,1200);
+   const visibility=String(e.visibility||"private");
+   for(const [label,value] of [["Start year",startYear],["Completion year",completionYear]])if(value!==null&&(!Number.isInteger(value)||value<1900||value>new Date().getFullYear()+10))throw error(400,label+" must be a valid year.","VALIDATION_ERROR");
+   if(startYear!==null&&completionYear!==null&&completionYear<startYear)throw error(400,"Completion year cannot be earlier than the start year.","VALIDATION_ERROR");
+   if(!["private","members","public"].includes(visibility))throw error(400,"Choose a valid education visibility.","VALIDATION_ERROR");
+   checked.push({level,institution,field,qualification,levelCustom,institutionCustom,fieldCustom,qualificationCustom,year,startYear,completionYear,currentlyStudying,explanation,visibility});
+  }
+  await db.query("delete from professional_education where profile_id=$1",[profileId]);
+  for(const e of checked)await db.query("insert into professional_education(profile_id,education_level_item_id,education_level_custom,institution_item_id,institution_name_custom,field_of_study_item_id,field_of_study_custom,qualification_item_id,qualification_custom,graduation_year,start_year,completion_year,currently_studying,explanation,visibility) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",[profileId,e.level.id,e.levelCustom,e.institution?.id,e.institutionCustom,e.field?.id,e.fieldCustom,e.qualification?.id,e.qualificationCustom,e.completionYear,e.startYear,e.completionYear,e.currentlyStudying,e.explanation,e.visibility]);
+  await audit(db,userId,"talent.education_updated","professional_profile",profileId,requestId,{recordCount:checked.length});
+  return (await db.query(`select e.id,e.education_level_item_id,e.education_level_custom,e.institution_item_id,e.institution_name_custom,e.field_of_study_item_id,e.field_of_study_custom,e.qualification_item_id,e.qualification_custom,e.graduation_year,e.start_year,e.completion_year,e.currently_studying,e.explanation,e.visibility,el.label education_level_label,ins.label institution_label,fs.label field_of_study_label,q.label qualification_label from professional_education e join reference_item el on el.id=e.education_level_item_id left join reference_item ins on ins.id=e.institution_item_id left join reference_item fs on fs.id=e.field_of_study_item_id left join reference_item q on q.id=e.qualification_item_id where e.profile_id=$1 order by e.graduation_year desc nulls last,e.created_at desc`,[profileId])).rows;
+ });
+}
+export async function getProfessionalPortfolio(userId){
+ const db=getPool();const profileId=await profileIdFor(db,userId);
+ return (await db.query("select pi.id,pi.title,pi.item_type,pi.description,pi.external_url,pi.evidence_file_id,pi.evidence_label,pi.visibility,pi.started_on,pi.completed_on,pi.review_status,pi.created_at,pi.updated_at,f.original_name evidence_original_name,f.content_type evidence_content_type,f.byte_size evidence_byte_size,coalesce((select jsonb_agg(jsonb_build_object('relationType',pr.relation_type,'referenceItemId',ri.id,'code',ri.code,'label',ri.label,'aliases',ri.aliases) order by pr.relation_type,ri.label) from professional_portfolio_reference pr join reference_item ri on ri.id=pr.reference_item_id where pr.portfolio_item_id=pi.id),'[]'::jsonb) references from professional_portfolio_item pi left join file_object f on f.id=pi.evidence_file_id and f.visibility='private' and f.created_by=$2 where pi.profile_id=$1 order by pi.created_at desc",[profileId,userId])).rows;
+}
+export async function saveProfessionalPortfolioItem(userId,input,requestId,itemId=null){
+ return withTransaction(async db=>{
+  const profileId=await profileIdFor(db,userId);
+  const title=String(input?.title||"").trim(),type=String(input?.itemType||"other"),description=cleanOptional(input?.description,3000),url=cleanOptional(input?.externalUrl,2000),visibility=String(input?.visibility||"private"),evidenceLabel=cleanOptional(input?.evidenceLabel,180),fileId=input?.evidenceFileId||null,startedOn=input?.startedOn||null,completedOn=input?.completedOn||null,skillIds=Array.isArray(input?.skillReferenceIds)?Array.from(new Set(input.skillReferenceIds.map(String))).slice(0,30):[],occupationIds=Array.isArray(input?.occupationReferenceIds)?Array.from(new Set(input.occupationReferenceIds.map(String))).slice(0,10):[];
+  if(title.length<2||title.length>180)throw error(400,"Give this portfolio item a title between 2 and 180 characters.","VALIDATION_ERROR");
+  if(!["project","publication","case_study","certificate","work_sample","other"].includes(type))throw error(400,"Choose a valid portfolio item type.","VALIDATION_ERROR");
+  if(!["private","members","public"].includes(visibility))throw error(400,"Choose a valid portfolio visibility.","VALIDATION_ERROR");
+  if(url){let parsed;try{parsed=new URL(url)}catch{throw error(400,"Portfolio links must be valid HTTPS URLs.","VALIDATION_ERROR")}if(parsed.protocol!=="https:")throw error(400,"Portfolio links must use HTTPS.","VALIDATION_ERROR")}
+  const dateValue=(value,label)=>{if(!value)return null;const date=new Date(String(value));if(Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==String(value).slice(0,10))throw error(400,label+" must be a valid date.","VALIDATION_ERROR");return String(value).slice(0,10);};const startDate=dateValue(startedOn,"Start date"),endDate=dateValue(completedOn,"Completion date");if(startDate&&endDate&&endDate<startDate)throw error(400,"Completion date cannot be earlier than the start date.","VALIDATION_ERROR");for(const id of skillIds)await validReference(db,id,"skill");for(const id of occupationIds)await validReference(db,id,"occupation");
+  if(fileId){const file=(await db.query("select f.id from file_object f join private_upload_session s on s.file_object_id=f.id and s.status='confirmed' where f.id=$1 and f.created_by=$2 and f.visibility='private'",[fileId,userId])).rows[0];if(!file)throw error(403,"Evidence must be uploaded and confirmed by your account before it can be attached.","EVIDENCE_FILE_NOT_OWNED");}
+  let row;
+  if(itemId){row=(await db.query("update professional_portfolio_item set title=$1,item_type=$2,description=$3,external_url=$4,evidence_file_id=$5,evidence_label=$6,visibility=$7,started_on=$8,completed_on=$9,review_status='user_supplied',updated_at=now() where id=$10 and profile_id=$11 returning *",[title,type,description,url,fileId,evidenceLabel,visibility,startDate,endDate,itemId,profileId])).rows[0];if(!row)throw error(404,"Portfolio item was not found.","NOT_FOUND");}
+  else row=(await db.query("insert into professional_portfolio_item(profile_id,title,item_type,description,external_url,evidence_file_id,evidence_label,visibility,started_on,completed_on) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *",[profileId,title,type,description,url,fileId,evidenceLabel,visibility,startDate,endDate])).rows[0];
+  await db.query("delete from professional_portfolio_reference where portfolio_item_id=$1",[row.id]);for(const id of skillIds)await db.query("insert into professional_portfolio_reference(portfolio_item_id,reference_item_id,relation_type) values($1,$2,'skill')",[row.id,id]);for(const id of occupationIds)await db.query("insert into professional_portfolio_reference(portfolio_item_id,reference_item_id,relation_type) values($1,$2,'occupation')",[row.id,id]);
+  await audit(db,userId,itemId?"talent.portfolio_item_updated":"talent.portfolio_item_created","professional_portfolio_item",row.id,requestId,{itemType:type,evidenceAttached:Boolean(fileId),visibility});
+  return row;
+ });
+}
+export async function deleteProfessionalPortfolioItem(userId,itemId,requestId){
+ return withTransaction(async db=>{const profileId=await profileIdFor(db,userId);const row=(await db.query("delete from professional_portfolio_item where id=$1 and profile_id=$2 returning id",[itemId,profileId])).rows[0];if(!row)throw error(404,"Portfolio item was not found.","NOT_FOUND");await audit(db,userId,"talent.portfolio_item_deleted","professional_portfolio_item",itemId,requestId);return {id:itemId,deleted:true};});
 }

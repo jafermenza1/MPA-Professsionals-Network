@@ -191,3 +191,14 @@ The API uses bearer access tokens rather than browser cookies, so CSRF is not th
 ## Validation process update — 2026-10-14
 
 The GitHub Actions CI workflow has been removed from the currently listed branches. The test suites and build scripts remain available; execute them manually in local/staging environments as described in [Manual Test, Release, and Deployment Policy](36-manual-test-release-and-deployment-policy.md). Do not run database upgrade fixtures against the live database. For the cPanel release itself, keep a separate deployment record of the exact commit/build ID, backup archive, portal/API smoke results, and manual workflow checks. Historical Actions links are not evidence that the current deployed commit passed the full test suite.
+
+
+## Account recovery email delivery
+
+The administrator account-recovery action queues a one-time link in `notification_outbox`. To deliver it, configure the API application's environment with a Resend API key and a verified sender address:
+
+- `RESEND_API_KEY`: secret API key; never commit it or expose it to the web app.
+- `EMAIL_FROM`: verified sender, for example `MPA Support <support@your-verified-domain>`.
+- `CORS_ORIGIN`: must include the exact HTTPS portal origin so the server can build a trusted link.
+
+Run `npm run notifications:dispatch-account-recovery` from the repository root. Configure cPanel Cron Jobs to run it every minute (or use an equivalent supervised worker). Ensure the cron environment also receives `DATABASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, and `NODE_ENV=production`; cPanel does not always inherit the Node application's environment variables. The dispatcher processes only `account.one_time_session_link` messages, retries temporary failures with increasing delays, and stops retrying after five attempts. Check cron output and the `notification_outbox` status before telling a user an email was delivered. In production, links must use HTTPS. Do not test with real users until the sender domain, recipient delivery, link expiry, and single-use behavior have been verified.

@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormFeedback } from "../../components/form-feedback";
 import {
   Building2,
   FileCheck2,
@@ -24,12 +25,21 @@ type Inquiry = {
 };
 type Organization = {
   id: string;
+  tracking_reference?: string;
+  updated_at?: string;
   legal_name: string;
   display_name: string;
   organization_type?: string;
   verification_status?: string;
   role_code?: string;
   created_at?: string;
+  verification_case_status?: string;
+  verification_submitted_at?: string | null;
+  verification_reviewed_at?: string | null;
+  verification_decision_reason?: string | null;
+  verification_evidence?: {evidenceType:string;note?:string|null;createdAt?:string}[];
+  required_evidence?: string[];
+  missing_evidence?: string[];
 };
 type OrgReviewCase = {
   organization_id: string;
@@ -78,6 +88,7 @@ export default function Organizations() {
   >({});
   const [reviewingOrg, setReviewingOrg] = useState("");
   const [form, setForm] = useState<OrgForm>(blank);
+  const [organizationTypeChoice,setOrganizationTypeChoice]=useState("");
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -162,9 +173,36 @@ export default function Organizations() {
     void load();
   }, [load]);
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("register") === "1")
-      setShowForm(true);
-  }, []);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("register") === "1") setShowForm(true);
+    if (!token) return;
+    let cancelled = false;
+    async function restoreDraft() {
+      try {
+        const me = await api<{ email?: string; user?: { email?: string } }>("/api/v1/me", {}, token);
+        if (cancelled) return;
+        const accountEmail = String(me.email || me.user?.email || "").trim().toLowerCase();
+        const raw = localStorage.getItem("mpa.organization-registration-draft");
+        if (!raw) return;
+        const draft = JSON.parse(raw);
+        const validLifetime = Number(draft.savedAt || 0) > 0 && Number(draft.savedAt) <= Date.now() && Date.now() <= Number(draft.expiresAt || (Number(draft.savedAt) + 24 * 60 * 60 * 1000));
+        if (!validLifetime) { localStorage.removeItem("mpa.organization-registration-draft"); return; }
+        const representativeEmail = String(draft.representativeEmail || "").trim().toLowerCase();
+        if (!accountEmail) return;
+        if (!representativeEmail || representativeEmail !== accountEmail) {
+          localStorage.removeItem("mpa.organization-registration-draft");
+          return;
+        }
+        setForm({ ...blank, legalName: String(draft.legalName || ""), displayName: String(draft.displayName || ""), organizationType: String(draft.organizationType || ""), description: String(draft.description || ""), website: String(draft.website || ""), email: String(draft.email || ""), phone: String(draft.phone || ""), addressText: String(draft.addressText || "") });
+        setOrganizationTypeChoice(String(draft.organizationType || ""));
+        setShowForm(true);
+      } catch {
+        // Keep the draft, but do not prefill it until the signed-in account is confirmed.
+      }
+    }
+    void restoreDraft();
+    return () => { cancelled = true; };
+  }, [token]);
 
   async function register(e: FormEvent) {
     e.preventDefault();
@@ -183,7 +221,7 @@ export default function Organizations() {
           body: JSON.stringify({
             legalName: form.legalName.trim(),
             displayName: form.displayName.trim(),
-            organizationType: form.organizationType.trim() || undefined,
+            organizationType: organizationTypeChoice==="other" ? (form.organizationType.trim()||undefined) : (organizationTypeChoice||undefined),
             description: form.description.trim() || undefined,
             website: form.website.trim() || undefined,
             email: form.email.trim() || undefined,
@@ -197,12 +235,15 @@ export default function Organizations() {
         created,
         ...current.filter((x) => x.id !== created.id),
       ]);
+      localStorage.removeItem("mpa.organization-registration-draft");
       setForm(blank);
+      setOrganizationTypeChoice("");
       setShowForm(false);
       setNotice(
-        "Organization registration recorded. Reference ID: " +
-          created.id +
-          ". Verification is not yet approved; publishing remains subject to the verification workflow.",
+        "Organization registration recorded. Application reference: " +
+          (created.tracking_reference || "Reference pending") +
+          ". Status: " + (created.verification_case_status || created.verification_status || "draft").replaceAll("_", " ") +
+          ". Organization approval remains separate from representative email verification.",
       );
     } catch (e) {
       setError(
@@ -488,6 +529,23 @@ export default function Organizations() {
         </Card>
       ) : (
         <>
+          <Card>
+            <div className="h2">Your organization journey</div>
+            <p className="muted">You do not need to learn platform terminology. Follow these steps in order; publishing controls unlock only when the server confirms your organization is verified.</p>
+            <ol className="form-stack" style={{paddingLeft:22}}>
+              <li><b>Establish trust:</b> register the legal identity and authorized contact, then upload the required private documents.</li>
+              <li><b>Resolve blockers:</b> review the missing-evidence checklist and the latest reviewer note shown on each organization below.</li>
+              <li><b>Wait for a decision:</b> submitted organizations remain private for publishing until approval. If corrections are requested, provide them and submit again.</li>
+              <li><b>Publish and hire:</b> after verification, use the organization’s own identity to manage jobs, approved services and mentorship offers.</li>
+              <li><b>Find relevant people:</b> use the professional directory and job-specific eligibility information; only view or contact people within their sharing permissions.</li>
+              <li><b>Manage hiring:</b> open Recruitment to review applicants, move candidates through the hiring stages, schedule interviews, record decisions and track outcomes.</li>
+            </ol>
+            <div className="row" style={{flexWrap:"wrap",gap:8}}>
+              <a className="btn btn-ghost" href="/recruitment">Open recruitment</a>
+              <a className="btn btn-ghost" href="/network">Search professional network</a>
+              <a className="btn btn-ghost" href="/jobs">View job opportunities</a>
+            </div>
+          </Card>
           <Card id="org-registration">
             <div className="row">
               <div>
@@ -539,14 +597,18 @@ export default function Organizations() {
                 </label>
                 <label>
                   Organization type
-                  <input
-                    value={form.organizationType}
-                    onChange={(e) =>
-                      setForm({ ...form, organizationType: e.target.value })
-                    }
-                    placeholder="e.g. company, association, NGO"
-                  />
+                  <select value={organizationTypeChoice} onChange={e=>{setOrganizationTypeChoice(e.target.value);if(e.target.value!=="other")setForm(current=>({...current,organizationType:e.target.value}));else setForm(current=>({...current,organizationType:""}));}}>
+                    <option value="">Choose organization type</option>
+                    <option value="company">Company / business</option>
+                    <option value="nonprofit">Nonprofit / NGO</option>
+                    <option value="professional_association">Professional association</option>
+                    <option value="government">Government / public institution</option>
+                    <option value="educational_institution">Educational institution</option>
+                    <option value="cooperative">Cooperative</option>
+                    <option value="other">Other</option>
+                  </select>
                 </label>
+                {organizationTypeChoice==="other"&&<label>Describe organization type<input required maxLength={120} value={form.organizationType} onChange={e=>setForm(current=>({...current,organizationType:e.target.value}))} placeholder="Describe the organization type"/></label>}
                 <label>
                   Description
                   <textarea
@@ -650,26 +712,37 @@ export default function Organizations() {
                       <div className="muted">
                         {org.legal_name}
                         {org.role_code ? " · " + org.role_code : ""}
+                        <div className="muted">Application reference: {org.tracking_reference || "Pending"} · Last updated: {org.updated_at ? new Date(org.updated_at).toLocaleString() : "Not yet recorded"}</div>
+                        <div className="muted">Current status: {org.verification_case_status === "submitted" || org.verification_case_status === "pending" || org.verification_status === "pending" ? "Awaiting review" : org.verification_case_status === "correction_required" ? "Correction required" : org.verification_status === "verified" ? "Completed — organization verified" : (org.verification_case_status || org.verification_status || "draft").replaceAll("_", " ")}</div><div className="muted">Next action: {org.verification_case_status === "correction_required" ? "Provide the requested corrections" : org.verification_case_status === "submitted" || org.verification_case_status === "pending" || org.verification_status === "pending" ? "Wait for organization review; resubmission is unavailable while awaiting review" : org.verification_status === "verified" ? "Manage approved organization activities" : "Complete required evidence and submit for verification"}</div>
                       </div>
                     </div>
                     <Badge>
-                      {(org.verification_status || "unverified").replaceAll(
-                        "_",
-                        " ",
-                      )}
+                      {org.verification_case_status === "submitted" || org.verification_case_status === "pending" || org.verification_status === "pending" ? "Awaiting review" : org.verification_case_status === "correction_required" ? "Correction required" : org.verification_status === "verified" ? "Completed" : (org.verification_case_status || org.verification_status || "unverified").replaceAll("_", " ")}
                     </Badge>
                   </div>
                   <p className="muted">
-                    Verification evidence is private and must satisfy the active
-                    server-side requirements.
+                    {org.verification_case_status==="correction_required"
+                      ? "Changes are needed before this organization can be verified."
+                      : org.verification_case_status==="submitted"||org.verification_status==="pending"
+                        ? "Your evidence has been submitted. Publishing stays locked until the review is approved."
+                        : org.verification_status==="verified"
+                          ? "This organization is verified. You can manage approved hiring and public offers under this identity."
+                          : "Build trust by completing the required evidence checklist and submitting it for review."}
                   </p>
-                  <button
-                    className="btn btn-ghost"
-                    type="button"
-                    onClick={() => void submitVerification(org)}
-                  >
-                    Submit for verification
-                  </button>
+                  {org.verification_decision_reason&&<p aria-live="polite" aria-atomic="true"><b>Latest review note:</b> {org.verification_decision_reason}</p>}
+                  {(org.missing_evidence||[]).length>0&&org.verification_case_status!=="submitted"&&org.verification_case_status!=="pending"&&org.verification_status!=="pending"&&<div className="form-error" aria-live="polite" aria-atomic="true"><b>Still needed:</b> {(org.missing_evidence||[]).map(item=>item.replaceAll("_"," ")).join(", ")}. Upload these documents before submitting for review.</div>}
+                  {(org.required_evidence||[]).length>0&&<p className="muted">Required evidence: {(org.required_evidence||[]).map(item=>item.replaceAll("_"," ")).join(", ")}. Uploaded evidence: {(org.verification_evidence||[]).map(item=>item.evidenceType.replaceAll("_"," ")).filter((item,index,all)=>all.indexOf(item)===index).join(", ")||"none recorded"}.</p>}
+                  <div className="row" style={{flexWrap:"wrap",gap:8}}>
+                    {org.verification_status==="verified" ? <>
+                      <a className="btn btn-primary" href="/recruitment">Manage jobs and hiring</a>
+                      <a className="btn btn-ghost" href="/network">Find professional network</a>
+                      <a className="btn btn-ghost" href="/services">Publish services</a>
+                      <a className="btn btn-ghost" href="/mentorship">Mentorship offers</a>
+                    </> : <button className="btn btn-ghost" type="button" onClick={() => {setEvidenceOrg(org.id);document.getElementById("org-evidence")?.scrollIntoView({behavior:"smooth",block:"start"});}}>Complete trust checklist</button>}
+                    <button className="btn btn-ghost" type="button" onClick={() => void submitVerification(org)} disabled={org.verification_status==="verified"||org.verification_case_status==="submitted"||org.verification_case_status==="pending"}>
+                      Submit for verification
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -733,6 +806,7 @@ export default function Organizations() {
                     <option value="supporting_document">
                       Other supporting document
                     </option>
+                    {[...new Set(organizations.flatMap(org=>org.required_evidence||[]))].filter(type=>!["registration_document","representative_authorization","tax_document","trade_license","supporting_document"].includes(type)).map(type=><option value={type} key={type}>{type.replaceAll("_"," ")}</option>)}
                   </select>
                 </label>
                 <label>
@@ -862,7 +936,7 @@ export default function Organizations() {
                           />
                         </label>
                       </div>
-                      <button
+                      <button type="button"
                         className="btn btn-primary"
                         disabled={
                           reviewingOrg === row.organization_id ||
@@ -894,7 +968,7 @@ export default function Organizations() {
             </div>
             {loading ? (
               <p className="muted">Loading inquiries…</p>
-            ) : inquiries.length === 0 ? (
+            ) : inquiries.length === 0 && !error ? (
               <p className="muted">
                 No public job inquiries are currently visible to this account.
               </p>
@@ -1007,16 +1081,8 @@ export default function Organizations() {
           </Card>
         </>
       )}
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-      {notice && (
-        <p className="muted" role="status">
-          {notice}
-        </p>
-      )}
+      {error && <FormFeedback kind="error" message={error} onRetry={()=>void load()} retryLabel="Reload workspace" />}
+      {notice && <FormFeedback kind="success" message={notice} />}
       <Card>
         <div className="row">
           <div>

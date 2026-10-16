@@ -1,5 +1,6 @@
 "use client";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useId, useState } from "react";
+import { FormFeedback } from "../../components/form-feedback";
 import {
   CreditCard,
   Eye,
@@ -14,7 +15,9 @@ import {
 import { Card, Badge } from "../../components/ui";
 import { api, ApiError } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
+import { hasProfessionalIdentity } from "../../lib/identity-capabilities";
 import styles from "./profile.module.css";
+import GuidedProfessionalProfile from "./guided-professional-profile";
 type Profile = {
   user_id: string;
   email: string;
@@ -31,7 +34,11 @@ type Profile = {
   bio: string | null;
   visibility: string | null;
   completion_percent: number;
+  roles?: string[];
+  has_active_membership?: boolean;
+  profile_picture_file_id?: string | null;
 };
+type MembershipApplication={id:string;tracking_reference?:string|null;application_type:string;status:string;created_at:string;updated_at:string;fee_snapshot?:{productName?:string;productCode?:string;amount?:number|string;currency?:string}|null};
 type Preferences = {
   email_enabled: boolean;
   sms_enabled: boolean;
@@ -57,7 +64,7 @@ type TalentProfile = {
   portfolio_url?: string | null;
   experience?: { employer_name?: string | null; role_title: string; start_date?: string | null; end_date?: string | null; is_current: boolean; description?: string | null; visibility?: string }[];
 };
-type ExperienceDraft = { employerName: string; roleTitle: string; startDate: string; endDate: string; currentRole: boolean; description: string; visibility: string };
+type ExperienceDraft = { draftKey: string; employerName: string; roleTitle: string; startDate: string; endDate: string; currentRole: boolean; description: string; visibility: string };
 type TalentVisibility = {
   user_id: string;
   directory_visible: boolean;
@@ -92,13 +99,16 @@ const blank = {
   visibility: "public",
 };
 export default function Profile() {
+  const profileId = useId();
   const token = useUiStore((s) => s.token),
-    setToken = useUiStore((s) => s.setToken),
     clearToken = useUiStore((s) => s.clearToken),
     language = useUiStore((s) => s.language);
-  const [profile, setProfile] = useState<Profile | null>(null),
-    [form, setForm] = useState(blank),
-    [tokenDraft, setTokenDraft] = useState("");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [membershipApplications,setMembershipApplications]=useState<MembershipApplication[]>([]);
+  const [form, setForm] = useState(blank);
+  const [organizationOnly, setOrganizationOnly] = useState(false);
+  const [profilePictureUrl, setProfilePictureUrl] = useState("");
+  const [uploadingPicture, setUploadingPicture] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>({
     email_enabled: true,
     sms_enabled: true,
@@ -136,20 +146,34 @@ export default function Profile() {
   const load = useCallback(async () => {
     if (!token) {
       setProfile(null);
+      setMembershipApplications([]);
+      setOrganizationOnly(false);
       setError("");
       return;
     }
+    setOrganizationOnly(false);
     setLoading(true);
     setError("");
     setNotice("");
     try {
-      const [me, prefs, tp, tv] = await Promise.all([
-        api<Profile>("/api/v1/me", {}, token),
+      const me = await api<Profile>("/api/v1/me", {}, token);
+      const roles = Array.isArray(me.roles) ? me.roles : [];
+      if (!hasProfessionalIdentity(roles)) {
+        setProfile(me);
+        setOrganizationOnly(true);
+        setNotice("");
+        setError("");
+        return;
+      }
+      setOrganizationOnly(false);
+      const [prefs, tp, tv, membershipApps] = await Promise.all([
         api<Preferences>("/api/v1/notifications/preferences", {}, token),
         api<TalentProfile>("/api/v1/me/talent-profile", {}, token),
         api<TalentVisibility>("/api/v1/me/talent-visibility", {}, token),
+        api<MembershipApplication[]>("/api/v1/membership/applications/me", {}, token),
       ]);
       setProfile(me);
+      setMembershipApplications(Array.isArray(membershipApps)?membershipApps:[]);
       setPreferences(prefs);
       setTalentProfile(tp);
       setTalentVisibility({ ...emptyTalentVisibility, ...tv });
@@ -172,7 +196,7 @@ export default function Profile() {
         certifications: Array.isArray(tp.certifications) ? tp.certifications.join("\n") : "",
         portfolioUrl: tp.portfolio_url || "",
       });
-      setExperienceDrafts((tp.experience || []).map((item) => ({ employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
+      setExperienceDrafts((tp.experience || []).map((item) => ({ draftKey: crypto.randomUUID(), employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
       setForm({
         firstName: me.first_name || "",
         middleName: me.middle_name || "",
@@ -201,6 +225,60 @@ export default function Profile() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (!token || !profile?.profile_picture_file_id) {
+      setProfilePictureUrl("");
+      return;
+    }
+    let objectUrl = "";
+    let cancelled = false;
+    void fetch("/api/v1/files/" + encodeURIComponent(profile.profile_picture_file_id), {
+      headers: { Authorization: "Bearer " + token }, cache: "no-store",
+    }).then(async (response) => {
+      if (!response.ok) throw new Error("Picture unavailable");
+      const blob = await response.blob();
+      if (!cancelled) {
+        objectUrl = URL.createObjectURL(blob);
+        setProfilePictureUrl(objectUrl);
+      }
+    }).catch(() => { if (!cancelled) setProfilePictureUrl(""); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [token, profile?.profile_picture_file_id]);
+  async function uploadProfilePicture(file: File) {
+    if (!token) return;
+    if (!(file.type === "image/jpeg" || file.type === "image/png")) {
+      setError("Choose a JPG or PNG image."); return;
+    }
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) {
+      setError("Choose an image smaller than 10 MiB."); return;
+    }
+    setUploadingPicture(true); setError(""); setNotice("");
+    try {
+      const upload = await api<{uploadId:string;uploadToken:string;uploadUrl:string}>(
+        "/api/v1/files/uploads",
+        { method: "POST", body: JSON.stringify({ fileName: file.name, contentType: file.type, byteSize: file.size }) }, token,
+      );
+      const bytes = await fetch(upload.uploadUrl, {
+        method: "PUT", headers: { Authorization: "Bearer " + token, "Content-Type": "application/octet-stream", "X-Upload-Token": upload.uploadToken }, body: file,
+      });
+      if (!bytes.ok) throw new Error("The image upload could not be completed.");
+      const stored = await api<{id:string}>("/api/v1/files/uploads/" + encodeURIComponent(upload.uploadId) + "/confirm", { method: "POST", body: "{}" }, token);
+      await api("/api/v1/me/profile-picture", { method: "PATCH", body: JSON.stringify({ fileObjectId: stored.id }) }, token);
+      await load();
+      setNotice("Profile picture updated. You can now print your membership card.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : (e instanceof Error ? e.message : "We couldn't update your profile picture."));
+    } finally { setUploadingPicture(false); }
+  }
+  async function removeProfilePicture() {
+    if (!token) return;
+    setUploadingPicture(true); setError(""); setNotice("");
+    try {
+      await api("/api/v1/me/profile-picture", { method: "DELETE" }, token);
+      await load(); setNotice("Profile picture removed. Your membership card will use its photo placeholder.");
+    } catch (e) { setError(e instanceof ApiError ? e.message : "We couldn't remove your profile picture."); }
+    finally { setUploadingPicture(false); }
+  }
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
     if (!token) return;
@@ -263,19 +341,13 @@ export default function Profile() {
             headline: talentForm.headline.trim() || null,
             bio: talentForm.bio.trim() || null,
             visibility: talentForm.visibility,
-            educationSummary: talentForm.educationSummary.trim(),
-            qualifications: talentForm.qualifications.trim(),
-            skills: talentForm.skills.split(",").map((value) => value.trim()).filter(Boolean),
-            languages: talentForm.languages.split(",").map((value) => value.trim()).filter(Boolean),
-            certifications: talentForm.certifications.split("\n").map((value) => value.trim()).filter(Boolean),
-            portfolioUrl: talentForm.portfolioUrl.trim(),
             experience: experienceDrafts.map((item) => ({ employerName: item.employerName.trim() || null, roleTitle: item.roleTitle.trim(), startDate: item.startDate || null, endDate: item.currentRole ? null : item.endDate || null, currentRole: item.currentRole, description: item.description.trim() || null, visibility: item.visibility } )).filter((item) => item.roleTitle),
           }),
         },
         token,
       );
       setTalentProfile(saved);
-      setExperienceDrafts((saved.experience || []).map((item) => ({ employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
+      setExperienceDrafts((saved.experience || []).map((item) => ({ draftKey: crypto.randomUUID(), employerName: item.employer_name || "", roleTitle: item.role_title || "", startDate: item.start_date ? String(item.start_date).slice(0,10) : "", endDate: item.end_date ? String(item.end_date).slice(0,10) : "", currentRole: Boolean(item.is_current), description: item.description || "", visibility: item.visibility || "members" })));
       setNotice("Professional directory profile saved.");
     } catch (e) {
       setError(
@@ -354,6 +426,49 @@ export default function Profile() {
   }
   const update = (key: keyof typeof blank, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+  const latestMembershipApplication=membershipApplications[0];
+  if (organizationOnly) return (
+    <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
+      <Card>
+        <div className="eyebrow">Organization workspace</div>
+        <h1 className="h1">This account uses an organization profile.</h1>
+        <p className="muted">Professional directory profiles are separate from organization profiles. This account cannot access or edit a professional profile. Open the organization workspace to manage organizations you are authorized to access.</p>
+        <p><a className="btn btn-primary" href="/organizations">Open organization workspace</a></p>
+      </Card>
+    </div>
+  );
+  if(profile&&profile.has_active_membership===false&&latestMembershipApplication)return (
+    <div className={`grid ${styles.page}`} style={{gap:18,minWidth:0,width:"100%"}}>
+      <Card>
+        <div className="eyebrow">Membership application</div>
+        <div className="row" style={{justifyContent:"space-between",flexWrap:"wrap"}}>
+          <h1 className="h1">Your application is already on file.</h1>
+          <Badge tone={["rejected","withdrawn"].includes(latestMembershipApplication.status)?"gold":"slate"}>{latestMembershipApplication.status.replaceAll("_"," ")}</Badge>
+        </div>
+        <p className="muted">Your professional profile stays read-only until membership review, payment verification and activation are complete. Continue the existing application instead of starting a duplicate.</p>
+        <div className="grid grid-2" style={{gap:12,padding:14,border:"1px solid var(--border)",borderRadius:10}}>
+          <div><span className="muted">Application reference</span><p><strong>{latestMembershipApplication.tracking_reference||latestMembershipApplication.id}</strong></p></div>
+          <div><span className="muted">Plan at submission</span><p><strong>{latestMembershipApplication.fee_snapshot?.productName||latestMembershipApplication.fee_snapshot?.productCode||"Membership plan"}</strong>{latestMembershipApplication.fee_snapshot?.amount!=null?` · ${latestMembershipApplication.fee_snapshot.currency||""} ${latestMembershipApplication.fee_snapshot.amount}`:""}</p></div>
+          <div><span className="muted">Last updated</span><p><strong>{new Date(latestMembershipApplication.updated_at||latestMembershipApplication.created_at).toLocaleString()}</strong></p></div>
+          <div><span className="muted">Next step</span><p><strong>{latestMembershipApplication.status==="correction_required"?"Respond to the requested correction":latestMembershipApplication.status==="payment_pending"?"Review payment instructions and submit evidence":latestMembershipApplication.status==="paid"?"Wait for activation after payment verification":"Track the existing application"}</strong></p></div>
+        </div>
+        <div className="row" style={{flexWrap:"wrap",marginTop:16}}>
+          <a className="btn btn-primary" href="/membership#my-applications">Continue application</a>
+          <a className="btn btn-ghost" href="/track">View application timeline</a>
+        </div>
+      </Card>
+    </div>
+  );
+  if (profile && profile.has_active_membership === false) return (
+    <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
+      <Card>
+        <div className="eyebrow">Professional profile</div>
+        <h1 className="h1">Membership is required to edit your profile.</h1>
+        <p className="muted">Your current profile remains read-only until your membership fee is verified and your membership is activated. You can still browse public opportunities, request public services, and submit a job-interest request.</p>
+        <p><a className="btn btn-primary" href="/membership?next=%2Fprofile">Apply for or renew membership</a> <a className="btn btn-ghost" href="/dashboard">Return to dashboard</a></p>
+      </Card>
+    </div>
+  );
   return (
     <div className={`grid ${styles.page}`} style={{ gap: 18, minWidth: 0, width: "100%" }}>
       <div>
@@ -370,41 +485,14 @@ export default function Profile() {
           <div className="row">
             <LogIn color="var(--primary)" />
             <div>
-              <div className="h2">Connect your account</div>
+              <div className="h2">Sign in to your account</div>
               <p className="muted">
-                Sign in to load and edit your profile. A development bearer
-                token may be pasted for local testing only.
+                Sign in securely to load and manage your profile, professional
+                details and communication preferences.
               </p>
+              <p><a className="btn btn-primary" href="/login?next=%2Fprofile">Sign in</a></p>
             </div>
           </div>
-          <label htmlFor="profile-token">Development bearer token</label>
-          <input
-            id="profile-token"
-            aria-label="Bearer token"
-            type="password"
-            placeholder="Paste token only for local testing"
-            value={tokenDraft}
-            onChange={(e) => setTokenDraft(e.target.value)}
-            style={{
-              width: "100%",
-              padding: 11,
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              background: "var(--bg)",
-              color: "var(--text)",
-            }}
-          />
-          <button
-            className="btn btn-primary"
-            type="button"
-            disabled={!tokenDraft.trim()}
-            onClick={() => setToken(tokenDraft.trim())}
-          >
-            Connect session
-          </button>
-          <p className="muted">
-            Tokens are stored in this browser session only.
-          </p>
         </Card>
       ) : (
         <>
@@ -422,7 +510,24 @@ export default function Profile() {
               </div>
               <ShieldCheck color="var(--primary)" />
             </div>
-            {loading && <p role="status">Loading profile from your account…</p>}
+            {loading && <p aria-live="polite" aria-atomic="true">Loading profile from your account…</p>}
+            <section aria-labelledby={`${profileId}-picture-heading`} className="grid" style={{ gridTemplateColumns: "auto minmax(0,1fr)", alignItems: "center", gap: 14, padding: 14, border: "1px solid var(--border)", borderRadius: 12 }}>
+              <div style={{ width: 92, height: 92, borderRadius: 12, overflow: "hidden", display: "grid", placeItems: "center", background: "linear-gradient(145deg,#0A3258,#174A78)", color: "#fff", border: "2px solid #97C024", fontSize: 28, fontWeight: 800 }}>
+                {profilePictureUrl ? <img src={profilePictureUrl} alt="Your professional profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>{(profile?.first_name?.[0] || "M").toUpperCase()}{(profile?.last_name?.[0] || "P").toUpperCase()}</span>}
+              </div>
+              <div className="grid" style={{ gap: 7 }}>
+                <h2 id={`${profileId}-picture-heading`} className="h2" style={{ margin: 0 }}>Profile photograph</h2>
+                <p className="muted" style={{ margin: 0 }}>JPG or PNG, up to 10 MiB. Your image is stored privately and used on your membership card; a branded placeholder is used if you skip this.</p>
+                <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+                  <label className="btn btn-primary" style={{ cursor: uploadingPicture ? "wait" : "pointer" }}>
+                    {uploadingPicture ? "Saving photo…" : profile?.profile_picture_file_id ? "Change photograph" : "Upload photograph"}
+                    <input aria-label="Upload professional profile photograph" type="file" accept="image/jpeg,image/png" disabled={uploadingPicture || loading} onChange={(e) => { const input=e.currentTarget; const file=input.files?.[0]; input.value=""; if(file) void uploadProfilePicture(file); }} style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }} />
+                  </label>
+                  {profile?.profile_picture_file_id && <button className="btn btn-ghost" type="button" disabled={uploadingPicture} onClick={() => void removeProfilePicture()}>Remove photo</button>}
+                  <a className="btn btn-ghost" href="/membership/card">Preview / print membership ID</a>
+                </div>
+              </div>
+            </section>
             <form className="grid" style={{ gap: 12 }} onSubmit={saveProfile}>
               <p className={styles.formHint}>
                 Fields marked <b>*</b> are required to save your identity. Other
@@ -437,8 +542,7 @@ export default function Profile() {
                     ["displayName", "Display name (optional)"],
                     ["phone", "Phone (optional)"],
                     ["dateOfBirth", "Date of birth (optional)"],
-                    ["sex", "Sex (optional)"],
-                    ["nationality", "Nationality (optional)"],
+                    ["sex", "Gender (optional)"],
                   ] as const
                 ).map(([key, label]) => (
                   <div key={key}>
@@ -449,10 +553,9 @@ export default function Profile() {
                         value={form[key]}
                         onChange={(e) => update(key, e.target.value)}
                       >
-                        <option value="">Prefer not to say</option>
-                        <option value="female">Female</option>
+                        <option value="">Choose gender</option>
                         <option value="male">Male</option>
-                        <option value="other">Other</option>
+                        <option value="female">Female</option>
                       </select>
                     ) : (
                       <input
@@ -468,18 +571,18 @@ export default function Profile() {
                 ))}
               </div>
               <div>
-                <label htmlFor="profile-headline">Professional headline</label>
+                <label htmlFor={`${profileId}-headline`}>Professional headline</label>
                 <input
-                  id="profile-headline"
+                  id={`${profileId}-headline`}
                   value={form.headline}
                   onChange={(e) => update("headline", e.target.value)}
                   maxLength={180}
                 />
               </div>
               <div>
-                <label htmlFor="profile-bio">Professional bio</label>
+                <label htmlFor={`${profileId}-bio`}>Professional bio</label>
                 <textarea
-                  id="profile-bio"
+                  id={`${profileId}-bio`}
                   value={form.bio}
                   onChange={(e) => update("bio", e.target.value)}
                   rows={4}
@@ -487,11 +590,11 @@ export default function Profile() {
                 />
               </div>
               <div>
-                <label htmlFor="profile-visibility">
+                <label htmlFor={`${profileId}-visibility`}>
                   Professional directory visibility
                 </label>
                 <select
-                  id="profile-visibility"
+                  id={`${profileId}-visibility`}
                   value={form.visibility}
                   onChange={(e) => update("visibility", e.target.value)}
                 >
@@ -628,19 +731,14 @@ export default function Profile() {
                   }
                 />
               </label>
-              <div className="grid" style={{ gap: 12, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-                <div><h3 className="h2">Education and professional credentials</h3><p className="muted">Add a concise education summary, qualifications, skills, languages, and certifications. These details help employers and service requesters assess relevant experience. Do not list a credential as verified unless it has been verified by the platform.</p></div>
-                <label>Education summary<textarea rows={3} value={talentForm.educationSummary} onChange={(e) => setTalentForm((f) => ({ ...f, educationSummary: e.target.value }))} maxLength={3000} placeholder="Institutions, degrees, fields of study, and graduation years"/></label>
-                <label>Qualifications and licenses<textarea rows={3} value={talentForm.qualifications} onChange={(e) => setTalentForm((f) => ({ ...f, qualifications: e.target.value }))} maxLength={3000} placeholder="Professional qualifications, licenses, and issuing bodies"/></label>
-                <label>Skills (comma-separated)<input value={talentForm.skills} onChange={(e) => setTalentForm((f) => ({ ...f, skills: e.target.value }))} maxLength={2000} placeholder="Project management, accounting, data analysis"/></label>
-                <label>Languages (comma-separated)<input value={talentForm.languages} onChange={(e) => setTalentForm((f) => ({ ...f, languages: e.target.value }))} maxLength={1000} placeholder="Afaan Oromoo, Amharic, English"/></label>
-                <label>Certifications (one per line)<textarea rows={3} value={talentForm.certifications} onChange={(e) => setTalentForm((f) => ({ ...f, certifications: e.target.value }))} maxLength={3000} placeholder="Credential — issuer — year"/></label>
-                <label>Portfolio or professional website (HTTPS)<input type="url" value={talentForm.portfolioUrl} onChange={(e) => setTalentForm((f) => ({ ...f, portfolioUrl: e.target.value }))} placeholder="https://example.com"/></label>
+              <div className="grid" style={{ gap: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                <h3 className="h2">Guided education, classifications and portfolio</h3>
+                <p className="muted">Structured education records, managed classifications, languages, and traceable portfolio items are edited in the guided section below. This replaces the previous comma-separated and free-text credential fields.</p>
               </div>
               <div className="grid" style={{ gap: 12, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-                <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><div><h3 className="h2">Work experience</h3><p className="muted">Describe relevant roles, dates, responsibilities, and outcomes. You can keep entries member-only or make them part of your public-safe profile.</p></div><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => [...rows, { employerName: "", roleTitle: "", startDate: "", endDate: "", currentRole: false, description: "", visibility: "members" }])}>Add experience</button></div>
+                <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}><div><h3 className="h2">Work experience</h3><p className="muted">Describe relevant roles, dates, responsibilities, and outcomes. You can keep entries member-only or make them part of your public-safe profile.</p></div><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => [...rows, { draftKey: crypto.randomUUID(), employerName: "", roleTitle: "", startDate: "", endDate: "", currentRole: false, description: "", visibility: "members" }])}>Add experience</button></div>
                 {experienceDrafts.length === 0 && <p className="muted">No work experience entries added. Add one to improve your professional profile.</p>}
-                {experienceDrafts.map((item, index) => <div className="grid" key={index} style={{ gap: 10, padding: 12, border: "1px solid var(--border)", borderRadius: 12, minWidth: 0 }}>
+                {experienceDrafts.map((item, index) => <div className="grid" key={item.draftKey} style={{ gap: 10, padding: 12, border: "1px solid var(--border)", borderRadius: 12, minWidth: 0 }}>
                   <div className="row" style={{ justifyContent: "space-between" }}><b>Experience {index + 1}</b><button className="btn btn-ghost" type="button" onClick={() => setExperienceDrafts((rows) => rows.filter((_, i) => i !== index))}>Remove</button></div>
                   <div className="grid grid-2"><label>Role / job title<input required value={item.roleTitle} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, roleTitle: e.target.value } : row))} maxLength={180}/></label><label>Employer / organization<input value={item.employerName} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, employerName: e.target.value } : row))} maxLength={180}/></label><label>Start date<input type="date" value={item.startDate} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, startDate: e.target.value } : row))}/></label><label>End date<input type="date" value={item.endDate} disabled={item.currentRole} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, endDate: e.target.value } : row))}/></label></div>
                   <label style={{ display: "flex", alignItems: "center", gap: 8 }}><input type="checkbox" checked={item.currentRole} onChange={(e) => setExperienceDrafts((rows) => rows.map((row, i) => i === index ? { ...row, currentRole: e.target.checked, endDate: e.target.checked ? "" : row.endDate } : row))}/>I currently work in this role</label>
@@ -670,6 +768,7 @@ export default function Profile() {
               </button>
             </form>
           </Card>
+          <GuidedProfessionalProfile onNationalitySaved={(value) => { setForm((f) => ({ ...f, nationality: value })); setProfile((p) => p ? ({ ...p, nationality: value }) : p); }} />
           <Card>
             <div className="row">
               <div>
@@ -765,7 +864,7 @@ export default function Profile() {
               ))}
             </div>
             <div style={{ marginTop: 14 }}>
-              <button
+              <button type="button"
                 className="btn btn-primary"
                 onClick={savePreferences}
                 disabled={savingPreferences}
@@ -822,7 +921,7 @@ export default function Profile() {
               </div>
             </div>
           </Card>
-          <button
+          <button type="button"
             className="btn btn-ghost"
             onClick={async () => {
               try {
@@ -839,16 +938,8 @@ export default function Profile() {
           </button>
         </>
       )}
-      {error && (
-        <p role="alert" className="form-error">
-          {error}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className="muted">
-          {notice}
-        </p>
-      )}
+      {error && <FormFeedback kind="error" message={error} />}
+      {notice && <FormFeedback kind="success" message={notice} />}
       <div className="footer-note">
         <Badge>Adl · Amanah · Tabayyun · Satr</Badge>
       </div>

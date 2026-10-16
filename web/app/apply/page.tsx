@@ -89,7 +89,7 @@ export default function Apply() {
           build verified working relationships.
         </p>
         <div className="choice-grid">
-          <button
+          <button type="button"
             className={kind === "member" ? "choice active" : "choice"}
             onClick={() => setKind("member")}
           >
@@ -97,7 +97,7 @@ export default function Apply() {
             <b>Join as a professional</b>
             <span>Membership, verification, opportunities and mentorship.</span>
           </button>
-          <button
+          <button type="button"
             className={kind === "organization" ? "choice active" : "choice"}
             onClick={() => setKind("organization")}
           >
@@ -135,7 +135,7 @@ export default function Apply() {
                 </p>
               </div>
             )}
-            <button className="btn btn-primary">
+            <button type="submit" className="btn btn-primary">
               Submit membership application <CheckCircle2 size={16} />
             </button>
           </form>
@@ -186,7 +186,7 @@ export default function Apply() {
                 }
               />
             </label>
-            <button className="btn btn-primary">
+            <button type="submit" className="btn btn-primary">
               Register organization <Building2 size={16} />
             </button>
           </form>

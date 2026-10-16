@@ -209,3 +209,103 @@ Required sequencing:
 6. **P2 — reporting and homepage:** role-scoped configurable reports with branded PDF/XLSX output; live published homepage feeds for services, jobs, professional discovery, mentorship and demand topics.
 
 For each increment, update the screen → API → service → persistence row in [31 — Workflow Reconciliation Matrix](31-workflow-reconciliation-matrix.md), add role-positive and role-negative tests, and record actual manual validation against the exact commit. Do not mark an increment accepted merely because the documentation or a UI shell exists.
+
+## P0 implementation update — 2026-10-14
+
+The first P0 code increment is committed on `reconciliation/holistic-gates`, with the full progress and remaining validation record in [39 — P0 Implementation Progress and Roadmap](39-p0-implementation-progress-and-roadmap.md). Current implementation includes organization-only professional-profile redaction/denial, current-membership date guards for profile editing and provider publication/discovery, approved-application + verified-payment enforcement, and a no-vacancy job-interest workflow with versioned, field-scoped, revocable named-employer consent plus Support Desk and employer-scoped routes.
+
+**Acceptance remains OPEN.** Unit tests, TypeScript/build, disposable migration/rerun, API privacy matrix and browser journeys have not been executed for this branch head. No CI workflow is to be created or enabled until all current gaps are implemented. Do not merge or deploy.
+
+## 11. Current implementation checkpoint — 2026-10-14
+
+Work continues on draft PR [#3](https://github.com/jafermenza1/MPA-Professsionals-Network/pull/3), branch `reconciliation/holistic-gates`. Keep it open until all currently registered gaps are implemented and accepted. No GitHub Actions CI workflow is enabled during this remediation period.
+
+### P0 status
+P0 code for organization/professional profile boundaries, current membership and payment/approval gates, public service requests by non-members, and consent-based job-seeker demand is committed. Manual test, migration rerun, build and privacy-matrix evidence are still outstanding; P0 is not accepted.
+
+### P1 status
+The first guided professional profile increment is committed:
+- structured education rows and multiple portfolio records;
+- admin-managed reference list UI and CSV import/export endpoints;
+- starter choices and `Other` custom values;
+- Gender label with Male/Female options;
+- optional private evidence upload using the existing authorization/upload/confirm lifecycle, including mobile camera capture where supported and owner-only download;
+- visibility-filtered education and portfolio in the professional directory projection;
+- focused regression tests.
+
+**Not yet validated:** migration apply/rerun, unit tests, TypeScript/build, CSV edge cases, and private evidence owner/other-user/public-API checks. Reference-list edits currently update the published version in place; the full draft/approval/publication version workflow remains outstanding.
+
+### Next work order
+1. Validate P0 and P1 manually against a disposable PostgreSQL database and correct failures without weakening existing tests.
+2. Finish reference portfolio versioning and import preview/review before treating administrator reference data as production-grade.
+3. Continue P1 service/mentorship lifecycle, private unmet-demand intake, publication, matching, interest levels and outcomes.
+4. Continue accessible forms, retained input on errors, and truthful save/submission/retry notifications.
+5. Implement P2 configurable role-scoped reporting and branded PDF/XLSX export, plus live published homepage feeds.
+6. Complete P3 manual E2E, isolation/security, backup/restore rehearsal, monitoring and deployment acceptance.
+7. Keep PR #3 open/draft and do not restore CI until all current gaps are implemented and accepted.
+
+
+### P1 status — marketplace and demand implementation checkpoint (2026-10-14)
+
+**Committed to the working branch; not accepted.** Added private unmet-service/mentorship demand intake, Support Desk review, separately authored public demand topics, unique per-user interest levels and aggregate counts; added service/mentor listing moderation, public discovery gates, organization-owned service listings and organization-scoped service-request actions. New entry points are `/service-demand` and `/admin/marketplace`. Progress and explicit residual gaps are recorded in [39 — P0/P1 Implementation Progress and Roadmap](39-p0-implementation-progress-and-roadmap.md) and [31 — Workflow Reconciliation Matrix](31-workflow-reconciliation-matrix.md).
+
+**Not yet implemented or proven:** organization-owned mentorship offers; durable notifications; full route/UI E2E; privacy-negative tests; migration apply/rerun; TypeScript/build; unit/API suite. No CI workflow was added. Keep PR #3 open/draft and do not merge/deploy until all current gaps are implemented and accepted.
+
+
+### P2 status — reporting, exports and bulk approved-member administration (2026-10-14)
+
+**Code committed on `reconciliation/holistic-gates`; validation not run.** Added `/admin/reports` with a permission-filtered catalogue, date/status/search filters, on-screen results, PDF/XLSX downloads and audit events for report generation/export. Initial reports cover membership status and member directory, payment/reconciliation states, generalized service/mentorship demand interest, provider listing moderation and administrative audit activity. Sensitive member/audit reports are restricted to platform administrators; payment reconciliation is also available to finance officers.
+
+Added `/admin/members` using the existing `membership_import` / `membership_import_row` match-and-provenance model. It includes a required-column CSV template, validation preview, existing-account matching, conflict detection, reasoned batch apply, member-detail CSV/XLSX export, and one-time password-claim invitations for newly created accounts. Imported historical payments are not created or marked as verified.
+
+**Still open:** run the focused P2 tests and full suite; apply/rerun migrations on disposable PostgreSQL; validate report SQL against the actual schema; open generated PDF/XLSX in real clients; test permission-denied and cross-scope cases; prove the email outbox delivers the invitation template; and verify import rollback/idempotency under duplicate/race scenarios. Do not merge/deploy or restore CI as part of this increment.
+
+
+## P2 live homepage feeds checkpoint — 2026-10-14 (code committed, acceptance pending)
+
+Added `web/app/live-network-feeds.tsx` and `web/app/live-network-feeds.module.css`, integrated below the homepage journey cards in `web/app/page.tsx`. Five independent, bounded public feeds now request published services, public jobs, opt-in professional discovery, approved public mentors, and published service/mentorship demand topics. Each feed has its own loading skeleton, empty-state language, failure message, retry action and contact-support path; one API failure does not replace or block other sections. Feed copy is written for people first—what is available, who may help, where help is needed and what to do next—rather than promotional jargon. Layout adapts from two-column desktop cards to a single-column mobile experience, follows shared light/dark theme tokens, includes keyboard focus and reduced-motion behavior, and avoids invented counts or private demand details.
+
+**Not yet validated:** no TypeScript check, production build, browser test, API-failure simulation, accessibility audit or current-head manual acceptance has been run. Confirm the actual route behavior for all five destinations, public/consent filtering in production data, partial failures, empty feeds, mobile widths and keyboard/screen-reader operation. The feed does not claim that displayed items are new, popular, verified beyond the underlying publication rules, or guaranteed to remain available after the response is loaded. Keep PR #3 draft/open and do not deploy or merge based on this code-only checkpoint.
+
+
+Implementation detail: `e2e/homepage-live-feeds.spec.js` was added with three Playwright scenarios for all five feed sections, one-section API failure/retry while other feeds remain visible, and truthful empty states. This test file is committed but **has not been executed**; it is test intent, not validation evidence.
+
+
+## In-app notification action center — foundation checkpoint (15 October 2026)
+
+- Recorded the complete product decision, seven notification categories, role-aware recipient/privacy rules, interaction and delivery semantics, API surface, implementation inventory and acceptance plan in `docs/44-in-app-notification-action-center.md`.
+- Added an additive notification schema migration; an authenticated inbox service with counts, filtering, read/read-all/archive and audit events; API routes; a notification inbox page; a shared-shell unread badge; and category/title/body/action metadata for membership-generated notifications. Existing email operations and the notification outbox are retained.
+- Added storage/API support for per-category in-app preferences and an optional digest preference. The membership workflow notifier and shared workflow-email notifier now honor global/category in-app preferences; the inbox and unread counts apply the same preference filter. Scheduled digest delivery is not implemented. Complete producer-inventory and preference behavior tests remain required.
+- **Acceptance NOT RUN.** No tests, typecheck, production build, migration execution/rerun, browser or accessibility review is claimed. Workflow wiring across every category, administrator intervention aggregation, category preference enforcement across all producers, and cross-role privacy proof remain explicit follow-up. Keep PR #3 draft/open; do not merge or deploy.
+
+
+
+## Action-center workflow routing increment — 15 October 2026
+
+- Centralized notification category resolution, preference enforcement, safe next-action links, transition-aware deduplication and persisted notification metadata through `src/platform/notifications.js`; `queueWorkflowEmail` now uses the shared in-app policy while retaining the existing email outbox boundary.
+- Wired persisted workflow notifications and recipient resolution across membership/review/payment, verification/appeals, organization verification/access, recruitment/application/offer/interview, mentorship/matching/sessions, services/moderation/delivery/payment, and account-security transitions.
+- Security-critical account notices bypass optional category/global notification preferences and remain visible in inbox/count projections. Reviewer links point to existing authorized queues; no parallel workflow queue was introduced.
+- Events/learning notifications remain unwired because those modules are not deployed. No external calendar/Moodle/SMS/push delivery is claimed.
+- Added `test/platform/workflow-notification-routing.test.js`, `docs/45-workflow-notification-routing.md`, and additive migration `20261015210000_notification_category_legacy_backfill.sql` for historical underscore-style event codes. **Tests, migrations, build and browser validation have not been run.** Continue acceptance against the current head and preserve PR #3 as draft/open; no merge or deployment.
+
+
+## Increment 4 — Fast discovery experience (implementation checkpoint; acceptance open)
+
+The current branch adds bounded discovery paging for professionals, opportunities, services and mentors; shared accessible pagination controls; and a new public organization directory constrained to verified, explicitly public organizations. Search criteria remain routed to existing server-side filters, and protected/private workspace routes remain separate. The install prompt is now delayed until 10 seconds after first page load and shown once per browser profile unless storage is unavailable.
+
+Implementation and acceptance details are recorded in docs/46-first-increment-workflow-routing-corrections.md and docs/31-workflow-reconciliation-matrix.md. Static contract tests were added but have not been executed. **Increment 4 is not accepted.** Current gaps include consistent account-owned saved items for professional profiles, organizations, services and mentors; SQL-efficient scope-aware job pagination; dedicated public profile routes where the existing detail panels are insufficient; and exact-head build/API/browser/accessibility validation. Keep PR #3 draft/open; do not merge or deploy.
+
+
+## Increment 4 follow-up — saved discovery items, SQL paging and detail pages (IMPLEMENTED, NOT ACCEPTED)
+
+- Added account-owned saved-item persistence for professionals, verified public organizations, visible service listings and eligible mentors, plus `/saved` management UI and save/unsave controls. Existing saved jobs and talent saved searches remain unchanged.
+- Added owner-authenticated saved-item APIs. Save writes verify target visibility; list reads are owner-scoped and re-check public/member visibility. Unavailable targets are omitted.
+- Opportunity pagination now applies posting-scope visibility in SQL before count/limit/offset, using deterministic ordering; this removes the old all-results-in-memory + per-result membership-query pattern.
+- Added dedicated detail routes for professionals, organizations, services and mentors, with server-side visibility checks and text-first loading.
+- Migration `20261016200000_saved_discovery_items.sql` is committed to the branch but has not been applied to any database.
+- Validation is open: do not claim acceptance until migration-backed API tests, cross-account authorization tests, typecheck/build, browser, responsive and throttled-network checks pass on the exact head.
+
+
+## App-store packaging readiness
+
+The repository assessment is recorded in [docs/47-app-store-packaging-readiness.md](47-app-store-packaging-readiness.md). Android distribution is feasible via a hosted PWA Trusted Web Activity or Capacitor; iOS distribution is feasible via Capacitor but needs app-specific utility beyond a thin website wrapper to reduce App Review Guideline 4.2 risk. No native project, signed package, store submission or approval has been produced. Packaging follows Increment 4 acceptance and requires explicit authorization.

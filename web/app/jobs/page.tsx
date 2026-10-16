@@ -1,9 +1,10 @@
 "use client";
 
-import {FormEvent,useCallback,useEffect,useState} from "react";
+import {FormEvent,useCallback,useEffect,useId,useState} from "react";
 import {Bookmark,Building2,Clock3,MapPin,SlidersHorizontal,Users,RefreshCw} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
+import {DiscoveryPagination} from "../../components/discovery-pagination";
 import {useUiStore} from "../../lib/store";
 
 type Job={
@@ -12,9 +13,12 @@ type Job={
  seniority_level?:string;department?:string;application_deadline?:string;salary_min?:number|string|null;
  salary_max?:number|string|null;salary_currency?:string|null;
 };
+type Eligibility={eligible:boolean;summary:string;results:{code:string;eligible:boolean;reason:string}[]};
+type EligibilityResult=Eligibility|{error:string};
 type Filters={q:string;location:string;employmentType:string;workMode:string;seniority:string;postingScope:string};
 const initialFilters:Filters={q:"",location:"",employmentType:"",workMode:"",seniority:"",postingScope:""};
 
+function EligibilityDetails({result}:{result?:EligibilityResult}){if(!result)return <p className="muted">Eligibility has not been checked yet.</p>;if("error" in result)return <p className="form-error" role="alert">{result.error}</p>;return <>{<p>{result.summary}</p>}{result.results.length>0&&<ul>{result.results.map((rule,index)=><li key={rule.code}>{rule.eligible?"Meets requirement: ":"Still needed: "}{rule.reason}</li>)}</ul>}</>;}
 function queryString(filters:Filters){
  const p=new URLSearchParams();
  for(const [key,value] of Object.entries(filters)) if(value.trim()) p.set(key,value.trim());
@@ -29,9 +33,11 @@ function salary(job:Job){
 }
 
 export default function Jobs(){
+ const jobsId=useId();
  const token=useUiStore(s=>s.token);
  const [filters,setFilters]=useState<Filters>(initialFilters);
  const [jobs,setJobs]=useState<Job[]>([]);
+ const [page,setPage]=useState(0);const [hasMore,setHasMore]=useState(false);const pageSize=20;
  const [saved,setSaved]=useState<string[]>([]);
  const [expanded,setExpanded]=useState<Record<string,boolean>>({});
  const [loading,setLoading]=useState(true);
@@ -42,14 +48,17 @@ export default function Jobs(){
  const [coverLetters,setCoverLetters]=useState<Record<string,string>>({});
  const [draftIds,setDraftIds]=useState<Record<string,string>>({});
  const [applyingId,setApplyingId]=useState("");
+ const [eligibilityByJob,setEligibilityByJob]=useState<Record<string,EligibilityResult>>({});
+ const [eligibilityLoading,setEligibilityLoading]=useState<Record<string,boolean>>({});
 
- const loadJobs=useCallback(async(nextFilters:Filters)=>{
+ const loadJobs=useCallback(async(nextFilters:Filters,pageIndex=0)=>{
    setLoading(true);setError("");setNotice("");
    try{
-     const qs=queryString(nextFilters);
-     const payload=await api<{items:Job[]}|Job[]>(`/api/v1/jobs${qs?"?"+qs:""}`,{},token||undefined);
+     const params=new URLSearchParams(queryString(nextFilters));params.set("limit",String(pageSize));params.set("offset",String(pageIndex*pageSize));
+     const payload=await api<{items:Job[];hasMore?:boolean;total?:number}|Job[]>(`/api/v1/jobs?${params.toString()}`,{},token||undefined);
      const items=Array.isArray(payload)?payload:payload?.items;
-     setJobs(Array.isArray(items)?items.filter(j=>j&&typeof j.id==="string"&&typeof j.title==="string"):[]);
+     const valid=Array.isArray(items)?items.filter(j=>j&&typeof j.id==="string"&&typeof j.title==="string"):[];
+     setJobs(valid);setHasMore(Array.isArray(payload)?valid.length===pageSize:Boolean(payload.hasMore));setPage(pageIndex);
      if(!Array.isArray(items))setError("The service returned an unexpected jobs response. Please refresh and try again.");
    }catch(e){
      setJobs([]);
@@ -65,7 +74,7 @@ export default function Jobs(){
    return ()=>{active=false};
  },[token]);
 
- async function submitFilters(e:FormEvent){e.preventDefault();await loadJobs(filters);}
+ async function submitFilters(e:FormEvent){e.preventDefault();await loadJobs(filters,0);}
  async function createAlert(){
    if(!token){setNotice("Sign in to save a job alert for these search criteria.");return;}
    setCreatingAlert(true);setError("");setNotice("");
@@ -107,19 +116,38 @@ export default function Jobs(){
    const isOpen=Boolean(expanded[job.id]);
    if(isOpen){setExpanded(current=>({...current,[job.id]:false}));return;}
    setExpanded(current=>({...current,[job.id]:true}));
-   if(job.description!==undefined)return;
-   try{
-     const detail=await api<Job>(`/api/v1/jobs/${encodeURIComponent(job.id)}`,{},token||undefined);
-     setJobs(current=>current.map(item=>item.id===job.id?{...item,...detail}:item));
-   }catch(e){setError(e instanceof ApiError?e.message:"We couldn't load the opportunity details.");}
+   const tasks:Promise<unknown>[]=[];
+   if(job.description===undefined)tasks.push(api<Job>("/api/v1/jobs/"+encodeURIComponent(job.id),{},token||undefined).then(detail=>setJobs(current=>current.map(item=>item.id===job.id?{...item,...detail}:item))).catch(e=>setError(e instanceof ApiError?e.message:"We couldn't load the opportunity details.")));
+   if(token&&!eligibilityByJob[job.id]){
+     setEligibilityLoading(current=>({...current,[job.id]:true}));
+     tasks.push(
+       api<Eligibility>("/api/v1/jobs/" + encodeURIComponent(job.id) + "/eligibility", {}, token)
+         .then((result) => setEligibilityByJob((current) => ({ ...current, [job.id]: result })))
+         .catch((e) => setEligibilityByJob((current) => ({
+           ...current,
+           [job.id]: { error: e instanceof ApiError ? e.message : "Eligibility could not be checked. Retry to refresh." },
+         })))
+         .finally(() => setEligibilityLoading((current) => ({ ...current, [job.id]: false }))),
+     );
+   }
+   await Promise.all(tasks);
+ }
+ async function retryEligibility(job:Job){
+   if(!token)return;
+   setEligibilityLoading(current=>({...current,[job.id]:true}));
+   setEligibilityByJob(current=>{const next={...current};delete next[job.id];return next;});
+   try{const result=await api<Eligibility>("/api/v1/jobs/"+encodeURIComponent(job.id)+"/eligibility",{},token);setEligibilityByJob(current=>({...current,[job.id]:result}));}
+   catch(e){setEligibilityByJob(current=>({...current,[job.id]:{error:e instanceof ApiError?e.message:"Eligibility could not be checked. Retry to refresh."}}));}
+   finally{setEligibilityLoading(current=>({...current,[job.id]:false}));}
  }
 
  return <div>
    <div className="eyebrow">Employment & opportunity hub</div>
    <h1 className="h1">Opportunities, without the maze.</h1>
    <p className="muted">Browse current opportunities published by verified organizations. Eligibility and formal application steps are checked by the platform; sample or invented vacancies are not shown.</p>
+   <p><a className="btn btn-ghost" href="/jobs/interest">No matching vacancy? Register your job interest</a></p>
    <div className="split" style={{marginTop:20}}>
-     <Card id="job-filters" className="filter">
+     <Card id={`${jobsId}-filters`} className="filter">
        <form onSubmit={submitFilters}>
          <div className="row"><b>Search opportunities</b><SlidersHorizontal size={17}/></div>
          <label style={{display:"grid",gap:6,marginTop:14,fontSize:13,fontWeight:700}}>Role, skill or sector<input value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})} placeholder="Search job title or description"/></label>
@@ -129,15 +157,15 @@ export default function Jobs(){
          <label style={{display:"grid",gap:6,marginTop:16,fontSize:13,fontWeight:700}}>Seniority<input value={filters.seniority} onChange={e=>setFilters({...filters,seniority:e.target.value})} placeholder="Seniority level"/></label>
          <label style={{display:"grid",gap:6,marginTop:16,fontSize:13,fontWeight:700}}>Scope<select value={filters.postingScope} onChange={e=>setFilters({...filters,postingScope:e.target.value})}><option value="">All opportunities visible to me</option><option value="public">Public</option><option value="partner_network">Member network</option><option value="organization_internal">Organization internal</option></select></label>
          <button className="btn btn-primary" type="submit" disabled={loading} style={{width:"100%",marginTop:18}}>{loading?"Searching…":"Apply filters"}</button>
-         <button className="btn btn-ghost" type="button" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters)}} disabled={loading} style={{width:"100%",marginTop:8}}>Clear filters</button>
+         <button className="btn btn-ghost" type="button" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters,0)}} disabled={loading} style={{width:"100%",marginTop:8}}>Clear filters</button>
          <button className="btn btn-ghost" type="button" onClick={()=>void createAlert()} disabled={creatingAlert||loading} style={{width:"100%",marginTop:8}}>{creatingAlert?"Saving alert…":"Save job alert"}</button>
        </form>
      </Card>
-     <div id="job-card" className="grid">
-       {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" onClick={()=>void loadJobs(filters)} type="button" style={{marginLeft:8}}>Retry</button></div>}
-       {notice&&<p className="muted" role="status">{notice}{!token&&<a href="/login?next=/jobs"> Sign in</a>}</p>}
+     <div id={`${jobsId}-cards`} className="grid">
+       {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" onClick={()=>void loadJobs(filters,page)} type="button" style={{marginLeft:8}}>Retry</button></div>}
+       {notice&&<p className="muted" aria-live="polite" aria-atomic="true">{notice}{!token&&<a href="/login?next=/jobs"> Sign in</a>}</p>}
        {loading&&<Card><div className="row"><RefreshCw size={18}/><p className="muted">Loading current opportunities…</p></div></Card>}
-       {!loading&&!error&&jobs.length===0&&<Card><h2 className="h2">No matching opportunities</h2><p className="muted">There are no published opportunities matching these filters right now. Try clearing filters or check again later.</p><button className="btn btn-ghost" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters)}}>Clear filters</button></Card>}
+       {!loading&&!error&&jobs.length===0&&<Card><h2 className="h2">No matching opportunities</h2><p className="muted">There are no published opportunities matching these filters right now. Try clearing filters or check again later.</p><button type="button" className="btn btn-ghost" onClick={()=>{setFilters(initialFilters);void loadJobs(initialFilters)}}>Clear filters</button></Card>}
        {jobs.map(job=><Card key={job.id}>
          <div className="row"><Badge>{scopeLabel(job.posting_scope)}</Badge><button className="icon-btn" type="button" aria-label={saved.includes(job.id)?"Remove saved opportunity":"Save opportunity"} title={saved.includes(job.id)?"Remove saved opportunity":"Save opportunity"} disabled={savingId===job.id} onClick={()=>void toggleSave(job)}><Bookmark size={18} fill={saved.includes(job.id)?"currentColor":"none"}/></button></div>
          <h2 style={{fontSize:20,margin:"12px 0 5px"}}>{job.title}</h2>
@@ -150,12 +178,13 @@ export default function Jobs(){
            {salary(job)&&<span className="tagline">{salary(job)}</span>}
          </div>
          {job.application_deadline&&<p className="muted">Application deadline: {new Date(job.application_deadline).toLocaleDateString()}</p>}
-         {expanded[job.id]&&<div style={{marginTop:14}}><p>{job.description||"No further description has been published."}</p><p className="muted">A public inquiry is not a formal application. Formal submission is authenticated and checks eligibility, required screening answers and duplicate applications.</p>{token?<div className="grid" style={{gap:8,marginTop:10}}><label htmlFor={"cover-"+job.id}>Cover letter (optional)<textarea id={"cover-"+job.id} rows={3} value={coverLetters[job.id]||""} onChange={e=>setCoverLetters(current=>({...current,[job.id]:e.target.value}))} placeholder="Explain your interest and relevant experience."/></label><button className="btn btn-primary" type="button" disabled={applyingId===job.id} onClick={()=>void submitFormalApplication(job)}>{applyingId===job.id?"Submitting…":draftIds[job.id]?"Retry formal submission":"Submit formal application"}</button></div>:<p className="muted"><a href="/login?next=/jobs">Sign in to submit a formal application</a>; use public inquiry only if you want to ask questions first.</p>}</div>}
+         {expanded[job.id]&&<div style={{marginTop:14}}><p>{job.description||"No further description has been published."}</p>{token?<div className="case-row" style={{margin:"12px 0"}}><div style={{flex:1,minWidth:0}}><b>Are you eligible for this opportunity?</b>{eligibilityLoading[job.id]?<p className="muted">Checking the published requirements for your account…</p>:<EligibilityDetails result={eligibilityByJob[job.id]}/>}</div><div className="row" style={{gap:8,flexWrap:"wrap"}}>{eligibilityByJob[job.id]&&"error" in eligibilityByJob[job.id]&&<button className="btn btn-ghost" type="button" onClick={()=>void retryEligibility(job)} disabled={eligibilityLoading[job.id]}>Retry eligibility check</button>}</div></div>:<p className="muted">Sign in to check your eligibility against this vacancy's actual requirements.</p>}<p className="muted">A public inquiry is not a formal application. Formal submission is authenticated and checks eligibility, required screening answers and duplicate applications.</p>{token?<div className="grid" style={{gap:8,marginTop:10}}><label htmlFor={"cover-"+job.id}>Cover letter (optional)<textarea id={"cover-"+job.id} rows={3} value={coverLetters[job.id]||""} onChange={e=>setCoverLetters(current=>({...current,[job.id]:e.target.value}))} placeholder="Explain your interest and relevant experience."/></label><button className="btn btn-primary" type="button" disabled={applyingId===job.id} onClick={()=>void submitFormalApplication(job)}>{applyingId===job.id?"Submitting…":draftIds[job.id]?"Retry formal submission":"Submit formal application"}</button></div>:<p className="muted"><a href="/login?next=/jobs">Sign in to submit a formal application</a>; use public inquiry only if you want to ask questions first.</p>}</div>}
          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:18}}>
            <button className="btn btn-ghost" type="button" onClick={()=>void toggleDetails(job)}>{expanded[job.id]?"Hide details":"View details"}</button>
            <a className="btn btn-primary" href={"/apply/job"}>Start public inquiry</a>
          </div>
        </Card>)}
+       {!loading&&!error&&jobs.length>0&&<DiscoveryPagination page={page} pageSize={pageSize} itemCount={jobs.length} hasMore={hasMore} disabled={loading} label="opportunities" onPageChange={next=>void loadJobs(filters,next)}/>}
      </div>
    </div>
  </div>;

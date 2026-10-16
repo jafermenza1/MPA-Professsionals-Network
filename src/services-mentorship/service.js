@@ -1,14 +1,54 @@
 import { getPool, withTransaction } from "../platform/db.js";
+import { createInAppNotification } from "../platform/notifications.js";
+import { queueWorkflowEmail } from "../platform/email-operations.js";
+import { hasCurrentActiveMembership, hasProfessionalIdentity, assertProfessionalIdentity, assertCurrentActiveMembership, assertOrganizationCapability } from "../platform/identity-policy.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
-const ACTIVE_MEMBER_SQL="exists (select 1 from membership_record m where m.user_id=$1 and m.status='active')";
 const PROFESSIONAL_CLAIMS=["professional_certification","education","employment","experience","service_capability"];
 
 async function audit(db,actor,action,type,id,requestId,metadata={}) {
   await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]);
 }
+async function notify(db,userId,eventCode,type,id,payload={}) {
+  if(!userId)return;
+  await createInAppNotification(db,userId,eventCode,type,id,payload);
+}
 async function activeMember(db,userId){
-  return (await db.query("select 1 where "+ACTIVE_MEMBER_SQL,[userId])).rowCount>0;
+  return hasCurrentActiveMembership(db,userId);
+}
+async function requirePersonalProfessionalCapability(db,userId){
+  try {
+    await assertProfessionalIdentity(db,userId);
+    await assertCurrentActiveMembership(db,userId,"An active membership is required for this professional action. View membership options to continue.");
+  } catch (cause) {
+    throw error(cause.statusCode||403,cause.message,cause.code||"BUSINESS_RULE");
+  }
+}
+async function serviceProviderRecipients(db,requestId){
+ const request=(await db.query("select sr.provider_user_id,sl.organization_id,pu.status provider_status from service_request sr join service_listing sl on sl.id=sr.service_listing_id left join app_user pu on pu.id=sr.provider_user_id where sr.id=$1",[requestId])).rows[0];
+ if(!request)return [];
+ if(request.organization_id)return (await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[request.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id);
+ return request.provider_user_id&&request.provider_status==="active"?[request.provider_user_id]:[];
+}
+async function isServiceProviderActor(db,requestId,userId){
+ const request=(await db.query("select sr.provider_user_id,sl.organization_id,pu.status provider_status from service_request sr join service_listing sl on sl.id=sr.service_listing_id left join app_user pu on pu.id=sr.provider_user_id where sr.id=$1",[requestId])).rows[0];
+ if(!request)return false;
+ if(request.organization_id){
+  return Boolean((await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' and role_code=any($3::text[]) limit 1",[request.organization_id,userId,["owner","administrator","recruiter","project_manager"]])).rowCount);
+ }
+ if(request.provider_user_id!==userId)return false;
+ return Boolean(await activeMember(db,userId)) && await hasProfessionalIdentity(db,userId);
+}
+async function assertServiceListingAccess(db,row,userId){
+ if(row.organization_id){
+  let membership;
+  try { membership=await assertOrganizationCapability(db,row.organization_id,userId); }
+  catch (cause) { throw error(cause.statusCode||403,cause.message,cause.code||"ORGANIZATION_FORBIDDEN"); }
+  return membership;
+ }
+ if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
+ await requirePersonalProfessionalCapability(db,userId);
+ return null;
 }
 async function professionalVerified(db,userId){
   return (await db.query("select 1 from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=$1 and vc.status='verified' and lower(vc.claim_code_snapshot)=any($2::text[]) limit 1",[userId,PROFESSIONAL_CLAIMS])).rowCount>0;
@@ -65,11 +105,19 @@ export function allowedSessionTransition(from,to){ return (SESSION_TRANSITIONS[f
 
 export async function createServiceListing(userId,input,requestId){
   return withTransaction(async db=>{
-    if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to offer a service.","MEMBERSHIP_REQUIRED");
+    const organizationId=input.organizationId||null;
+    if(organizationId){
+      let membership;
+      try { membership=await assertOrganizationCapability(db,organizationId,userId); }
+      catch(cause) { throw error(cause.statusCode||403,cause.message||"An active organization owner or authorized manager is required to create this listing.",cause.code||"ORGANIZATION_FORBIDDEN"); }
+      if(membership.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
+    } else {
+      await requirePersonalProfessionalCapability(db,userId);
+    }
     if(!input.title||!input.description||!input.serviceCategory) throw error(400,"title, description and serviceCategory are required.","VALIDATION_ERROR");
     const pricing=input.pricingModel||"quote";
     if(!["free","fixed","hourly","quote"].includes(pricing)) throw error(400,"Unsupported pricing model.","VALIDATION_ERROR");
-    const row=(await db.query("insert into service_listing(provider_user_id,title,description,service_category,delivery_mode,location_label,pricing_model,price_amount,currency,visibility,max_active_requests) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *",[userId,input.title,input.description,input.serviceCategory,input.deliveryMode||"remote",input.locationLabel||null,pricing,input.priceAmount??null,input.currency||null,input.visibility||"members",input.maxActiveRequests??null])).rows[0];
+    const row=(await db.query("insert into service_listing(provider_user_id,organization_id,title,description,service_category,delivery_mode,location_label,pricing_model,price_amount,currency,visibility,max_active_requests) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *",[userId,organizationId,input.title,input.description,input.serviceCategory,input.deliveryMode||"remote",input.locationLabel||null,pricing,input.priceAmount??null,input.currency||null,input.visibility||"members",input.maxActiveRequests??null])).rows[0];
     await audit(db,userId,"service.listing_created","service_listing",row.id,requestId);
     return row;
   });
@@ -79,9 +127,9 @@ export async function updateServiceListing(listingId,userId,input,requestId){
   return withTransaction(async db=>{
     const row=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
-    if(row.provider_user_id!==userId) throw error(403,"Only the service provider can edit this listing.","FORBIDDEN");
+    await assertServiceListingAccess(db,row,userId);
     if(row.status==="closed") throw error(409,"Closed service listings cannot be edited.","INVALID_STATE");
-    const updated=(await db.query("update service_listing set title=coalesce($1,title),description=coalesce($2,description),service_category=coalesce($3,service_category),delivery_mode=coalesce($4,delivery_mode),location_label=coalesce($5,location_label),pricing_model=coalesce($6,pricing_model),price_amount=coalesce($7,price_amount),currency=coalesce($8,currency),visibility=coalesce($9,visibility),max_active_requests=coalesce($10,max_active_requests),updated_at=now() where id=$11 returning *",[input.title||null,input.description||null,input.serviceCategory||null,input.deliveryMode||null,input.locationLabel||null,input.pricingModel||null,input.priceAmount??null,input.currency||null,input.visibility||null,input.maxActiveRequests??null,listingId])).rows[0];
+    const updated=(await db.query("update service_listing set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,title=coalesce($1,title),description=coalesce($2,description),service_category=coalesce($3,service_category),delivery_mode=coalesce($4,delivery_mode),location_label=coalesce($5,location_label),pricing_model=coalesce($6,pricing_model),price_amount=coalesce($7,price_amount),currency=coalesce($8,currency),visibility=coalesce($9,visibility),max_active_requests=coalesce($10,max_active_requests),updated_at=now() where id=$11 returning *",[input.title||null,input.description||null,input.serviceCategory||null,input.deliveryMode||null,input.locationLabel||null,input.pricingModel||null,input.priceAmount??null,input.currency||null,input.visibility||null,input.maxActiveRequests??null,listingId])).rows[0];
     await audit(db,userId,"service.listing_updated","service_listing",listingId,requestId);
     return updated;
   });
@@ -92,9 +140,21 @@ export async function changeServiceListingStatus(listingId,userId,status,request
   return withTransaction(async db=>{
     const row=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
     if(!row) throw error(404,"Service listing not found.","NOT_FOUND");
-    if(row.provider_user_id!==userId) throw error(403,"Only the service provider can manage this listing.","FORBIDDEN");
-    if(status==="published" && !(await activeMember(db,userId))) throw error(403,"An active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
+    const organization=await assertServiceListingAccess(db,row,userId);
     if(row.status==="closed" && status!=="closed") throw error(409,"Closed service listings cannot be reopened.","INVALID_STATE");
+    if(status==="published" && row.moderation_status!=="approved"){
+      if(row.moderation_status==="rejected") throw error(409,"This listing was rejected and cannot be resubmitted. Create a new listing if the offer has materially changed.","LISTING_REJECTED");
+      if(row.organization_id && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can submit a service listing.","ORGANIZATION_NOT_VERIFIED");
+      if(!row.organization_id && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to submit a service listing.","MEMBERSHIP_REQUIRED");
+      const submitted=(await db.query("update service_listing set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,updated_at=now() where id=$1 returning *",[listingId])).rows[0];
+      await audit(db,userId,"service.listing_submitted_for_review","service_listing",listingId,requestId,{from:row.status,to:"draft"});
+      await notify(db,userId,"service.listing_submitted_for_review","service_listing",listingId,{message:"Your service listing was submitted for moderation.",nextAction:"Monitor the listing for the moderator's decision or requested changes.",actionUrl:"/services",eventVersion:submitted.updated_at||requestId||listingId});
+      const moderators=(await db.query("select distinct u.id user_id from app_user u where u.status='active' and (exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('supporting_staff','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='marketplace.moderate'))")).rows;
+      for(const moderator of moderators)await notify(db,moderator.user_id,"service.listing_review_required","service_listing",listingId,{message:"A professional service listing is awaiting moderation.",nextAction:"Review the listing in the existing marketplace moderation queue and approve or reject it with a reason.",actionUrl:"/admin/marketplace",reviewerQueue:true,actionRequired:true,priority:"high",from:row.status,to:"draft",eventVersion:submitted.updated_at||requestId||listingId});
+      return submitted;
+    }
+    if(status==="published" && row.organization_id && organization?.verification_status!=="verified") throw error(409,"The organization must be verified before it can publish a service listing.","ORGANIZATION_NOT_VERIFIED");
+    if(status==="published" && !row.organization_id && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a service.","MEMBERSHIP_REQUIRED");
     const updated=(await db.query("update service_listing set status=$1,updated_at=now() where id=$2 returning *",[status,listingId])).rows[0];
     await audit(db,userId,"service.listing_status_changed","service_listing",listingId,requestId,{from:row.status,to:status});
     return updated;
@@ -102,75 +162,93 @@ export async function changeServiceListingStatus(listingId,userId,status,request
 }
 
 export async function listServices(viewerId=null,filters={}){
-  const db=getPool(); const args=[]; const where=["s.status='published'"];
-  if(viewerId){ where.push("(s.visibility='public' or s.visibility='members')"); }
-  else where.push("s.visibility='public'");
+  const db=getPool(); const args=[viewerId||null]; const where=["s.status='published'","s.moderation_status='approved'","((s.organization_id is not null and exists (select 1 from organization o where o.id=s.organization_id and o.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date))))","(s.visibility='public' or ($1::uuid is not null and s.visibility='members' and exists(select 1 from membership_record vm where vm.user_id=$1 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))"];
   if(filters.category){ args.push(String(filters.category)); where.push("s.service_category=$"+args.length); }
   if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(s.title ilike $"+args.length+" or s.description ilike $"+args.length+" or s.service_category ilike $"+args.length+")"); }
   const limit=Math.min(Math.max(Number(filters.limit)||25,1),100),offset=Math.max(Number(filters.offset)||0,0);
-  const rows=(await db.query("select s.id,s.provider_user_id,s.title,s.description,s.service_category,s.delivery_mode,s.location_label,s.pricing_model,s.price_amount,s.currency,s.visibility,s.created_at,p.display_name from service_listing s join person p on p.user_id=s.provider_user_id where "+where.join(" and ")+" order by s.created_at desc limit "+limit+" offset "+offset,args)).rows;
+  const rows=(await db.query("select s.id,s.provider_user_id,s.organization_id,s.title,s.description,s.service_category,s.delivery_mode,s.location_label,s.pricing_model,s.price_amount,s.currency,s.visibility,s.created_at,coalesce(o.display_name,p.display_name) display_name from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where "+where.join(" and ")+" order by s.created_at desc limit "+limit+" offset "+offset,args)).rows;
   return {items:rows,limit,offset};
 }
 
 export async function getServiceListing(listingId,viewerId=null){
   const db=getPool();
-  const row=(await db.query("select s.*,p.display_name provider_name from service_listing s join person p on p.user_id=s.provider_user_id where s.id=$1 and s.status='published' and (s.visibility='public' or ($2::uuid is not null and s.visibility='members'))",[listingId,viewerId||null])).rows[0];
+  const row=(await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where s.id=$1 and s.status='published' and s.moderation_status='approved' and ((s.organization_id is not null and exists (select 1 from organization org where org.id=s.organization_id and org.verification_status='verified')) or (s.organization_id is null and exists (select 1 from membership_record m where m.user_id=s.provider_user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)))) and (s.visibility='public' or ($2::uuid is not null and s.visibility='members' and exists(select 1 from membership_record vm where vm.user_id=$2 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))",[listingId,viewerId||null])).rows[0];
   if(!row) throw error(404,"Service listing not found or not visible.","NOT_FOUND");
   return row;
 }
 
 export async function requestService(listingId,requesterId,input,requestId){
   return withTransaction(async db=>{
-    if(!(await activeMember(db,requesterId))) throw error(403,"An active membership is required to request a service.","MEMBERSHIP_REQUIRED");
     const listing=(await db.query("select * from service_listing where id=$1 for update",[listingId])).rows[0];
-    if(!listing||listing.status!=="published") throw error(404,"Service listing is not available.","NOT_FOUND");
+    if(!listing||listing.status!=="published"||listing.moderation_status!=="approved"||listing.visibility==="private") throw error(404,"Service listing is not available.","NOT_FOUND");
+    if(listing.organization_id){const org=(await db.query("select verification_status from organization where id=$1",[listing.organization_id])).rows[0];if(!org||org.verification_status!=="verified")throw error(404,"Service listing is not available.","NOT_FOUND");}
+    else if(!(await activeMember(db,listing.provider_user_id))) throw error(404,"Service listing is not available.","NOT_FOUND");
+    if(listing.visibility!=="public"&&!(await activeMember(db,requesterId))) throw error(403,"An active membership is required to request a member-only service.","MEMBERSHIP_REQUIRED");
     if(listing.provider_user_id===requesterId) throw error(409,"You cannot request your own service.","SELF_REQUEST");
+    const duplicate=(await db.query("select * from service_request where service_listing_id=$1 and requester_user_id=$2 and status in ('requested','accepted','in_progress') order by created_at desc limit 1 for update",[listingId,requesterId])).rows[0];
+    if(duplicate) return {...duplicate,idempotent:true,nextAction:duplicate.status==="requested"?"Wait for the provider to respond.":duplicate.status==="accepted"?"Confirm scope, timing and milestones.":"Track delivery and review the provider's submitted outcome."};
     if(listing.max_active_requests){
       const count=(await db.query("select count(*)::int count from service_request where service_listing_id=$1 and status in ('requested','accepted','in_progress')",[listingId])).rows[0].count;
       if(count>=listing.max_active_requests) throw error(409,"This service has reached its active request limit.","CAPACITY_REACHED");
     }
-    const duplicate=(await db.query("select id from service_request where service_listing_id=$1 and requester_user_id=$2 and status in ('requested','accepted','in_progress')",[listingId,requesterId])).rows[0];
-    if(duplicate) throw error(409,"You already have an active request for this service.","DUPLICATE_REQUEST");
     const proposedPrice=input.proposedPrice===undefined||input.proposedPrice===null?null:Number(input.proposedPrice);
     if(proposedPrice!==null&&(!Number.isFinite(proposedPrice)||proposedPrice<0)) throw error(400,"proposedPrice must be a non-negative number.","VALIDATION_ERROR");
     const row=(await db.query("insert into service_request(service_listing_id,requester_user_id,provider_user_id,status,message,scope,agreed_price,agreed_currency,completion_due_at,requested_start_at,requested_end_at) values($1,$2,$3,'requested',$4,$5,$6,$7,$8,$9,$10) returning *",[listingId,requesterId,listing.provider_user_id,input.message||null,input.scope||null,proposedPrice,input.currency?String(input.currency).toUpperCase():listing.currency,input.completionDueAt||null,input.requestedStartAt||null,input.requestedEndAt||null])).rows[0];
     await db.query("insert into service_request_event(request_id,actor_user_id,to_status,note) values($1,$2,'requested',$3)",[row.id,requesterId,input.message||null]);
-    await audit(db,requesterId,"service.request_created","service_request",row.id,requestId,{listingId});
-    return row;
+    await audit(db,requesterId,"service.request_created","service_request",row.id,requestId,{listingId,organizationId:listing.organization_id||null});
+    const recipients=listing.organization_id?(await db.query("select user_id from organization_membership where organization_id=$1 and status='active' and role_code=any($2::text[])",[listing.organization_id,["owner","administrator","recruiter","project_manager"]])).rows.map(x=>x.user_id):[listing.provider_user_id];
+    for(const recipient of new Set(recipients))if(recipient&&recipient!==requesterId)await queueWorkflowEmail(db,recipient,"professional.workflow_update",{notificationEventCode:"service.request_received",category:"services",title:"New service request",status:"requested",message:"A new service request needs a response.",nextAction:"Review the requested scope and accept, decline or ask for clarification.",actionUrl:"/services",actionRequired:true,priority:"high"},"service_request",row.id);
+    await queueWorkflowEmail(db,requesterId,"professional.workflow_update",{notificationEventCode:"service.request_submitted",category:"services",title:"Service request submitted",status:"requested",message:"Your service request has been recorded.",nextAction:"Track the provider response in your service requests.",actionUrl:"/services"},"service_request",row.id);
+    return {...row,nextAction:"Your request is recorded. The provider or authorized organization team must respond before delivery begins."};
   });
+}
+
+export async function listMyServiceListings(userId){
+ const db=getPool();
+ const roles=["owner","administrator","recruiter","project_manager"];
+ return (await db.query("select s.*,coalesce(o.display_name,p.display_name) provider_name,o.verification_status organization_verification_status from service_listing s left join person p on p.user_id=s.provider_user_id left join organization o on o.id=s.organization_id where (s.organization_id is null and s.provider_user_id=$1 and exists(select 1 from app_user_role ur join app_role ar on ar.id=ur.role_id where ur.user_id=$1 and ar.role_code=any(array['member','professional']::text[]))) or (s.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by s.updated_at desc",[userId,roles])).rows;
 }
 
 export async function listMyServiceRequests(userId){
   const db=getPool();
-  return (await db.query("select r.*,s.title service_title,s.service_category,p.display_name requester_name from service_request r join service_listing s on s.id=r.service_listing_id join person p on p.user_id=r.requester_user_id where r.provider_user_id=$1 or r.requester_user_id=$1 order by r.created_at desc",[userId])).rows;
+  const orgRoles=["owner","administrator","recruiter","project_manager"];
+  return (await db.query("select r.*,s.title service_title,s.service_category,p.display_name requester_name,coalesce((select jsonb_agg(jsonb_build_object('fromStatus',e.from_status,'toStatus',e.to_status,'note',e.note,'createdAt',e.created_at) order by e.created_at) from service_request_event e where e.request_id=r.id),'[]'::jsonb) status_history,((s.organization_id is null and r.provider_user_id=$1) or (s.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[])))) is_provider from service_request r join service_listing s on s.id=r.service_listing_id join person p on p.user_id=r.requester_user_id where r.requester_user_id=$1 or (s.organization_id is null and r.provider_user_id=$1) or (s.organization_id is not null and exists(select 1 from organization_membership om where om.organization_id=s.organization_id and om.user_id=$1 and om.status='active' and om.role_code=any($2::text[]))) order by r.created_at desc",[userId,orgRoles])).rows;
 }
 
 export async function changeServiceRequestStatus(requestId,userId,status,note,requestIdHeader){
   return withTransaction(async db=>{
-    const r=(await db.query("select * from service_request where id=$1 for update",[requestId])).rows[0];
+    const r=(await db.query("select sr.*,sl.organization_id from service_request sr join service_listing sl on sl.id=sr.service_listing_id where sr.id=$1 for update of sr",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.provider_user_id!==userId && r.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
-    if(r.status==="requested" && r.provider_user_id!==userId) throw error(403,"Only the provider can accept or decline a service request.","FORBIDDEN");
-    if(r.status==="accepted" && status==="in_progress" && r.provider_user_id!==userId) throw error(403,"Only the provider can start service delivery.","FORBIDDEN");
-    if(r.status==="in_progress" && status==="completed" && r.provider_user_id!==userId) throw error(403,"Only the provider can mark delivery complete; the requester must accept the outcome separately.","FORBIDDEN");
-    if(r.status==="accepted" && status==="cancelled" && r.provider_user_id!==userId) {
+    const providerActor=await isServiceProviderActor(db,requestId,userId);
+    if(!providerActor && r.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+    if(r.status===status && status!=="completed") return {...r,idempotent:true,nextAction:status==="requested"?"Wait for the provider to respond.":status==="accepted"?"Agree the start date and delivery milestones.":status==="in_progress"?"Review delivery updates; the requester accepts completion after the provider submits it.":status==="disputed"?"Work with the other participant or Support Desk to resolve the issue.":"This request is resolved; create a new request if needed."};
+    if(status==="completed"&&r.status==="in_progress"&&r.provider_completed_at)return {...r,idempotent:true,nextAction:"The requester must review the submitted outcome and accept completion."};
+    if(r.status==="requested" && !providerActor) throw error(403,"Only the provider can accept or decline a service request.","FORBIDDEN");
+    if(r.status==="accepted" && status==="in_progress" && !providerActor) throw error(403,"Only the provider can start service delivery.","FORBIDDEN");
+    if(r.status==="in_progress" && status==="completed" && !providerActor) throw error(403,"Only the provider can mark delivery complete; the requester must accept the outcome separately.","FORBIDDEN");
+    if(r.status==="accepted" && status==="cancelled" && !providerActor) {
       // requester cancellation is allowed before delivery starts
-    } else if(r.status==="accepted" && status==="cancelled" && r.provider_user_id===userId) {
+    } else if(r.status==="accepted" && status==="cancelled" && providerActor) {
       throw error(409,"The provider cannot cancel an accepted engagement; use the dispute path if delivery is blocked.","INVALID_STATE");
     }
     if(!allowedServiceRequestTransition(r.status,status)) throw error(409,"Invalid service request transition.","INVALID_STATE");
+    if(["declined","cancelled","disputed"].includes(status)&&String(note||"").trim().length<4) throw error(400,"Add a short explanation so the other participant understands this decision and the next step.","OUTCOME_NOTE_REQUIRED");
     if(status==="completed"){
       const pending=(await db.query("select count(*)::int count from service_request_milestone where request_id=$1 and status not in ('accepted','completed','cancelled')",[requestId])).rows[0].count;
       if(Number(pending)>0) throw error(409,"All active delivery milestones must be accepted or completed before completion.","OUTCOMES_INCOMPLETE");
       const updated=(await db.query("update service_request set provider_completed_at=now(),provider_note=coalesce($1,provider_note),updated_at=now() where id=$2 returning *",[note||null,requestId])).rows[0];
       await db.query("insert into service_request_event(request_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,$4,$5)",[requestId,userId,r.status,r.status,note||"Provider submitted completion; requester acceptance is still required."]);
       await audit(db,userId,"service.request_completion_submitted","service_request",requestId,requestIdHeader,{status:r.status});
-      return updated;
+      await notify(db,r.requester_user_id,"service.completion_submitted","service_request",requestId,{message:"The provider says the work is complete. Review the delivery and accept it or raise a concern.",nextAction:"Review submitted delivery and accept completion when satisfied."});
+      return {...updated,nextAction:"The requester must review the outcome and accept completion. Paid work also requires verified settlement."};
     }
-    const updated=(await db.query("update service_request set status=$1,provider_note=case when $2::uuid=provider_user_id then $3 else provider_note end,requester_note=case when $2::uuid=requester_user_id then $3 else requester_note end,accepted_at=case when $1='accepted' then now() else accepted_at end,started_at=case when $1='in_progress' then now() else started_at end,cancelled_at=case when $1='cancelled' then now() else cancelled_at end,updated_at=now() where id=$4 returning *",[status,userId,note||null,requestId])).rows[0];
+    const updated=(await db.query("update service_request set status=$1,provider_note=case when $2::uuid<>requester_user_id then $3 else provider_note end,requester_note=case when $2::uuid=requester_user_id then $3 else requester_note end,outcome_summary=case when $1 in ('declined','cancelled','disputed') then coalesce($3,outcome_summary) else outcome_summary end,accepted_at=case when $1='accepted' then now() else accepted_at end,started_at=case when $1='in_progress' then now() else started_at end,cancelled_at=case when $1='cancelled' then now() else cancelled_at end,updated_at=now() where id=$4 returning *",[status,userId,note||null,requestId])).rows[0];
     await db.query("insert into service_request_event(request_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,$4,$5)",[requestId,userId,r.status,status,note||null]);
     await audit(db,userId,"service.request_status_changed","service_request",requestId,requestIdHeader,{from:r.status,to:status});
-    return updated;
+    const message=status==="accepted"?"Your service request was accepted. Agree the start date and delivery scope.":status==="declined"?"Your service request was declined. Review the explanation or choose another provider.":status==="in_progress"?"Service delivery has started. Track milestones and submitted work.":status==="disputed"?"A concern was raised. Review the note and agree the next step or contact Support Desk.":"The service request was cancelled. Review the explanation before creating a new request.";
+    const nextAction=status==="accepted"?"Confirm scope, timing and milestones.":status==="in_progress"?"Track delivery and submit/review milestones.":status==="disputed"?"Respond to the concern and document the resolution.":status==="declined"?"Choose another provider or submit a revised request.":"Create a new request only if the need remains."; 
+    for(const recipient of new Set([r.requester_user_id,...await serviceProviderRecipients(db,requestId)])) if(recipient&&recipient!==userId) await notify(db,recipient,"service.request_status_changed","service_request",requestId,{from:r.status,to:status,message,nextAction,actionRequired:["accepted","disputed"].includes(status),priority:status==="disputed"?"high":"normal"});
+    return {...updated,nextAction};
   });
 }
 
@@ -189,8 +267,8 @@ export async function submitServicePayment(requestId,userId,input,requestIdHeade
     if(!["online","manual","bank_transfer","cash","other"].includes(channel)) throw error(400,"Unsupported payment channel.","VALIDATION_ERROR");
     const idem=String(input.idempotencyKey||"").trim();
     if(!idem) throw error(400,"idempotencyKey is required.","VALIDATION_ERROR");
-    const existing=(await db.query("select sp.* from service_payment sp join payment_transaction pt on pt.id=sp.payment_transaction_id where pt.idempotency_key=$1",[idem])).rows[0];
-    if(existing) return existing;
+    const existing=(await db.query("select sp.*,pt.purpose,pt.purpose_reference from service_payment sp join payment_transaction pt on pt.id=sp.payment_transaction_id where pt.idempotency_key=$1",[idem])).rows[0];
+    if(existing){if(existing.purpose!=="service"||String(existing.purpose_reference)!==String(requestId))throw error(409,"This payment retry key was already used for a different transaction. Refresh the request and submit a new payment reference.","IDEMPOTENCY_KEY_CONFLICT");return {...existing,idempotent:true,nextAction:existing.status==="succeeded"?"Payment is verified. You can continue with delivery acceptance.":existing.status==="failed"?"Payment was not accepted. Review the finance note before retrying.":"Your payment is already awaiting finance review."};}
     const p=(await db.query("insert into payment_transaction(provider,idempotency_key,purpose,amount,currency,status,request_payload,channel,submitted_by,purpose_reference,source) values('manual',$1,'service',$2,$3,'pending',$4::jsonb,$5,$6,$7,'manual_entry') returning *",[idem,amount,currency,JSON.stringify({requestId,channel,reference:input.reference||null}),channel,userId,requestId])).rows[0];
     if(input.evidenceFileId){
       const f=(await db.query("select id from file_object where id=$1 and created_by=$2 and visibility='private'",[input.evidenceFileId,userId])).rows[0];
@@ -198,6 +276,9 @@ export async function submitServicePayment(requestId,userId,input,requestIdHeade
     }
     const row=(await db.query("insert into service_payment(request_id,payment_transaction_id,payer_user_id,provider_user_id,amount,currency,channel,evidence_file_id,submitted_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *",[requestId,p.id,userId,r.provider_user_id,amount,currency,channel,input.evidenceFileId||null,userId])).rows[0];
     await audit(db,userId,"service.payment_submitted","service_payment",row.id,requestIdHeader,{requestId,channel});
+    for(const providerUserId of await serviceProviderRecipients(db,requestId))if(providerUserId&&providerUserId!==userId)await notify(db,providerUserId,"service.payment_review_required","service_payment",row.id,{message:"A requester submitted payment for your service engagement.",nextAction:"Track finance verification before treating the payment as settled.",actionUrl:"/services",actionRequired:false});
+    const financeUsers=(await db.query("select distinct u.id user_id from app_user u where u.status='active' and (exists(select 1 from app_user_role ur join app_role ar on ar.id=ur.role_id where ur.user_id=u.id and ar.role_code in ('finance_officer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='finance.manage'))")).rows;
+    for(const finance of financeUsers)await notify(db,finance.user_id,"service.payment_review_required","service_payment",row.id,{message:"A service payment is awaiting finance verification.",nextAction:"Review payment evidence and record a reasoned decision in the existing finance queue.",actionUrl:"/dashboard",reviewerQueue:true,actionRequired:true,priority:"high"});
     return row;
   });
 }
@@ -207,16 +288,20 @@ export async function acceptServiceCompletion(requestId,userId,note,requestIdHea
     const r=(await db.query("select * from service_request where id=$1 for update",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
     if(r.requester_user_id!==userId) throw error(403,"Only the requester can accept service delivery.","FORBIDDEN");
+    if(r.status==="completed"&&r.requester_accepted_at) return {...r,idempotent:true,nextAction:"This delivery is already accepted. You can leave feedback or review the engagement record."};
     if(r.status!=="in_progress" || !r.provider_completed_at) throw error(409,"The provider has not submitted completion for this engagement.","COMPLETION_NOT_SUBMITTED");
     const paid=(await db.query("select count(*)::int count from service_payment where request_id=$1 and amount>0",[requestId])).rows[0].count;
-    if(Number(paid)>0){
-      const settled=(await db.query("select 1 from service_payment where request_id=$1 and status='succeeded' order by created_at desc limit 1",[requestId])).rows[0];
-      if(!settled) throw error(409,"Payment must be verified before paid service delivery can be accepted.","PAYMENT_NOT_SETTLED");
+    const expectedAmount=Number(r.agreed_price||0);
+    if(expectedAmount>0||Number(paid)>0){
+      const settled=(await db.query("select 1 from service_payment where request_id=$1 and status='succeeded' and amount>0 and ($2::numeric<=0 or amount=$2::numeric) and ($3::text is null or upper(currency)=upper($3::text)) order by verified_at desc nulls last,created_at desc limit 1",[requestId,expectedAmount,r.agreed_currency||null])).rows[0];
+      if(!settled) throw error(409,"The agreed paid service must have a finance-verified successful payment for the agreed amount and currency before the requester can accept completion.","PAYMENT_NOT_SETTLED");
     }
-    const row=(await db.query("update service_request set requester_accepted_at=now(),status='completed',outcome_summary=coalesce($1,outcome_summary),completed_at=now(),updated_at=now() where id=$2 returning *",[note||null,requestId])).rows[0];
-    await db.query("insert into service_request_event(request_id,actor_user_id,from_status,to_status,note) values($1,$2,'in_progress','completed',$3)",[requestId,userId,note||"Requester accepted the delivered outcome."]);
+    const outcome=String(note||"The requester accepted the submitted service outcome.").trim().slice(0,3000);
+    const row=(await db.query("update service_request set requester_accepted_at=now(),status='completed',outcome_summary=$1,completed_at=now(),updated_at=now() where id=$2 returning *",[outcome,requestId])).rows[0];
+    await db.query("insert into service_request_event(request_id,actor_user_id,from_status,to_status,note) values($1,$2,'in_progress','completed',$3)",[requestId,userId,outcome]);
     await audit(db,userId,"service.request_completion_accepted","service_request",requestId,requestIdHeader);
-    return row;
+    for(const recipient of await serviceProviderRecipients(db,requestId))if(recipient&&recipient!==userId)await notify(db,recipient,"service.completion_accepted","service_request",requestId,{message:"The requester accepted the delivered outcome.",nextAction:"The engagement is complete. You may request feedback or review the final record.",actionUrl:"/services"});
+    return {...row,nextAction:"The engagement is complete. You can now leave feedback or view the outcome record."};
   });
 }
 
@@ -224,7 +309,7 @@ export async function createServiceMilestone(requestId,userId,input,requestIdHea
   return withTransaction(async db=>{
     const r=(await db.query("select * from service_request where id=$1 for update",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.provider_user_id!==userId) throw error(403,"Only the provider can define delivery milestones.","FORBIDDEN");
+    if(!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"Only the provider or authorized organization team can define delivery milestones.","FORBIDDEN");
     if(!["accepted","in_progress"].includes(r.status)) throw error(409,"Milestones can only be added to an accepted or active engagement.","INVALID_STATE");
     if(!input.title) throw error(400,"Milestone title is required.","VALIDATION_ERROR");
     const row=(await db.query("insert into service_request_milestone(request_id,title,description,due_at,created_by) values($1,$2,$3,$4,$5) returning *",[requestId,input.title,input.description||null,input.dueAt||null,userId])).rows[0];
@@ -236,7 +321,7 @@ export async function createServiceMilestone(requestId,userId,input,requestIdHea
 export async function listServiceMilestones(requestId,userId){
   const db=getPool(); const r=(await db.query("select provider_user_id,requester_user_id from service_request where id=$1",[requestId])).rows[0];
   if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-  if(r.provider_user_id!==userId&&r.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+  if(r.requester_user_id!==userId&&!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
   return (await db.query("select * from service_request_milestone where request_id=$1 order by due_at nulls last,created_at",[requestId])).rows;
 }
 
@@ -244,7 +329,7 @@ export async function listServiceDeliveries(requestId,userId){
  const db=getPool();
  const participant=(await db.query("select provider_user_id,requester_user_id from service_request where id=$1",[requestId])).rows[0];
  if(!participant) throw error(404,"Service request not found.","NOT_FOUND");
- if(participant.provider_user_id!==userId&&participant.requester_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+ if(participant.requester_user_id!==userId&&!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
  return (await db.query(`select d.*,m.title milestone_title,p.display_name submitter_name
   from service_request_delivery d left join service_request_milestone m on m.id=d.milestone_id
   join person p on p.user_id=d.submitted_by
@@ -255,7 +340,7 @@ export async function submitServiceDelivery(requestId,userId,input,requestIdHead
   return withTransaction(async db=>{
     const r=(await db.query("select * from service_request where id=$1 for update",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.provider_user_id!==userId) throw error(403,"Only the provider can submit delivery.","FORBIDDEN");
+    if(!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"Only the provider or authorized organization team can submit delivery.","FORBIDDEN");
     if(r.status!=="in_progress") throw error(409,"Service must be in progress before delivery is submitted.","INVALID_STATE");
     if(!input.description) throw error(400,"Delivery description is required.","VALIDATION_ERROR");
     if(input.fileObjectId){
@@ -269,6 +354,7 @@ export async function submitServiceDelivery(requestId,userId,input,requestIdHead
     }
     const row=(await db.query("insert into service_request_delivery(request_id,milestone_id,submitted_by,description,file_object_id) values($1,$2,$3,$4,$5) returning *",[requestId,input.milestoneId||null,userId,input.description,input.fileObjectId||null])).rows[0];
     await audit(db,userId,"service.delivery_submitted","service_request_delivery",row.id,requestIdHeader,{requestId});
+    await notify(db,r.requester_user_id,"service.delivery_submitted","service_request_delivery",row.id,{message:"The provider submitted a delivery for your service engagement.",nextAction:"Review the delivery and accept it or request a revision with a clear explanation.",actionUrl:"/services",actionRequired:true,priority:"high"});
     return row;
   });
 }
@@ -279,10 +365,13 @@ export async function reviewServiceDelivery(deliveryId,userId,input,requestIdHea
     if(!d) throw error(404,"Service delivery not found.","NOT_FOUND");
     if(d.requester_user_id!==userId) throw error(403,"Only the requester can review a delivery.","FORBIDDEN");
     if(!["accepted","revision_requested"].includes(input.status)) throw error(400,"Delivery review must be accepted or revision_requested.","VALIDATION_ERROR");
+    if(input.status==="revision_requested"&&String(input.note||"").trim().length<4)throw error(400,"Explain what needs to change before requesting a revision.","REVISION_NOTE_REQUIRED");
+    if(d.status===input.status)return {...d,idempotent:true,nextAction:input.status==="accepted"?"This delivery is accepted.":"This revision request is already recorded."};
     const row=(await db.query("update service_request_delivery set status=$1,reviewer_note=$2,reviewed_by=$3,reviewed_at=now() where id=$4 returning *",[input.status,input.note||null,userId,deliveryId])).rows[0];
     if(d.milestone_id) await db.query("update service_request_milestone set status=$1,completed_at=case when $1='completed' then now() else completed_at end,updated_at=now() where id=$2",[input.status==="accepted"?"completed":"revision_requested",d.milestone_id]);
     await audit(db,userId,"service.delivery_reviewed","service_request_delivery",deliveryId,requestIdHeader,{status:input.status});
-    return row;
+    for(const recipient of await serviceProviderRecipients(db,d.request_id))if(recipient&&recipient!==userId)await notify(db,recipient,input.status==="accepted"?"service.delivery_accepted":"service.delivery_revision_requested","service_request_delivery",deliveryId,{message:input.status==="accepted"?"The requester accepted your delivery.":"The requester requested a revision.",note:input.note||null,nextAction:input.status==="accepted"?"Continue with the next milestone or submit completion when all work is ready.":"Review the requester's note and submit a revised delivery.",actionUrl:"/services",actionRequired:input.status==="revision_requested",priority:input.status==="revision_requested"?"high":"normal"});
+    return {...row,nextAction:input.status==="accepted"?"Continue with the next milestone or submit completion when all work is ready.":"Review the note and submit a revised delivery."};
   });
 }
 
@@ -314,6 +403,9 @@ export async function verifyServicePayment(servicePaymentId,verifierId,input,req
   const updated=(await db.query("update service_payment set status=$1,verified_by=$2,verified_at=case when $1<>'pending' then now() else null end,verification_note=$3,updated_at=now() where id=$4 returning *",[next,verifierId,input.note||null,servicePaymentId])).rows[0];
   await db.query("update payment_transaction set status=$1,verified_by=$2,verified_at=now(),verification_note=$3,completed_at=case when $1 in ('succeeded','failed') then now() else completed_at end,updated_at=now() where id=$4",[next,verifierId,input.note||null,row.payment_transaction_id]);
   await audit(db,verifierId,"service.payment_verified","service_payment",servicePaymentId,requestIdHeader,{decision:input.decision,requestId:row.request_id});
+  const approved=input.decision==="approved", correction=input.decision==="needs_correction";
+  await notify(db,row.payer_user_id,"service.payment_decision","service_payment",servicePaymentId,{message:approved?"Your service payment was verified.":correction?"Finance needs additional information about your service payment.":"Your service payment was not approved.",nextAction:approved?"Continue with the service workflow; paid completion still requires the matching verified amount and currency.":correction?"Review the finance note and provide corrected payment evidence.":"Review the finance note and contact support if you believe the decision is incorrect.",actionUrl:"/services",actionRequired:!approved,priority:correction?"high":"normal"});
+  for(const providerUserId of await serviceProviderRecipients(db,row.request_id))if(providerUserId&&providerUserId!==row.payer_user_id)await notify(db,providerUserId,"service.payment_decision","service_payment",servicePaymentId,{decision:input.decision,eventVersion:requestIdHeader,message:approved?"The service payment was verified by finance.":correction?"Finance requested additional information for the service payment.":"The service payment was not approved.",nextAction:approved?"Continue the engagement according to the agreed delivery terms.":"Coordinate with the requester and finance to resolve the payment status.",actionUrl:"/services",actionRequired:correction,priority:correction?"high":"normal"});
   return updated;
  });
 }
@@ -322,7 +414,7 @@ export async function submitServiceFeedback(requestId,userId,input,requestIdHead
   return withTransaction(async db=>{
     const r=(await db.query("select * from service_request where id=$1",[requestId])).rows[0];
     if(!r) throw error(404,"Service request not found.","NOT_FOUND");
-    if(r.requester_user_id!==userId&&r.provider_user_id!==userId) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
+    if(r.requester_user_id!==userId&&!(await isServiceProviderActor(db,requestId,userId))) throw error(403,"You are not a participant in this service request.","FORBIDDEN");
     if(r.status!=="completed") throw error(409,"Service feedback requires a completed engagement.","SERVICE_NOT_COMPLETED");
     const target=input.targetRole||"service";
     if(target==="provider"&&r.provider_user_id===userId) throw error(400,"A provider cannot rate themselves.","SELF_RATING");
@@ -337,7 +429,7 @@ export async function submitServiceFeedback(requestId,userId,input,requestIdHead
 
 export async function createMentorProfile(userId,input,requestId){
   return withTransaction(async db=>{
-    if(!(await activeMember(db,userId))) throw error(403,"An active membership is required to mentor.","MEMBERSHIP_REQUIRED");
+    await requirePersonalProfessionalCapability(db,userId);
     if(!(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to become a mentor.","PROFESSIONAL_VERIFICATION_REQUIRED");
     const headline=String(input.headline||"").trim();
     if(!headline) throw error(400,"headline is required.","VALIDATION_ERROR");
@@ -349,7 +441,7 @@ export async function createMentorProfile(userId,input,requestId){
     if(existing?.status==="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
     const values=[headline,String(input.bio||"").trim()||null,JSON.stringify(normalizeArray(input.expertise)),JSON.stringify(normalizeArray(input.languages)),JSON.stringify(normalizeArray(input.mentoringModes||["remote"])),maxActiveMentees,visibility];
     const row=existing
-      ? (await db.query("update mentor_profile set headline=$1,bio=$2,expertise=$3,languages=$4,mentoring_modes=$5,max_active_mentees=$6,visibility=$7,updated_at=now() where id=$8 returning *",[...values,existing.id])).rows[0]
+      ? (await db.query("update mentor_profile set status=case when status='active' then 'draft' else status end,moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,headline=$1,bio=$2,expertise=$3,languages=$4,mentoring_modes=$5,max_active_mentees=$6,visibility=$7,updated_at=now() where id=$8 returning *",[...values,existing.id])).rows[0]
       : (await db.query("insert into mentor_profile(user_id,headline,bio,expertise,languages,mentoring_modes,max_active_mentees,visibility) values($1,$2,$3,$4,$5,$6,$7,$8) returning *",[userId,...values])).rows[0];
     await audit(db,userId,"mentorship.profile_updated","mentor_profile",row.id,requestId,{status:row.status});
     return row;
@@ -361,7 +453,8 @@ export async function updateMentorProfile(profileId,userId,input,requestId){
     const row=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!row) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(row.user_id!==userId) throw error(403,"Only the mentor can edit this profile.","FORBIDDEN");
-    const updated=(await db.query("update mentor_profile set headline=coalesce($1,headline),bio=coalesce($2,bio),expertise=coalesce($3,expertise),languages=coalesce($4,languages),mentoring_modes=coalesce($5,mentoring_modes),max_active_mentees=coalesce($6,max_active_mentees),visibility=coalesce($7,visibility),updated_at=now() where id=$8 returning *",[input.headline||null,input.bio||null,input.expertise?JSON.stringify(normalizeArray(input.expertise)):null,input.languages?JSON.stringify(normalizeArray(input.languages)):null,input.mentoringModes?JSON.stringify(normalizeArray(input.mentoringModes)):null,input.maxActiveMentees||null,input.visibility||null,profileId])).rows[0];
+    await requirePersonalProfessionalCapability(db,userId);
+    const updated=(await db.query("update mentor_profile set status=case when status='active' then 'draft' else status end,moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,headline=coalesce($1,headline),bio=coalesce($2,bio),expertise=coalesce($3,expertise),languages=coalesce($4,languages),mentoring_modes=coalesce($5,mentoring_modes),max_active_mentees=coalesce($6,max_active_mentees),visibility=coalesce($7,visibility),updated_at=now() where id=$8 returning *",[input.headline||null,input.bio||null,input.expertise?JSON.stringify(normalizeArray(input.expertise)):null,input.languages?JSON.stringify(normalizeArray(input.languages)):null,input.mentoringModes?JSON.stringify(normalizeArray(input.mentoringModes)):null,input.maxActiveMentees||null,input.visibility||null,profileId])).rows[0];
     await audit(db,userId,"mentorship.profile_updated","mentor_profile",profileId,requestId);
     return updated;
   });
@@ -373,8 +466,21 @@ export async function changeMentorStatus(profileId,userId,status,requestId){
     const p=(await db.query("select * from mentor_profile where id=$1 for update",[profileId])).rows[0];
     if(!p) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(p.user_id!==userId) throw error(403,"Only the mentor can manage this profile.","FORBIDDEN");
-    if(status==="active" && !(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to activate a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
+    await requirePersonalProfessionalCapability(db,userId);
     if(p.status==="closed"&&status!=="closed") throw error(409,"Closed mentor profiles cannot be reopened.","INVALID_STATE");
+    if(status==="active" && p.moderation_status!=="approved"){
+      if(p.moderation_status==="rejected") throw error(409,"This mentorship offer was rejected and cannot be resubmitted. Update the offer through a new profile if the opportunity has materially changed.","LISTING_REJECTED");
+      if(!(await activeMember(db,userId))) throw error(403,"A current active membership is required to submit a mentor profile.","MEMBERSHIP_REQUIRED");
+      if(!(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to submit a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
+      const submitted=(await db.query("update mentor_profile set status='draft',moderation_status='pending',moderation_note=null,moderated_by=null,moderated_at=null,updated_at=now() where id=$1 returning *",[profileId])).rows[0];
+      await audit(db,userId,"mentorship.offer_submitted_for_review","mentor_profile",profileId,requestId,{from:p.status,to:"draft"});
+      await notify(db,userId,"mentorship.offer_submitted_for_review","mentor_profile",profileId,{message:"Your mentor offer was submitted for moderation.",nextAction:"Monitor the offer for a moderation decision or requested changes.",actionUrl:"/mentorship",eventVersion:submitted.updated_at||requestId||profileId});
+      const moderators=(await db.query("select distinct u.id user_id from app_user u where u.status='active' and (exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('supporting_staff','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='marketplace.moderate'))")).rows;
+      for(const moderator of moderators)await notify(db,moderator.user_id,"mentorship.offer_review_required","mentor_profile",profileId,{message:"A mentor offer is awaiting moderation.",nextAction:"Review the offer in the existing marketplace moderation queue and record the decision with a reason.",actionUrl:"/admin/marketplace",reviewerQueue:true,actionRequired:true,priority:"high",eventVersion:submitted.updated_at||requestId||profileId});
+      return submitted;
+    }
+    if(status==="active" && !(await activeMember(db,userId))) throw error(403,"A current active membership is required to publish a mentor profile.","MEMBERSHIP_REQUIRED");
+    if(status==="active" && !(await professionalVerified(db,userId))) throw error(403,"A verified professional claim is required to activate a mentor profile.","PROFESSIONAL_VERIFICATION_REQUIRED");
     const row=(await db.query("update mentor_profile set status=$1,updated_at=now() where id=$2 returning *",[status,profileId])).rows[0];
     await audit(db,userId,"mentorship.profile_status_changed","mentor_profile",profileId,requestId,{from:p.status,to:status});
     return row;
@@ -386,6 +492,7 @@ export async function setMentorAvailability(profileId,userId,input,requestId){
     const p=(await db.query("select user_id from mentor_profile where id=$1",[profileId])).rows[0];
     if(!p) throw error(404,"Mentor profile not found.","NOT_FOUND");
     if(p.user_id!==userId) throw error(403,"Only the mentor can manage availability.","FORBIDDEN");
+    await requirePersonalProfessionalCapability(db,userId);
     if(!Array.isArray(input.slots)) throw error(400,"slots must be an array.","VALIDATION_ERROR");
     for(const s of input.slots){
       if(!Number.isInteger(Number(s.dayOfWeek))||Number(s.dayOfWeek)<0||Number(s.dayOfWeek)>6) throw error(400,"dayOfWeek must be 0-6.","VALIDATION_ERROR");
@@ -415,15 +522,27 @@ export async function addMentorTimeOff(profileId,userId,input,requestId){
   });
 }
 
+export async function getMentorProfile(userId,viewerId=null){
+ const db=getPool();
+ const row=(await db.query(`select mp.id,mp.user_id,p.display_name,mp.headline,mp.bio,mp.expertise,mp.languages,mp.mentoring_modes,mp.max_active_mentees
+ from mentor_profile mp join app_user u on u.id=mp.user_id join person p on p.user_id=mp.user_id
+ where mp.user_id=$1 and u.status='active' and mp.status='active' and mp.moderation_status='approved'
+ and exists(select 1 from membership_record mm where mm.user_id=mp.user_id and mm.status='active' and mm.start_date<=current_date and (mm.end_date is null or mm.end_date>=current_date))
+ and (mp.visibility='public' or (mp.visibility='members' and $2::uuid is not null and exists(select 1 from membership_record vm where vm.user_id=$2 and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))`,[userId,viewerId||null])).rows[0];
+ if(!row)throw error(404,"Mentor profile not found or not visible.","NOT_FOUND");
+ return row;
+}
+
 export async function listMentors(viewerId,filters={}){
   const db=getPool();
   // The public endpoint must not disclose member-only mentor profiles. $1 is
   // always bound so the query is valid with or without optional filters.
   const args=[viewerId||null];
-  const where=["mp.status='active'","m.status='active'","(mp.visibility='public' or ($1::uuid is not null and mp.visibility='members'))"];
+  const where=["mp.status='active'","mp.moderation_status='approved'","m.status='active'","m.start_date<=current_date","(m.end_date is null or m.end_date>=current_date)","(mp.visibility='public' or (mp.visibility='members' and $1::uuid is not null and exists(select 1 from membership_record vm where vm.user_id=$1::uuid and vm.status='active' and vm.start_date<=current_date and (vm.end_date is null or vm.end_date>=current_date))))"];
   if(filters.q){ args.push("%"+String(filters.q).trim()+"%"); where.push("(mp.headline ilike $"+args.length+" or mp.bio ilike $"+args.length+")"); }
   if(filters.topic){ args.push("%"+String(filters.topic).trim().toLowerCase()+"%"); where.push("mp.expertise::text ilike $"+args.length); }
-  const rows=(await db.query("select mp.id,mp.user_id,p.display_name,mp.headline,mp.bio,mp.expertise,mp.languages,mp.mentoring_modes,mp.max_active_mentees from mentor_profile mp join app_user u on u.id=mp.user_id join person p on p.user_id=u.id join membership_record m on m.user_id=u.id where "+where.join(" and ")+" order by p.display_name",args)).rows;
+  const limit=Math.min(Math.max(Number(filters.limit)||20,1),50),offset=Math.max(Number(filters.offset)||0,0);
+  const rows=(await db.query("select mp.id,mp.user_id,p.display_name,mp.headline,mp.bio,mp.expertise,mp.languages,mp.mentoring_modes,mp.max_active_mentees from mentor_profile mp join app_user u on u.id=mp.user_id join person p on p.user_id=u.id join membership_record m on m.user_id=u.id where "+where.join(" and ")+" order by p.display_name limit "+(limit+1)+" offset "+offset,args)).rows;
   return rows;
 }
 
@@ -432,14 +551,19 @@ export async function createMentorshipRequest(menteeId,input,requestId){
     if(!(await activeMember(db,menteeId))) throw error(403,"An active membership is required for mentorship.","MEMBERSHIP_REQUIRED");
     if(typeof input.goals!=="string"||!input.goals.trim()) throw error(400,"A non-empty mentorship goal is required.","VALIDATION_ERROR");
     if(input.preferredMentorUserId===menteeId) throw error(400,"You cannot mentor yourself.","VALIDATION_ERROR");
-    const row=(await db.query("insert into mentorship_request(mentee_user_id,preferred_mentor_user_id,goals,topics,preferred_modes,preferred_languages,preferred_days,status) values($1,$2,$3,$4,$5,$6,$7,'requested') returning *",[menteeId,input.preferredMentorUserId||null,input.goals,JSON.stringify(normalizeArray(input.topics)),JSON.stringify(normalizeArray(input.preferredModes||["remote"])),JSON.stringify(normalizeArray(input.preferredLanguages)),JSON.stringify((input.preferredDays||[]).map(Number).filter(n=>n>=0&&n<=6))])).rows[0];
+    const goals=String(input.goals).trim(),preferredMentor=input.preferredMentorUserId||null,topics=JSON.stringify(normalizeArray(input.topics)),modes=JSON.stringify(normalizeArray(input.preferredModes||["remote"])),languages=JSON.stringify(normalizeArray(input.preferredLanguages)),days=JSON.stringify((input.preferredDays||[]).map(Number).filter(n=>n>=0&&n<=6));
+    const prior=(await db.query("select * from mentorship_request where mentee_user_id=$1 and goals=$2 and preferred_mentor_user_id is not distinct from $3 and topics=$4::jsonb and preferred_modes=$5::jsonb and preferred_languages=$6::jsonb and preferred_days=$7::jsonb and status in ('requested','matching','matched') order by created_at desc limit 1 for update",[menteeId,goals,preferredMentor,topics,modes,languages,days])).rows[0];
+    if(prior)return {...prior,idempotent:true,nextAction:prior.status==="matched"?"A mentor proposal is already active. Wait for the mentor to respond.":"Your mentorship request is already recorded. Review its status or wait for the matching team."};
+    const row=(await db.query("insert into mentorship_request(mentee_user_id,preferred_mentor_user_id,goals,topics,preferred_modes,preferred_languages,preferred_days,status) values($1,$2,$3,$4,$5,$6,$7,'requested') returning *",[menteeId,preferredMentor,goals,topics,modes,languages,days])).rows[0];
     await audit(db,menteeId,"mentorship.request_created","mentorship_request",row.id,requestId);
-    return row;
+    const supportUsers=(await db.query("select distinct ur.user_id from app_user_role ur join app_role ar on ar.id=ur.role_id join app_user u on u.id=ur.user_id where u.status='active' and ar.role_code=any($1::text[])",[["supporting_staff","system_admin"]])).rows;
+    for(const member of supportUsers)await notify(db,member.user_id,"mentorship.request_received","mentorship_request",row.id,{message:"A new mentorship goal is waiting for matching review.",nextAction:"Review eligible mentors and propose a match; the relationship starts only after acceptance.",actionUrl:"/mentorship",reviewerQueue:true,actionRequired:true,priority:"high"});
+    return {...row,nextAction:"Your goal is recorded. A mentor must be proposed and accept before a relationship is active."};
   });
 }
 
 async function mentorCandidates(db,request){
-  const mentors=(await db.query("select mp.*,p.display_name from mentor_profile mp join person p on p.user_id=mp.user_id where mp.status='active' and mp.visibility in ('members','public') and exists (select 1 from membership_record m where m.user_id=mp.user_id and m.status='active') and exists (select 1 from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=mp.user_id and vc.status='verified' and lower(vc.claim_code_snapshot)=any($1::text[])) and mp.user_id<>$2",[PROFESSIONAL_CLAIMS,request.mentee_user_id])).rows;
+  const mentors=(await db.query("select mp.*,p.display_name from mentor_profile mp join person p on p.user_id=mp.user_id where mp.status='active' and mp.moderation_status='approved' and mp.visibility in ('members','public') and exists (select 1 from membership_record m where m.user_id=mp.user_id and m.status='active' and m.start_date<=current_date and (m.end_date is null or m.end_date>=current_date)) and exists (select 1 from verification_claim vc join verification_case c on c.id=vc.case_id where c.subject_user_id=mp.user_id and vc.status='verified' and lower(vc.claim_code_snapshot)=any($1::text[])) and mp.user_id<>$2",[PROFESSIONAL_CLAIMS,request.mentee_user_id])).rows;
   const results=[];
   for(const m of mentors){
     const active=(await db.query("select count(*)::int count from mentorship where mentor_user_id=$1 and status in ('active','paused')",[m.user_id])).rows[0].count;
@@ -481,11 +605,18 @@ export async function proposeMentorMatch(requestId,mentorUserId,actorUserId,requ
     if(!request) throw error(404,"Mentorship request not found.","NOT_FOUND");
     if(request.mentee_user_id!==actorUserId && !(await hasPlatformRole(db,actorUserId,["supporting_staff","system_admin"]))) throw error(403,"Only the mentee or authorized matching staff may propose a match.","FORBIDDEN");
     if(["cancelled","completed"].includes(request.status)) throw error(409,"This mentorship request is closed.","INVALID_STATE");
+    const existingRelationship=(await db.query("select id,status from mentorship where request_id=$1 for update",[requestId])).rows[0];
+    if(existingRelationship)throw error(409,"This request already became a mentorship relationship. Manage goals, sessions and completion from the active relationship instead of proposing another match.","RELATIONSHIP_ALREADY_CREATED");
+    const existingMatch=(await db.query("select * from mentorship_match where request_id=$1 for update",[requestId])).rows[0];
+    if(existingMatch?.status==="accepted")throw error(409,"The mentor already accepted this match. Continue in the active mentorship relationship.","MATCH_ALREADY_ACCEPTED");
+    if(existingMatch?.status==="proposed"){if(existingMatch.mentor_user_id===mentorUserId)return {...existingMatch,idempotent:true,nextAction:"The mentor has already been invited. Wait for their response."};throw error(409,"A mentor proposal is already awaiting a response. Wait for the answer before proposing another match.","MATCH_RESPONSE_PENDING");}
     const candidates=await mentorCandidates(db,request); const match=candidates.find(x=>x.mentorUserId===mentorUserId);
     if(!match) throw error(409,"Selected mentor is not currently eligible or available.","MENTOR_UNAVAILABLE");
     const row=(await db.query("insert into mentorship_match(request_id,mentor_user_id,mentee_user_id,score,match_reasons,status) values($1,$2,$3,$4,$5,'proposed') on conflict(request_id) do update set mentor_user_id=excluded.mentor_user_id,score=excluded.score,match_reasons=excluded.match_reasons,status='proposed',proposed_at=now(),responded_at=null returning *",[requestId,mentorUserId,request.mentee_user_id,match.score,JSON.stringify(match.reasons)])).rows[0];
     await db.query("update mentorship_request set status='matched',matched_mentor_user_id=$1,matched_at=now(),updated_at=now() where id=$2",[mentorUserId,requestId]);
     await audit(db,actorUserId,"mentorship.match_proposed","mentorship_match",row.id,requestIdHeader,{mentorUserId,score:match.score});
+    await queueWorkflowEmail(db,mentorUserId,"mentor.mentorship_update",{status:"match proposed",nextAction:"Review and accept or decline the mentorship match",actionUrl:"/mentorship",actionRequired:true,priority:"high",eventVersion:row.proposed_at||requestIdHeader},"mentorship_match",row.id);
+    await queueWorkflowEmail(db,request.mentee_user_id,"professional.workflow_update",{status:"mentor match proposed",nextAction:"Wait for the proposed mentor to respond",actionUrl:"/mentorship",eventVersion:row.proposed_at||requestIdHeader},"mentorship_match",row.id);
     return row;
   });
 }
@@ -496,6 +627,7 @@ export async function respondToMatch(matchId,mentorUserId,status,requestIdHeader
     const match=(await db.query("select * from mentorship_match where id=$1 for update",[matchId])).rows[0];
     if(!match) throw error(404,"Mentorship match not found.","NOT_FOUND");
     if(match.mentor_user_id!==mentorUserId) throw error(403,"Only the proposed mentor can respond.","FORBIDDEN");
+    if(match.status===status)return {...match,idempotent:true,nextAction:status==="accepted"?"Review the new mentorship relationship and agree the first session.":"The mentee or Support Desk can propose another mentor."};
     if(match.status!=="proposed") throw error(409,"This match is no longer awaiting a response.","INVALID_STATE");
     const updated=(await db.query("update mentorship_match set status=$1,responded_at=now() where id=$2 returning *",[status,matchId])).rows[0];
     if(status==="accepted"){
@@ -508,7 +640,9 @@ export async function respondToMatch(matchId,mentorUserId,status,requestIdHeader
       await db.query("update mentorship_request set status='matching',matched_mentor_user_id=null,matched_at=null,updated_at=now() where id=$1",[match.request_id]);
     }
     await audit(db,mentorUserId,"mentorship.match_responded","mentorship_match",matchId,requestIdHeader,{status});
-    return updated;
+    await notify(db,match.mentee_user_id,status==="accepted"?"mentorship.match_accepted":"mentorship.match_declined","mentorship_match",matchId,{message:status==="accepted"?"The mentor accepted your proposal. A mentorship relationship is now active.":"The mentor declined this proposal. You can ask the Support Desk to find another mentor.",nextAction:status==="accepted"?"Open the active relationship, agree goals and schedule the first session.":"Review other matches or request another mentor match.",actionRequired:status==="declined",priority:status==="declined"?"high":"normal"});
+    if(status==="declined"){const supportUsers=(await db.query("select distinct ur.user_id from app_user_role ur join app_role ar on ar.id=ur.role_id join app_user u on u.id=ur.user_id where u.status='active' and ar.role_code=any($1::text[])",[["supporting_staff","system_admin"]])).rows;for(const member of supportUsers)await notify(db,member.user_id,"mentorship.match_declined","mentorship_request",match.request_id,{message:"A proposed mentor declined a match and the request returned to matching.",nextAction:"Review the request and propose another currently eligible mentor.",actionUrl:"/mentorship",reviewerQueue:true,actionRequired:true,priority:"high"});}
+    return {...updated,nextAction:status==="accepted"?"The relationship is active. Agree goals and schedule the first session.":"The request is back in matching. Choose another eligible mentor."};
   });
 }
 
@@ -523,11 +657,15 @@ export async function changeMentorshipStatus(mentorshipId,userId,status,note,req
   if(!["active","paused","completed","cancelled"].includes(status)) throw error(400,"Unsupported mentorship status.","VALIDATION_ERROR");
   return withTransaction(async db=>{
     const m=await mentorshipParticipant(db,mentorshipId,userId);
+    if(m.status===status)return {...m,idempotent:true,nextAction:status==="active"?"Agree the next goal or session.":status==="paused"?"Resume when both participants are ready, or record a final outcome.":"This mentorship relationship is resolved."};
+    if(["cancelled","completed"].includes(status)&&String(note||"").trim().length<4)throw error(400,"Add a short outcome note so both participants understand how this relationship is ending.","OUTCOME_NOTE_REQUIRED");
     if(!allowedMentorshipTransition(m.status,status)) throw error(409,"Invalid mentorship lifecycle transition.","INVALID_STATE");
-    const row=(await db.query("update mentorship set status=$1,paused_at=case when $1='paused' then now() else paused_at end,completed_at=case when $1='completed' then now() else completed_at end,cancelled_at=case when $1='cancelled' then now() else cancelled_at end,updated_at=now() where id=$2 returning *",[status,mentorshipId])).rows[0];
+    if(status==="completed"){const pending=(await db.query("select count(*)::int count from mentorship_goal where mentorship_id=$1 and status in ('planned','in_progress')",[mentorshipId])).rows[0].count;if(Number(pending)>0)throw error(409,"Resolve or cancel all open goals before completing this mentorship.","GOALS_STILL_OPEN");}
+    const row=(await db.query("update mentorship set status=$1,outcome_summary=case when $1 in ('completed','cancelled') then $2 else outcome_summary end,paused_at=case when $1='paused' then now() else paused_at end,completed_at=case when $1='completed' then now() else completed_at end,cancelled_at=case when $1='cancelled' then now() else cancelled_at end,updated_at=now() where id=$3 returning *",[status,String(note||"").trim()||null,mentorshipId])).rows[0];
     await db.query("insert into mentorship_event(mentorship_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,$4,$5)",[mentorshipId,userId,m.status,status,note||null]);
     await audit(db,userId,"mentorship.status_changed","mentorship",mentorshipId,requestIdHeader,{from:m.status,to:status});
-    return row;
+    for(const recipient of new Set([m.mentor_user_id,m.mentee_user_id]))if(recipient!==userId)await notify(db,recipient,"mentorship.status_changed","mentorship",mentorshipId,{from:m.status,to:status,note:note||null,message:status==="paused"?"The mentorship was paused.":status==="completed"?"The mentorship was marked complete.":"The mentorship was cancelled.",nextAction:status==="paused"?"Agree when to resume or document the outcome.":status==="completed"?"Review completed goals and submit program feedback.":"Review the reason and decide whether to request a new match."});
+    return {...row,nextAction:status==="paused"?"Agree when to resume or document the outcome.":status==="completed"?"Review goals and submit program feedback.":"Review the cancellation reason and request a new match if needed."};
   });
 }
 
@@ -539,6 +677,8 @@ export async function createMentorshipSession(mentorshipId,userId,input,requestI
     await assertSessionFitsAvailability(db,m.mentor_user_id,input.scheduledStartAt,input.scheduledEndAt);
     const row=(await db.query("insert into mentorship_session(mentorship_id,scheduled_start_at,scheduled_end_at,mode,location_label,meeting_reference,agenda,created_by) values($1,$2,$3,$4,$5,$6,$7,$8) returning *",[mentorshipId,input.scheduledStartAt,input.scheduledEndAt,input.mode||"remote",input.locationLabel||null,input.meetingReference||null,input.agenda||null,userId])).rows[0];
     await audit(db,userId,"mentorship.session_created","mentorship_session",row.id,requestId);
+    const other=m.mentor_user_id===userId?m.mentee_user_id:m.mentor_user_id;
+    await notify(db,other,"mentorship.session_scheduled","mentorship_session",row.id,{message:"A mentorship session has been scheduled.",nextAction:"Review the date, time, mode and agenda, then coordinate any change with the other participant.",actionUrl:"/mentorship",actionRequired:true,priority:"high",scheduledStartAt:row.scheduled_start_at,scheduledEndAt:row.scheduled_end_at});
     return row;
   });
 }
@@ -549,10 +689,13 @@ export async function changeMentorshipSession(sessionId,userId,status,notes,requ
     const s=(await db.query("select s.*,m.mentor_user_id,m.mentee_user_id,m.status mentorship_status from mentorship_session s join mentorship m on m.id=s.mentorship_id where s.id=$1 for update",[sessionId])).rows[0];
     if(!s) throw error(404,"Mentorship session not found.","NOT_FOUND");
     if(s.mentor_user_id!==userId&&s.mentee_user_id!==userId) throw error(403,"You are not a session participant.","FORBIDDEN");
+    if(s.status===status)return {...s,idempotent:true,nextAction:status==="completed"?"You can submit session feedback.":"Review the session record or schedule another session."};
     if(!allowedSessionTransition(s.status,status)) throw error(409,"Invalid session transition.","INVALID_STATE");
     const row=(await db.query("update mentorship_session set status=$1,notes=coalesce($2,notes),completed_at=case when $1='completed' then now() else completed_at end,updated_at=now() where id=$3 returning *",[status,notes||null,sessionId])).rows[0];
     await audit(db,userId,"mentorship.session_status_changed","mentorship_session",sessionId,requestId,{from:s.status,to:status});
-    return row;
+    const other=s.mentor_user_id===userId?s.mentee_user_id:s.mentor_user_id;
+    if(other)await notify(db,other,"mentorship.session_status_changed","mentorship_session",sessionId,{from:s.status,to:status,notes:notes||null,message:status==="completed"?"A mentorship session was marked complete.":status==="no_show"?"A participant recorded a no-show.":"A mentorship session was cancelled.",nextAction:status==="completed"?"Submit session feedback or schedule the next session.":"Coordinate a replacement session if appropriate."});
+    return {...row,nextAction:status==="completed"?"Submit session feedback or schedule the next session.":"Coordinate a replacement session if appropriate."};
   });
 }
 
@@ -638,6 +781,8 @@ export async function listMyMentorships(userId){
 
 export async function getMyMentorProfile(userId){
  const db=getPool();
+ try { await assertProfessionalIdentity(db,userId); }
+ catch(cause) { throw error(cause.statusCode||403,cause.message||"A personal professional account is required to access mentor profile settings.",cause.code||"PROFESSIONAL_PROFILE_FORBIDDEN"); }
  const profile=(await db.query("select mp.*,p.display_name from mentor_profile mp join person p on p.user_id=mp.user_id where mp.user_id=$1",[userId])).rows[0];
  if(!profile)return null;
  profile.availability=(await db.query("select id,day_of_week,start_time,end_time,timezone,active from mentor_availability where mentor_profile_id=$1 order by day_of_week,start_time",[profile.id])).rows;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, Power } from "lucide-react";
+import { LogOut, Power, MailCheck } from "lucide-react";
+import { FormFeedback } from "../../components/form-feedback";
 import { Badge } from "../../components/ui";
 import { ApiError, api } from "../../lib/api";
 import styles from "./users-table.module.css";
@@ -36,6 +37,7 @@ type Props = {
   token: string;
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
+  usersLoadFailed?: boolean;
 };
 
 export function UsersTable({
@@ -47,11 +49,13 @@ export function UsersTable({
   token,
   onChanged,
   onError,
+  usersLoadFailed = false,
 }: Props) {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState("");
+  const [notice, setNotice] = useState("");
   const isSystemAdmin = currentRoles.includes("system_admin");
   const choices = roleCatalog.filter(
     (role) => role.assignable && (!role.privileged || isSystemAdmin),
@@ -68,6 +72,7 @@ export function UsersTable({
       return;
     }
     setBusy(key);
+    setNotice("");
     onError("");
     try {
       await action();
@@ -93,6 +98,7 @@ export function UsersTable({
 
   return (
     <div className={styles.wrap}>
+      {notice && <FormFeedback kind="success" message={notice} />}
       <table className={styles.table}>
         <thead>
           <tr>
@@ -295,6 +301,21 @@ export function UsersTable({
                     <button
                       className="btn btn-ghost"
                       type="button"
+                      disabled={!manageable || !reason.trim() || busy === "one-time-link:" + user.id}
+                      onClick={() => void updateUser(user, "one-time-link:" + user.id, async () => {
+                        const result = await api<{queued:boolean;email:string;expiresInMinutes:number;message:string}>(
+                          "/api/v1/admin/users/" + user.id + "/one-time-session-link",
+                          { method: "POST", body: JSON.stringify({ reason }) },
+                          token,
+                        );
+                        setNotice(result.message + " Recipient: " + result.email + ". Confirm the person’s identity through a known channel before asking them to use the link.");
+                      })}
+                    >
+                      <MailCheck size={15} /> Send one-time sign-in link
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
                       disabled={!manageable || !reason.trim() || busy === user.id}
                       onClick={() =>
                         void updateUser(user, user.id, () =>
@@ -321,7 +342,7 @@ export function UsersTable({
               </tr>
             );
           })}
-          {users.length === 0 && (
+          {users.length === 0 && !usersLoadFailed && (
             <tr>
               <td colSpan={6} className={styles.empty}>
                 No accounts match these filters.

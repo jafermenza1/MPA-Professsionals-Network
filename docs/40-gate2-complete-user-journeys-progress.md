@@ -1,0 +1,37 @@
+# Gate 2 — Complete User Journeys: Implementation Record
+
+**Branch:** `reconciliation/holistic-gates`  
+**Pull request:** [#3](https://github.com/Jafermenza1/MPA-Professsionals-Network/pull/3)  
+**Status:** Implementation changes saved; validation intentionally deferred until the gate is ready for review.
+
+## Implemented in this gate
+
+- Guided professional profile tests now cover structured education save/reload plus skills, languages and certifications save/reload.
+- Reference-list editing and CSV imports use a working draft instead of mutating the currently published version. CSV export reads the working copy when one exists.
+- Added an explicit reference version publication API and administrator UI. Publication validates non-empty active content and codes/labels, archives the previous published version, publishes the working version, and records publication and audit history. Public profile forms continue to read the last published version until publication.
+- Service-listing submission now places a listing into the Support Desk review queue instead of rejecting the provider's “Submit for review” action. Approved listings remain hidden until the moderator approves them.
+- Individual mentorship offers now enter moderation through the submission action rather than failing because approval has not happened yet.
+- Added a separate organization-owned mentorship-program flow, tied to a verified organization identity: create/edit draft, submit for moderation, Support Desk approval, public discovery, private participant request, organization response, and completion record.
+- Added the organization mentorship offer/request tables, server routes, moderation queue integration and public/member-facing workspace controls.
+- Added database-backed workflow coverage for separate provider, non-member requester, organization owner and Support Desk accounts.
+- Added a first-class Support Desk provider-to-demand match record, candidate filtering for eligible published offers, provider/organization accept-or-decline responses, requester-visible match status, audit events and protection against multiple simultaneous acceptances.
+
+## Added or expanded workflow evidence
+
+- `test/p0/guided-profile.test.js`: education and profile fields survive reload; portfolio evidence remains optional/private; CSV import/export is staged and publication switches the public reference set.
+- `test/p0/marketplace-demand.test.js`: provider listing submission is checked through the actual moderation queue.
+- `test/p1/complete-user-journeys.test.js`: service request through accepted delivery, outcome acceptance and feedback; verified-organization service fulfillment; individual mentorship moderation/matching/session/completion/feedback; organization mentorship offer moderation/request/acceptance/completion; Support Desk demand-to-provider matching with provider acceptance and requester-visible follow-up; organization verification blocker/evidence checklist visibility.
+- `test/membership/phase1.test.js`: administrator membership review queue includes a review-history collection.
+
+## Deferred validation
+
+Per the instruction to save validation until after the gate is assembled, **no test, type-check, build, migration application, browser run, or acceptance CI workflow has been executed for this Gate 2 save**. The listed tests are committed evidence to run later, not a claim that they currently pass.
+
+Before Gate 2 can be accepted, run the project’s agreed validation against the current PR head, apply the migrations in order on a disposable/test database, and execute browser journeys with separate accounts for professional, non-member, organization owner and Support Desk/admin. Investigate every failure without removing assertions or weakening the expected business rules.
+
+## Cross-role workspace clarity added after review
+
+- The personal dashboard now presents a single consolidated, paginated administrator attention queue from membership, verification, organization verification, independent appeals, service/mentorship moderation and public-demand review sources. It includes all returned queue items rather than silently limiting the visible queue to the first few records. Each item explains why it needs attention, the next action, a priority, an actual recorded deadline where available (otherwise explicitly says none is recorded), the last update and the available decision/history note. Verification items include decision history and overdue member-response deadlines are prioritized; membership review history is included in the queue response. Source workspaces remain the authority for the permitted action.
+- Organization onboarding now explains the trust-and-publishing path in plain language. Organization summaries return the current verification case state, latest reviewer note, required evidence, evidence already supplied and evidence still missing. Evidence upload options include administrator-configured required evidence types. The workspace explains that job/service/mentorship publishing is available only after the server marks the organization verified, and links to recruitment, professional network, jobs, services and mentorship.
+- The member dashboard now shows active membership status, recorded payment state, membership correction notes and outstanding required verification checklist items, all verified professional claims from the member's case list, directory visibility and links to next actions. Job opportunities now expose a per-vacancy eligibility check and list which published requirements are met or still needed; a failed eligibility lookup has a retry action.
+- These changes are implementation only. No tests, browser journeys, TypeScript checks, production build, migrations or CI/acceptance workflow were run; validation remains deferred as requested.

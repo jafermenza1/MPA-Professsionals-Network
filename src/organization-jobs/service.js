@@ -1,5 +1,7 @@
 import { getPool, withTransaction } from "../platform/db.js";
 import { nextTrackingReference } from "../platform/tracking-reference.js";
+import { assertOrganizationCapability } from "../platform/identity-policy.js";
+import { queueWorkflowEmail } from "../platform/email-operations.js";
 
 function error(status,message,code="BUSINESS_RULE"){ const e=new Error(message); e.statusCode=status; e.code=code; return e; }
 const ORG_WRITE_ROLES=["owner","administrator","recruiter"];
@@ -8,9 +10,12 @@ const CANDIDATE_ROLES=["owner","administrator","recruiter"];
 async function audit(db,actor,action,type,id,requestId,metadata={}){ await db.query("insert into audit_log(actor_user_id,action,resource_type,resource_id,request_id,outcome,metadata) values($1,$2,$3,$4,$5,'success',$6)",[actor,action,type,id,requestId,metadata]); }
 
 async function orgRole(db,orgId,userId,roles=ORG_WRITE_ROLES){
- const r=(await db.query("select role_code from organization_membership where organization_id=$1 and user_id=$2 and status='active'",[orgId,userId])).rows[0];
- if(!r||!roles.includes(r.role_code)) throw error(403,"You do not have the required organization permission.","FORBIDDEN");
- return r.role_code;
+ try {
+  const membership=await assertOrganizationCapability(db,orgId,userId,roles);
+  return membership.role_code;
+ } catch {
+  throw error(403,"You do not have permission to manage this organization's workspace or the requested resource.","FORBIDDEN");
+ }
 }
 async function verifiedOrg(db,orgId){
  const r=(await db.query("select * from organization where id=$1 and verification_status='verified'",[orgId])).rows[0];
@@ -35,8 +40,28 @@ export async function registerOrganization(userId,input,requestId){
   await db.query("insert into organization_membership(organization_id,user_id,role_code,status,joined_at) values($1,$2,'owner','active',now())",[org.id,userId]);
   await db.query("insert into organization_verification_case(organization_id,status,submitted_by,submitted_at) values($1,'draft',$2,null)",[org.id,userId]);
   await audit(db,userId,"organization.created","organization",org.id,requestId,{});
+  await queueWorkflowEmail(db,userId,"organization.registration_received",{organizationId:org.id,organizationName:org.display_name,registrationReference:org.tracking_reference,status:"draft",nextAction:"Upload required private evidence and submit for organization review"},"organization",org.id);
   return org;
  });
+}
+
+export async function listPublicOrganizations(filters={}) {
+ const db=getPool();const args=[];const where=["o.public_visible=true","o.verification_status='verified'"];
+ if(filters.q){args.push("%"+String(filters.q).trim()+"%");where.push("(o.display_name ilike $"+args.length+" or o.legal_name ilike $"+args.length+" or coalesce(o.description,'') ilike $"+args.length+")");}
+ if(filters.organizationType){args.push(String(filters.organizationType));where.push("o.organization_type=$"+args.length);}
+ if(filters.location){args.push("%"+String(filters.location).trim()+"%");where.push("(coalesce(ri.label,'') ilike $"+args.length+" or coalesce(o.address_text,'') ilike $"+args.length+")");}
+ const limit=Math.min(Math.max(Number(filters.limit)||20,1),50),offset=Math.max(Number(filters.offset)||0,0);
+ const base=" from organization o left join reference_item ri on ri.id=o.geography_reference_item_id where "+where.join(" and ");
+ const total=Number((await db.query("select count(*)::int count"+base,args)).rows[0]?.count||0);
+ const rows=(await db.query("select o.id,o.display_name,o.organization_type,o.description,o.website,ri.label location_label,o.created_at"+base+" order by o.display_name limit "+(limit+1)+" offset "+offset,args)).rows;
+ return {items:rows.slice(0,limit),limit,offset,total,hasMore:offset+limit<total};
+}
+
+export async function getPublicOrganizationProfile(orgId){
+ const db=getPool();
+ const row=(await db.query("select o.id,o.display_name,o.organization_type,o.description,o.website,ri.label location_label,o.created_at from organization o left join reference_item ri on ri.id=o.geography_reference_item_id where o.id=$1 and o.public_visible=true and o.verification_status='verified'",[orgId])).rows[0];
+ if(!row)throw error(404,"Public organization profile not found.","NOT_FOUND");
+ return row;
 }
 
 export async function getOrganization(orgId,viewerId=null){
@@ -49,7 +74,14 @@ export async function getOrganization(orgId,viewerId=null){
 }
 
 export async function listMyOrganizations(userId){
- return (await getPool().query("select o.*,om.role_code from organization o join organization_membership om on om.organization_id=o.id where om.user_id=$1 and om.status='active' order by o.created_at desc",[userId])).rows;
+ return (await getPool().query(`select o.*,om.role_code,
+   vc.id verification_case_id,vc.status verification_case_status,vc.submitted_at verification_submitted_at,vc.reviewed_at verification_reviewed_at,vc.decision_reason verification_decision_reason,
+   coalesce((select jsonb_agg(jsonb_build_object('evidenceType',e.evidence_type,'note',e.note,'createdAt',e.created_at) order by e.created_at desc) from organization_verification_evidence e where e.case_id=vc.id),'[]'::jsonb) verification_evidence,
+   coalesce((select jsonb_agg(r.evidence_type order by r.sort_order) from organization_verification_requirement r where r.active=true and r.required=true and (r.organization_type=o.organization_type or r.organization_type is null)),'[]'::jsonb) required_evidence,
+   coalesce((select jsonb_agg(r.evidence_type order by r.sort_order) from organization_verification_requirement r where coalesce(o.verification_status,'unverified')<>'verified' and coalesce(vc.status,'draft')<>'verified' and r.active=true and r.required=true and (r.organization_type=o.organization_type or r.organization_type is null) and not exists(select 1 from organization_verification_evidence e where e.case_id=vc.id and e.evidence_type=r.evidence_type)),'[]'::jsonb) missing_evidence
+  from organization o join organization_membership om on om.organization_id=o.id
+  left join lateral (select * from organization_verification_case c where c.organization_id=o.id order by c.submitted_at desc limit 1) vc on true
+  where om.user_id=$1 and om.status='active' order by o.created_at desc`,[userId])).rows;
 }
 
 export async function addVerificationEvidence(orgId,userId,input,requestId){
@@ -78,9 +110,12 @@ export async function submitOrganizationVerification(orgId,userId,requestId){
    const missing=required.map(x=>x.evidence_type).filter(x=>!evidence.includes(x));
    if(missing.length) throw error(400,"Required organization verification evidence is missing.","EVIDENCE_REQUIRED");
   }
-  await db.query("update organization_verification_case set status='submitted',submitted_by=$1,submitted_at=now() where id=$2",[userId,c.id]);
+  const submitted=(await db.query("update organization_verification_case set status='submitted',submitted_by=$1,submitted_at=now() where id=$2 returning submitted_at",[userId,c.id])).rows[0];
   await db.query("update organization set verification_status='pending',updated_at=now() where id=$1",[orgId]);
   await audit(db,userId,"organization.verification_submitted","organization",orgId,requestId,{});
+  const recipients=(await db.query("select distinct u.id user_id from app_user u where u.status='active' and (exists(select 1 from app_user_role ur join app_role r on r.id=ur.role_id where ur.user_id=u.id and r.role_code in ('reviewer','system_admin')) or exists(select 1 from app_user_permission up where up.user_id=u.id and up.permission_code='organizations.review'))")).rows;
+  const orgDetails=(await db.query("select display_name,tracking_reference from organization where id=$1",[orgId])).rows[0];
+  for(const reviewer of recipients)await queueWorkflowEmail(db,reviewer.user_id,"organization.review_queue_item",{category:"organizations",title:"Organization verification ready for review",organizationName:orgDetails?.display_name||"Organization",registrationReference:orgDetails?.tracking_reference||"",status:"submitted",message:"An organization verification case has been submitted and is awaiting review.",nextAction:"Open the existing organization verification queue and review the submitted evidence.",actionUrl:"/organizations",reviewerQueue:true,actionRequired:true,priority:"high",from:c.status,to:"submitted",eventVersion:submitted?.submitted_at||requestId||c.id},"organization_verification_case",c.id);
   return {organizationId:orgId,status:"submitted"};
  });
 }
@@ -103,15 +138,18 @@ export async function reviewOrganization(orgId,reviewerId,input,requestId){
   if(!["verified","rejected","correction_required"].includes(input.decision)) throw error(400,"Invalid organization verification decision.","VALIDATION_ERROR");
   const c=(await db.query("select id,status,submitted_by from organization_verification_case where organization_id=$1 for update",[orgId])).rows[0];
   if(!c) throw error(404,"Organization verification case not found.","NOT_FOUND");
-  const org=(await db.query("select created_by from organization where id=$1",[orgId])).rows[0];
+  const org=(await db.query("select created_by,display_name,tracking_reference,updated_at from organization where id=$1",[orgId])).rows[0];
   const conflict=(org?.created_by===reviewerId)||c.submitted_by===reviewerId||(await db.query("select 1 from organization_membership where organization_id=$1 and user_id=$2 and status='active' limit 1",[orgId,reviewerId])).rowCount>0;
   if(conflict) throw error(403,"A reviewer cannot decide verification for an organization they created, submitted, or belong to.","REVIEWER_CONFLICT");
   if(c.status!=="submitted"&&c.status!=="correction_required") throw error(409,"Organization verification must be submitted before review.","INVALID_STATE");
   if(c.status==="verified"&&input.decision!=="verified") throw error(409,"Verified organization requires a formal suspension workflow.","INVALID_STATE");
   const status=input.decision;
-  await db.query("update organization_verification_case set status=$1,reviewed_by=$2,decision_reason=$3,reviewed_at=now() where id=$4",[status,reviewerId,input.reason||null,c.id]);
+  const decided=(await db.query("update organization_verification_case set status=$1,reviewed_by=$2,decision_reason=$3,reviewed_at=now() where id=$4 returning reviewed_at",[status,reviewerId,input.reason||null,c.id])).rows[0];
   await db.query("update organization set verification_status=$1,verified_at=case when $1='verified' then now() else verified_at end,verified_by=case when $1='verified' then $2 else verified_by end,public_visible=case when $1='verified' then true else false end,updated_at=now() where id=$3",[status,reviewerId,orgId]);
   await audit(db,reviewerId,"organization.verification_decided","organization",orgId,requestId,{decision:status});
+  const actionRequired=status==="correction_required";
+  const notificationRecipients=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code in ('owner','administrator') union select $2::uuid where $2 is not null and exists(select 1 from app_user u where u.id=$2 and u.status='active')",[orgId,org?.created_by||null])).rows;
+  for(const recipient of notificationRecipients)await queueWorkflowEmail(db,recipient.user_id,"organization.review_update",{category:"organizations",title:status==="verified"?"Organization verified":status==="correction_required"?"Organization corrections required":"Organization verification decision",organizationId:orgId,organizationName:org.display_name,registrationReference:org.tracking_reference,status,message:status==="verified"?"Your organization has been verified.":status==="correction_required"?"The reviewer requested changes to your organization verification submission.":"Your organization verification submission was not approved.",nextAction:status==="correction_required"?"Review the reviewer feedback and provide the requested corrections":status==="verified"?"Your organization can continue with eligible workspace activities.":"Review the decision reason and contact support if you believe this decision is incorrect",actionUrl:"/organizations",actionRequired,priority:actionRequired?"high":"normal",eventVersion:decided?.reviewed_at||requestId||orgId,lastUpdated:org.updated_at?.toISOString?.()||String(org.updated_at||"")},"organization",orgId);
   return {organizationId:orgId,status};
  });
 }
@@ -291,9 +329,15 @@ export async function listJobs(filters={},viewerId=null){
  }
  if(filters.industryReferenceItemId){args.push(filters.industryReferenceItemId);where.push("j.industry_reference_item_id=$"+args.length);}
  if(filters.occupationReferenceItemId){args.push(filters.occupationReferenceItemId);where.push("j.occupation_reference_item_id=$"+args.length);}
- const rows=(await db.query("select j.id,j.title,j.description,j.employment_type,j.work_mode,j.location_label,j.visibility,j.posting_scope,j.department,j.seniority_level,j.positions_count,j.salary_min,j.salary_max,j.salary_currency,j.application_deadline,j.published_at,o.id organization_id,o.display_name organization_name from job j join organization o on o.id=j.organization_id where "+where.join(" and ")+" order by j.published_at desc",[...args])).rows;
- const visible=[]; for(const row of rows){ if(await jobScopeAllowed(db,row,viewerId)) visible.push(row); }
- return {items:visible};
+ // Keep the existing jobScopeAllowed policy equivalent, but apply it inside SQL
+ // before count/limit/offset. This avoids loading all jobs and per-row membership queries.
+ args.push(viewerId||null);const viewerParam="$"+args.length;
+ where.push("(j.posting_scope='public' or (j.posting_scope in ('mpa_members','partner_network') and "+viewerParam+"::uuid is not null and exists(select 1 from membership_record m where m.user_id="+viewerParam+"::uuid and m.status='active')) or (j.posting_scope='organization_internal' and "+viewerParam+"::uuid is not null and exists(select 1 from organization_membership om where om.organization_id=j.organization_id and om.user_id="+viewerParam+"::uuid and om.status='active')))");
+ const predicate=where.join(" and ");
+ const total=Number((await db.query("select count(*)::int count from job j join organization o on o.id=j.organization_id where "+predicate,args)).rows[0]?.count||0);
+ const limit=Math.min(Math.max(Number(filters.limit)||20,1),50),offset=Math.max(Number(filters.offset)||0,0);
+ const rows=(await db.query("select j.id,j.title,j.description,j.employment_type,j.work_mode,j.location_label,j.visibility,j.posting_scope,j.department,j.seniority_level,j.positions_count,j.salary_min,j.salary_max,j.salary_currency,j.application_deadline,j.published_at,o.id organization_id,o.display_name organization_name from job j join organization o on o.id=j.organization_id where "+predicate+" order by j.published_at desc,j.id desc limit $"+(args.length+1)+" offset $"+(args.length+2),[...args,limit,offset])).rows;
+ return {items:rows,limit,offset,total,hasMore:offset+rows.length<total};
 }
 
 export async function getJob(jobId,viewerId=null){
@@ -340,7 +384,7 @@ export async function updateApplicationDraft(applicationId,userId,input={},reque
 
 export async function submitApplication(applicationId,userId,input={},requestId){
  return withTransaction(async db=>{
-  const a=(await db.query("select a.*,j.visibility,j.status job_status,j.application_deadline from job_application a join job j on j.id=a.job_id where a.id=$1 for update",[applicationId])).rows[0]; if(!a) throw error(404,"Application not found.","NOT_FOUND");
+  const a=(await db.query("select a.*,j.visibility,j.status job_status,j.application_deadline,j.title job_title,j.organization_id from job_application a join job j on j.id=a.job_id where a.id=$1 for update",[applicationId])).rows[0]; if(!a) throw error(404,"Application not found.","NOT_FOUND");
   if(a.applicant_user_id!==userId) throw error(403,"Only the applicant can submit this application.","FORBIDDEN");
   if(a.status!=="draft") throw error(409,"Only draft applications can be submitted.","INVALID_STATE");
   if(a.job_status!=="published" || (a.application_deadline&&new Date(a.application_deadline)<=new Date())) throw error(409,"This job is not accepting applications.","JOB_NOT_OPEN");
@@ -351,6 +395,9 @@ export async function submitApplication(applicationId,userId,input={},requestId)
   const updated=(await db.query("update job_application set status='submitted',cover_letter=coalesce($1,cover_letter),profile_snapshot=$2,eligibility_snapshot=$3,submitted_at=now(),updated_at=now() where id=$4 returning *",[input.coverLetter??null,snapshot,eligibility,applicationId])).rows[0];
   await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,'draft','submitted',$3)",[applicationId,userId,input.note||null]);
   await audit(db,userId,"job.application_submitted","job_application",applicationId,requestId,{jobId:a.job_id});
+  await queueWorkflowEmail(db,userId,"professional.workflow_update",{notificationEventCode:"job.application_submitted",category:"recruitment",title:"Application submitted",message:"Your application for "+(a.job_title||"the role")+" was submitted.",status:"submitted",jobTitle:a.job_title||"job application",nextAction:"Monitor the application timeline for employer updates.",actionUrl:"/jobs",registrationReference:updated.tracking_reference||""},"job_application",applicationId);
+  const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+  for(const employer of employers) await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.application_received",category:"recruitment",title:"New candidate application",audience:"employer",jobTitle:a.job_title||"job",status:"submitted",message:"A candidate submitted an application for your job.",nextAction:"Review the candidate in the recruitment workspace.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
   return updated;
  });
 }
@@ -369,6 +416,10 @@ export async function applyToJob(jobId,userId,input,requestId){
   await saveScreeningAnswers(db,app.id,jobId,input.answers||[]);
   await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,null,'submitted',$3)",[app.id,userId,input.note||null]);
   await audit(db,userId,"job.application_submitted","job_application",app.id,requestId,{jobId});
+  await queueWorkflowEmail(db,userId,"professional.workflow_update",{notificationEventCode:"job.application_submitted",category:"recruitment",title:"Application submitted",message:"Your application was submitted successfully.",status:"submitted",nextAction:"Monitor the application timeline for employer updates.",actionUrl:"/jobs",registrationReference:app.tracking_reference||""},"job_application",app.id);
+  const jobDetails=(await db.query("select title,organization_id from job where id=$1",[jobId])).rows[0];
+  const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[jobDetails.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+  for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.application_received",category:"recruitment",title:"New candidate application",audience:"employer",jobTitle:jobDetails.title||"job",status:"submitted",message:"A candidate submitted an application for your job.",nextAction:"Review the candidate in the recruitment workspace.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",app.id);
   return app;
  });
 }
@@ -399,7 +450,7 @@ export function allowedCandidateResponse(from,to){ return from==="offer"&&to==="
 
 export async function updateCandidate(jobId,applicationId,userId,input,requestId){
   return withTransaction(async db=>{
-    const j=(await db.query("select organization_id from job where id=$1",[jobId])).rows[0];
+    const j=(await db.query("select organization_id,title from job where id=$1",[jobId])).rows[0];
     if(!j) throw error(404,"Job not found.","NOT_FOUND");
     await orgRole(db,j.organization_id,userId,CANDIDATE_ROLES);
     const a=(await db.query("select * from job_application where id=$1 and job_id=$2 for update",[applicationId,jobId])).rows[0];
@@ -417,6 +468,14 @@ export async function updateCandidate(jobId,applicationId,userId,input,requestId
     )).rows[0];
     await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,$4,$5)",[applicationId,userId,a.status,input.status,input.note||null]);
     await audit(db,userId,"job.candidate_status_changed","job_application",applicationId,requestId,{from:a.status,to:input.status});
+    if(input.status==="offer"&&offerApproval==="pending"){
+      const approvers=(await db.query("select jtm.user_id from job_team_member jtm join app_user u on u.id=jtm.user_id where jtm.job_id=$1 and jtm.role_code='approver' and jtm.active=true and u.status='active'",[jobId])).rows;
+      for(const approver of approvers)await queueWorkflowEmail(db,approver.user_id,"employer.offer_approval_required",{notificationEventCode:"job.offer_approval_required",category:"recruitment",title:"Job offer needs approval",audience:"employer",jobTitle:j.title||"job",status:"pending approval",message:"A candidate offer is waiting for the required internal approval.",nextAction:"Review the proposed offer and approve or reject it in the recruitment workspace.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
+    }else{
+      const candidateMessage=input.status==="offer"?"An employment offer is ready for your response.":input.status==="rejected"?"The employer has updated your application decision.":input.status==="hired"?"Your hiring status has been recorded.":input.status==="shortlisted"?"You have been shortlisted for the next recruitment stage.":input.status==="interview"?"Your application has advanced to interview stage.":"Your application status has been updated.";
+      const nextAction=input.status==="offer"?"Review the offer terms and accept or decline it.":input.status==="rejected"?"Review the decision and continue exploring other opportunities.":input.status==="hired"?"Review the hiring details and any onboarding instructions.":input.status==="shortlisted"?"Check your application timeline for interview or next-step updates.":input.status==="interview"?"Review your interview invitation and confirm availability.":"Review your application timeline for the latest progress.";
+      await queueWorkflowEmail(db,a.applicant_user_id,"professional.workflow_update",{notificationEventCode:"job.application_status_changed",category:"recruitment",title:"Application status updated",status:input.status,message:candidateMessage,nextAction,actionUrl:"/jobs",actionRequired:["offer","interview"].includes(input.status),priority:["offer","interview"].includes(input.status)?"high":"normal"},"job_application",applicationId);
+    }
     return updated;
   });
 }
@@ -429,6 +488,7 @@ export async function approveJobOffer(applicationId,userId,input,requestId){
   const decision=input.decision==="approved"?"approved":"rejected";
   const row=(await db.query("update job_application set offer_approval_status=$1,updated_at=now() where id=$2 returning *",[decision,applicationId])).rows[0];
   await audit(db,userId,"job.offer_approval_decided","job_application",applicationId,requestId,{decision});
+  await queueWorkflowEmail(db,a.applicant_user_id,"professional.workflow_update",{notificationEventCode:"job.offer_approval_decided",category:"recruitment",title:decision==="approved"?"Offer approved":"Offer not approved",status:decision,message:decision==="approved"?"The employer approved the offer and it is ready for your response.":"The proposed offer was not approved by the employer.",nextAction:decision==="approved"?"Review the offer terms and accept or decline.":"Check your application timeline or contact the employer for clarification.",actionUrl:"/jobs",actionRequired:decision==="approved",priority:decision==="approved"?"high":"normal"},"job_application",applicationId);
   return row;
  }
  );
@@ -446,6 +506,8 @@ export async function respondToJobApplication(applicationId,userId,input,request
       const row=(await db.query("update job_application set status='accepted',offer_responded_at=now(),updated_at=now() where id=$1 returning *",[applicationId])).rows[0];
       await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,'offer','accepted',$3)",[applicationId,userId,input.note||null]);
       await audit(db,userId,"job.offer_accepted","job_application",applicationId,requestId);
+      const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+      for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.offer_accepted",category:"recruitment",title:"Candidate accepted offer",audience:"employer",status:"accepted",message:"The candidate accepted the employment offer.",nextAction:"Update the candidate pipeline and prepare any authorized onboarding steps.",actionUrl:"/recruitment",reviewerQueue:true,actionRequired:true,priority:"high"},"job_application",applicationId);
       return row;
     }
     if(input.status==="withdrawn"){
@@ -453,6 +515,8 @@ export async function respondToJobApplication(applicationId,userId,input,request
       const row=(await db.query("update job_application set status='withdrawn',withdrawn_at=now(),updated_at=now() where id=$1 returning *",[applicationId])).rows[0];
       await db.query("insert into job_application_event(application_id,actor_user_id,from_status,to_status,note) values($1,$2,$3,'withdrawn',$4)",[applicationId,userId,a.status,input.note||null]);
       await audit(db,userId,"job.application_withdrawn","job_application",applicationId,requestId);
+      const employers=(await db.query("select om.user_id from organization_membership om join app_user u on u.id=om.user_id where om.organization_id=$1 and om.status='active' and u.status='active' and om.role_code=any($2::text[])",[a.organization_id,["owner","administrator","recruiter","project_manager"]])).rows;
+      for(const employer of employers)await queueWorkflowEmail(db,employer.user_id,"employer.candidate_update",{notificationEventCode:"job.application_withdrawn",category:"recruitment",title:"Candidate withdrew application",audience:"employer",status:"withdrawn",message:"A candidate withdrew their job application.",nextAction:"Review the updated candidate pipeline.",actionUrl:"/recruitment"},"job_application",applicationId);
       return row;
     }
     throw error(400,"Application response must be accepted or withdrawn.","VALIDATION_ERROR");
@@ -477,6 +541,7 @@ export async function addOrganizationUser(orgId,actorUserId,input,requestId){
   const target=(await db.query("select id from app_user where id=$1",[input.userId])).rows[0]; if(!target) throw error(404,"User account not found.","NOT_FOUND");
   const row=(await db.query("insert into organization_membership(organization_id,user_id,role_code,status,invited_by,joined_at) values($1,$2,$3,'active',$4,now()) on conflict(organization_id,user_id) do update set role_code=excluded.role_code,status='active',updated_at=now() returning *",[orgId,input.userId,input.roleCode,actorUserId])).rows[0];
   await audit(db,actorUserId,"organization.user_added","organization_membership",row.id,requestId,{roleCode:input.roleCode});
+  await queueWorkflowEmail(db,input.userId,"organization.membership_added",{category:"organizations",title:"Organization workspace access granted",message:"You were added to an organization workspace with the "+String(input.roleCode).replace(/_/g," ")+" role.",nextAction:"Open the organization workspace to review your access and assigned responsibilities.",actionUrl:"/organizations",eventVersion:row.id},"organization_membership",row.id);
   return row;
  });
 }
@@ -489,6 +554,7 @@ export async function updateOrganizationUser(orgId,actorUserId,userId,input,requ
   const status=input.status||row.status; if(!["active","suspended","removed"].includes(status)) throw error(400,"Invalid organization user status.","VALIDATION_ERROR");
   const updated=(await db.query("update organization_membership set role_code=$1,status=$2,updated_at=now() where id=$3 returning *",[role,status,row.id])).rows[0];
   await audit(db,actorUserId,"organization.user_updated","organization_membership",row.id,requestId,{roleCode:role,status});
+  await queueWorkflowEmail(db,row.user_id,"organization.membership_updated",{category:"organizations",title:"Organization workspace access updated",message:"Your organization workspace role or access status was updated.",nextAction:status==="active"?"Review your organization workspace access and responsibilities.":"Contact an organization owner if you believe your access was changed in error.",actionUrl:"/organizations",actionRequired:status!=="active",priority:status==="active"?"normal":"high",eventVersion:row.id+":"+status+":"+role},"organization_membership",row.id);
   return updated;
  });
 }
@@ -657,16 +723,21 @@ export async function scheduleInterview(applicationId,userId,input,requestId){
   await db.query("insert into job_interview_participant(interview_id,user_id,role_code) values($1,$2,'candidate') on conflict do nothing",[row.id,a.applicant_user_id]);
   if(input.interviewerUserId) await db.query("insert into job_interview_participant(interview_id,user_id,role_code) values($1,$2,'interviewer') on conflict do nothing",[row.id,input.interviewerUserId]);
   await audit(db,userId,"job.interview_scheduled","job_interview",row.id,requestId,{applicationId});
+  await queueWorkflowEmail(db,a.applicant_user_id,"professional.workflow_update",{notificationEventCode:"job.interview_scheduled",category:"recruitment",title:"Interview scheduled",status:"scheduled",message:"An interview has been scheduled for your application.",nextAction:"Review the interview time, timezone, format and instructions, then confirm or decline.",actionUrl:"/jobs",actionRequired:true,priority:"high",scheduledStart:start.toISOString(),scheduledEnd:end.toISOString(),timezone:input.timezone||"Africa/Addis_Ababa"},"job_interview",row.id);
+  const interviewParticipants=(await db.query("select user_id,role_code from job_interview_participant where interview_id=$1 and user_id<>$2",[row.id,a.applicant_user_id])).rows;
+  for(const participant of interviewParticipants)await queueWorkflowEmail(db,participant.user_id,"employer.interview_scheduled",{notificationEventCode:"job.interview_scheduled",category:"recruitment",title:"Interview scheduled",audience:"employer",status:"scheduled",message:"An interview was scheduled for a candidate in your recruitment workflow.",nextAction:"Review the interview details and confirm your availability.",actionUrl:"/recruitment",scheduledStart:start.toISOString(),scheduledEnd:end.toISOString(),timezone:input.timezone||"Africa/Addis_Ababa"},"job_interview",row.id);
   return row;
  });
 }
 export async function respondInterview(interviewId,userId,status,requestId){
  return withTransaction(async db=>{
-  const p=(await db.query("select jp.*,ji.application_id,j.organization_id from job_interview_participant jp join job_interview ji on ji.id=jp.interview_id join job_application a on a.id=ji.application_id join job j on j.id=a.job_id where jp.interview_id=$1 and jp.user_id=$2",[interviewId,userId])).rows[0];
+  const p=(await db.query("select jp.*,ji.application_id,j.organization_id,a.applicant_user_id,j.title job_title from job_interview_participant jp join job_interview ji on ji.id=jp.interview_id join job_application a on a.id=ji.application_id join job j on j.id=a.job_id where jp.interview_id=$1 and jp.user_id=$2",[interviewId,userId])).rows[0];
   if(!p) throw error(403,"You are not an interview participant.","FORBIDDEN");
   if(!["accepted","declined"].includes(status)) throw error(400,"Invalid interview response.","VALIDATION_ERROR");
   const row=(await db.query("update job_interview_participant set response_status=$1 where interview_id=$2 and user_id=$3 returning *",[status,interviewId,userId])).rows[0];
   await audit(db,userId,"job.interview_response","job_interview",interviewId,requestId,{status});
+  const otherParticipants=(await db.query("select user_id,role_code from job_interview_participant where interview_id=$1 and user_id<>$2",[interviewId,userId])).rows;
+  for(const participant of otherParticipants){const candidate=participant.role_code==="candidate";await queueWorkflowEmail(db,participant.user_id,candidate?"professional.workflow_update":"employer.interview_response",{notificationEventCode:"job.interview_response",category:"recruitment",title:"Interview response received",audience:candidate?undefined:"employer",status,message:"An interview participant "+status+" the scheduled interview.",nextAction:candidate?"Review the interview details and prepare for the meeting.":"Review the interview schedule and coordinate any needed changes.",actionUrl:candidate?"/jobs":"/recruitment",actionRequired:status==="declined",priority:status==="declined"?"high":"normal"},"job_interview",interviewId);}
   return row;
  });
 }

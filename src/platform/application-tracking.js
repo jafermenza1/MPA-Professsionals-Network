@@ -1,7 +1,7 @@
 import { getPool } from "./db.js";
 
 function statusLabel(status){
-  const labels={submitted:"Submitted",in_review:"Under review",correction_required:"Correction required",payment_pending:"Payment required",paid:"Payment verified",activated:"Approved and active",rejected:"Rejected",draft:"Draft",pending:"Pending",verified:"Verified"};
+  const labels={submitted:"Submitted for review",in_review:"Under review",correction_required:"Correction required",payment_pending:"Payment required",paid:"Payment verified",activated:"Approved and active",rejected:"Rejected",draft:"Draft",pending:"Pending",verified:"Verified"};
   return labels[status]||String(status||"Unknown").replace(/_/g," ");
 }
 
@@ -25,7 +25,8 @@ export async function getApplicationTracking(userId,{limit=50,offset=0,reference
         coalesce(ov.status,'draft'),coalesce(o.updated_at,o.created_at),o.created_at,ov.submitted_at,
         case when coalesce(ov.status,'draft')='draft' then 'Complete and submit organization verification'
           when ov.status='correction_required' then 'Provide requested organization corrections'
-          when ov.status='pending' then 'Await organization review' else 'No action required' end,
+          when ov.status in ('submitted','pending') then 'Await organization review'
+          when ov.status='rejected' then 'Review the decision and contact support if needed' else 'No action required' end,
         jsonb_build_object('legalName',o.legal_name,'reviewedAt',ov.reviewed_at)
       from organization o join organization_membership om on om.organization_id=o.id and om.user_id=$1 and om.status='active'
       left join lateral (select status,submitted_at,reviewed_at from organization_verification_case where organization_id=o.id order by submitted_at desc limit 1) ov on true
@@ -55,7 +56,7 @@ export async function getApplicationTracking(userId,{limit=50,offset=0,reference
     from counts left join page on true order by page.updated_at desc nulls last,page.type,page.id`,[userId,pageSize,pageOffset,trackingReference]);
   const countRow=result.rows[0]||{};
   const toItem=row=>({
-    id:row.id,trackingReference:row.tracking_reference,type:row.type,title:row.title,subtitle:row.subtitle,status:row.status,statusLabel:statusLabel(row.status),
+    id:row.id,trackingReference:row.tracking_reference,type:row.type,title:row.title,subtitle:row.subtitle,status:row.status,statusLabel:row.type==="organization"&&["submitted","pending"].includes(row.status)?"Awaiting organization review":row.type==="organization"&&row.status==="correction_required"?"Correction required":row.type==="organization"&&row.status==="verified"?"Organization verified":statusLabel(row.status),
     updatedAt:row.updated_at||row.created_at,submittedAt:row.submitted_at,nextAction:row.next_action,details:row.details
   });
   const items=result.rows.filter(row=>row.id).map(toItem);

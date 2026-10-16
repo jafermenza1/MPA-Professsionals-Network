@@ -3,6 +3,7 @@ import {
   Edit3,
   FlaskConical,
   HelpCircle,
+  Mail,
   PauseCircle,
   PlayCircle,
   Save,
@@ -15,6 +16,7 @@ import { Card, Badge } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
 import { UsersTable, type ManagedRole, type ManagedUser } from "./users-table";
+import { AdminPageHeader } from "./admin-page-header";
 
 type Demo = {
   id: string;
@@ -84,7 +86,8 @@ export default function AdminPage() {
     const errors: string[] = [];
     const getList = async <T,>(path: string, key?: string): Promise<T[]> => {
       const payload = await api<any>(path, {}, token);
-      const rows = Array.isArray(payload) ? payload : (key && Array.isArray(payload?.[key]) ? payload[key] : Array.isArray(payload?.items) ? payload.items : []);
+      const rows = Array.isArray(payload) ? payload : (key && Array.isArray(payload?.[key]) ? payload[key] : Array.isArray(payload?.items) ? payload.items : null);
+      if (!rows) throw new Error("The service returned an unexpected list response for " + path + ".");
       return rows as T[];
     };
     const settle = async <T,>(name: string, request: Promise<T>, apply: (value: T) => void) => {
@@ -208,22 +211,7 @@ export default function AdminPage() {
     );
   return (
     <div className="grid">
-      <div>
-        <div className="eyebrow">Platform administration</div>
-        <h1 className="h1">Operate the platform.</h1>
-        <p className="muted">
-          Global account controls are separate from organization roles and
-          business review decisions. Your authority comes from the current
-          account roles shown below.
-        </p>
-        <div className="row" style={{ flexWrap: "wrap", marginTop: 10 }}>
-          {roles.map((role) => (
-            <Badge key={role} tone="slate">
-              {role}
-            </Badge>
-          ))}
-        </div>
-      </div>
+      <AdminPageHeader eyebrow="Platform administration" title="Operate the platform." description="Global account controls are separate from organization roles and business review decisions. Your authority comes from the current account roles shown below." actions={<div className="grid" style={{gap:8}}><div className="row" style={{flexWrap:"wrap"}}>{roles.map((role) => <Badge key={role} tone="slate">{role}</Badge>)}</div><div className="row" style={{flexWrap:"wrap"}}>{(isPlatformAdmin || roles.includes("supporting_staff")) && <a className="btn btn-ghost" href="/support/job-seeker-demands">Review job-seeker demand and consent</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/reference-portfolio">Manage professional reference lists and CSV imports</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/reports">Reports and PDF/XLSX exports</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/members">Bulk approved-member import/export</a>}{isPlatformAdmin && <a className="btn btn-ghost" href="/admin/email"><Mail size={16} /> Email operations</a>}{(isPlatformAdmin || roles.includes("supporting_staff")) && <a className="btn btn-primary" href="/admin/marketplace">Review marketplace listings and service/mentorship demand</a>}</div></div>}/>
       {error && (
         <div className="field-banner">
           <ShieldCheck size={18} />
@@ -254,7 +242,7 @@ export default function AdminPage() {
               : []),
           ] as [typeof tab, string, number][]
         ).map(([key, label, count]) => (
-          <button
+          <button type="button"
             key={key}
             className={
               "btn admin-tab " + (tab === key ? "btn-primary" : "btn-ghost")
@@ -300,17 +288,17 @@ export default function AdminPage() {
                 <p className="muted">{d.description}</p>
               </div>
               <div className="row" style={{ justifyContent: "flex-end" }}>
-                <button className="btn btn-ghost" onClick={() => setEditing(d)}>
+                <button type="button" className="btn btn-ghost" onClick={() => setEditing(d)}>
                   <Edit3 size={15} /> Edit
                 </button>
-                <button
+                <button type="button"
                   className="btn btn-primary"
                   onClick={() => launch(d)}
                   disabled={!d.active}
                 >
                   <PlayCircle size={15} /> Play
                 </button>
-                <button
+                <button type="button"
                   className="btn btn-ghost"
                   onClick={() => patchCase(d, !d.active)}
                 >
@@ -343,7 +331,7 @@ export default function AdminPage() {
                 <div className="muted">{g.description}</div>
                 <small className="muted">{g.steps.length} guided steps</small>
               </div>
-              <button
+              <button type="button"
                 className="btn btn-ghost"
                 onClick={() => patchGuide(g, !g.active)}
               >
@@ -392,13 +380,13 @@ export default function AdminPage() {
                   </small>
                 </div>
                 <div className="row" style={{ justifyContent: "flex-end" }}>
-                  <button
+                  <button type="button"
                     className="btn btn-ghost"
                     onClick={() => decideInquiry(i, "considering", true)}
                   >
                     Consider non-member
                   </button>
-                  <button
+                  <button type="button"
                     className="btn btn-primary"
                     onClick={() =>
                       decideInquiry(i, "invited", i.consider_non_member)
@@ -406,7 +394,7 @@ export default function AdminPage() {
                   >
                     Invite / continue
                   </button>
-                  <button
+                  <button type="button"
                     className="btn btn-ghost"
                     onClick={() => decideInquiry(i, "declined", false)}
                   >
@@ -472,6 +460,7 @@ export default function AdminPage() {
             token={token}
             onChanged={load}
             onError={setError}
+            usersLoadFailed={sectionErrors.includes('users')}
           />
         </Card>
       )}
@@ -524,11 +513,11 @@ function CaseEditor({
   }
   return (
     <div className="guide-overlay">
-      <div className="guide-dim" onClick={onClose} />
+      <button type="button" className="guide-dim" aria-label="Close guide overlay" onClick={onClose} />
       <aside className="guide-card">
         <div className="row">
           <b>Edit demo case</b>
-          <button className="icon-btn" onClick={onClose}>
+          <button type="button" className="icon-btn" onClick={onClose}>
             ×
           </button>
         </div>
@@ -557,7 +546,7 @@ function CaseEditor({
             style={field}
           />
         </label>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
+        <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
           <Save size={15} /> {saving ? "Saving…" : "Save changes"}
         </button>
       </aside>

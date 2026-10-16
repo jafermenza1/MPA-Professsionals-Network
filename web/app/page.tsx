@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight, UserCheck, BriefcaseBusiness, GraduationCap, Building2,
@@ -8,11 +9,13 @@ import {
   HeartHandshake, Network, ClipboardCheck, LockKeyhole, UsersRound
 } from "lucide-react";
 import styles from "./landing-redesign.module.css";
+import LiveNetworkFeeds from "./live-network-feeds";
 
 const journeys = [
   { title: "Join as a professional", text: "Apply for membership, build your profile and discover ways to contribute.", href: "/apply", action: "Start application", icon: UserCheck },
   { title: "Find a job", text: "Explore vacancies or begin with a short inquiry before the detailed application.", href: "/jobs", action: "Browse opportunities", icon: BriefcaseBusiness },
   { title: "Find mentorship", text: "Share your goals and begin a mentorship request, even before completing a profile.", href: "/mentorship", action: "Request mentorship", icon: GraduationCap },
+  { title: "Request a service or join a need", text: "Browse reviewed demand topics, signal interest, or submit a private request for help.", href: "/service-demand", action: "Explore service demand", icon: Search },
   { title: "Register an organization", text: "Submit your organization for review, recruit talent and build professional partnerships.", href: "/organizations", action: "Get started", icon: Building2 }
 ];
 
@@ -25,33 +28,34 @@ const capabilities = [
 
 function MpaMark() {
   return (
-    <svg viewBox="0 0 100 120" fill="none" className={styles.logoMark} aria-hidden="true">
-      <motion.path d="M15 110V60C15 35 50 15 50 15V45C32 52 30 70 30 110Z" fill="#0A3258" stroke="#0A3258" strokeWidth="2"
-        initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 1.1, ease: "easeInOut" }} />
-      <motion.path d="M85 35C85 35 50 15 50 15V45C68 52 78 57 78 70C78 78 73 85 65 85H32V70H65C78 70 78 57 68 52C50 45 50 15 50 15"
-        fill="#97C024" stroke="#97C024" strokeWidth="2" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
-        transition={{ duration: 1.1, delay: 0.2, ease: "easeInOut" }} />
-    </svg>
+    <motion.img
+      src="/brand/mpa-logo-dark.svg"
+      alt="MPA — Muslim Professionals Association"
+      className={styles.logoMark}
+      initial={{ opacity: 0, scale: 0.82, rotate: -6 }}
+      animate={{ opacity: 1, scale: 1, rotate: 0 }}
+      transition={{ duration: 0.8, ease: "easeOut" }}
+    />
   );
 }
-
 function ArchBackdrop() {
+  const backdropId = useId();
   return (
     <div className={styles.archBackdrop} aria-hidden="true">
       <svg viewBox="0 0 1400 1200" fill="none" preserveAspectRatio="xMidYMid slice">
         <defs>
-          <linearGradient id="mpaArchLineGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+          <linearGradient id={`${backdropId}-arch-gradient`} x1="0%" y1="100%" x2="0%" y2="0%">
             <stop offset="0%" stopColor="#0A3258" stopOpacity=".08" />
             <stop offset="55%" stopColor="#1B4D80" stopOpacity=".35" />
             <stop offset="100%" stopColor="#97C024" stopOpacity=".7" />
           </linearGradient>
-          <pattern id="mpaGridDots" width="30" height="30" patternUnits="userSpaceOnUse">
+          <pattern id={`${backdropId}-grid-dots`} width="30" height="30" patternUnits="userSpaceOnUse">
             <circle cx="2" cy="2" r="1" fill="#0A3258" opacity=".2" />
           </pattern>
         </defs>
-        <rect width="1400" height="1200" fill="url(#mpaGridDots)" />
+        <rect width="1400" height="1200" fill={`url(#${backdropId}-grid-dots)`} />
         <path d="M200 1200V500C200 250 500 100 700 100C900 100 1200 250 1200 500V1200"
-          stroke="url(#mpaArchLineGradient)" strokeWidth="2.5" strokeDasharray="6 8" />
+          stroke={`url(#${backdropId}-arch-gradient)`} strokeWidth="2.5" strokeDasharray="6 8" />
         <path d="M400 1200V600C400 380 550 220 700 220C850 220 1000 380 1000 600V1200"
           stroke="#0A3258" strokeWidth="1.5" opacity=".18" />
       </svg>
@@ -71,13 +75,14 @@ function Reveal({ children, delay = 0, className = "" }: { children: React.React
 }
 
 export default function Home() {
+  const landingId = useId();
   const reduceMotion = useReducedMotion();
   return (
     <div className={styles.page}>
       <ArchBackdrop />
       <div className={styles.ambientGlow} aria-hidden="true" />
 
-      <section className={styles.hero} aria-labelledby="landing-title">
+      <section className={styles.hero} aria-labelledby={`${landingId}-title`}>
         <motion.div className={styles.logoIntro} initial={reduceMotion ? false : { scale: 0.82, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.75, ease: "easeOut" }}>
           <MpaMark />
@@ -87,7 +92,7 @@ export default function Home() {
           <span className={styles.liveDot} />
           MPA Professionals Network
         </motion.div>
-        <motion.h1 id="landing-title" className={styles.heroTitle}
+        <motion.h1 id={`${landingId}-title`} className={styles.heroTitle}
           initial={reduceMotion ? false : { y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.18 }}>
           Connecting trusted talent with{" "}
@@ -111,10 +116,10 @@ export default function Home() {
         </motion.div>
       </section>
 
-      <section className={styles.section} aria-labelledby="journeys-title">
+      <section className={styles.section} aria-labelledby={`${landingId}-journeys`}>
         <Reveal className={styles.sectionHeading}>
           <p className={styles.eyebrow}>A clear place to start</p>
-          <h2 id="journeys-title">How can we help you today?</h2>
+          <h2 id={`${landingId}-journeys`}>How can we help you today?</h2>
           <span className={styles.headingRule} />
         </Reveal>
         <div className={styles.journeyGrid}>
@@ -133,11 +138,13 @@ export default function Home() {
         </div>
       </section>
 
-      <section className={styles.section} aria-labelledby="capabilities-title">
+      <LiveNetworkFeeds />
+
+      <section className={styles.section} aria-labelledby={`${landingId}-capabilities`}>
         <div className={styles.capabilityPanel}>
           <Reveal className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Real value, not just a directory</p>
-            <h2 id="capabilities-title">What the platform helps you do</h2>
+            <h2 id={`${landingId}-capabilities`}>What the platform helps you do</h2>
             <span className={styles.headingRule} />
           </Reveal>
           <div className={styles.capabilityGrid}>

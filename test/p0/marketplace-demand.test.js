@@ -1,0 +1,122 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { getPool, closePool } from "../../src/platform/db.js";
+import * as membership from "../../src/membership/service.js";
+import * as organizationJobs from "../../src/organization-jobs/service.js";
+import * as marketplaceDemand from "../../src/services-mentorship/demand.js";
+import * as services from "../../src/services-mentorship/service.js";
+
+async function account(suffix){
+ const digits=suffix.replace(/[^0-9]/g,"").slice(0,8).padEnd(8,"7");
+ const created=await membership.register({email:"marketplace-"+suffix+"@example.test",password:"MarketplaceP1Password!2026",firstName:"Market",lastName:"Test"+suffix.slice(0,8),phone:"07"+digits},"marketplace-test-"+suffix);
+ return created.user.id;
+}
+async function activeMember(userId){
+ const db=getPool(),product=(await db.query("select id from membership_product where product_code='BASIC'")).rows[0];
+ assert.ok(product,"BASIC membership product must exist");
+ await db.query("insert into membership_record(user_id,membership_product_id,membership_number,status,start_date,end_date,source) values($1,$2,$3,'active',current_date,current_date+365,'online')",[userId,product.id,"MPA-MKT-"+randomUUID().slice(0,8).toUpperCase()]);
+}
+async function supportStaff(){
+ const db=getPool(),userId=await account(randomUUID());
+ const role=(await db.query("select id from app_role where role_code='supporting_staff'")).rows[0];
+ assert.ok(role,"supporting_staff role must exist");
+ await db.query("insert into app_user_role(user_id,role_id) values($1,$2) on conflict do nothing",[userId,role.id]);
+ return userId;
+}
+test("P1 marketplace: private demand is reviewed before a privacy-safe public topic appears; interests are unique",async()=>{
+ const requester=await account(randomUUID()),staff=await supportStaff();
+ const demand=await marketplaceDemand.createDemand(requester,{demandType:"service",title:"Need bookkeeping support",description:"Our small team needs monthly bookkeeping and financial reporting support.",category:"Finance",deliveryMode:"remote"},"marketplace-demand-submit");
+ assert.equal(demand.status,"submitted");
+ const privateRows=await marketplaceDemand.listMyDemand(requester);
+ assert.ok(privateRows.some(row=>row.id===demand.id));
+ const reviewed=await marketplaceDemand.reviewDemand(demand.id,staff,{status:"topic_published",publishTopic:true,publicTitle:"Bookkeeping support for small teams",publicSummary:"Small teams are seeking qualified help with monthly bookkeeping and clear financial reporting.",publicCategory:"Finance",interestGoal:5},"marketplace-demand-review");
+ assert.equal(reviewed.status,"topic_published");
+ assert.ok(reviewed.topic?.id);
+ const feed=await marketplaceDemand.listPublishedTopics({type:"service"});
+ const topic=feed.items.find(item=>item.id===reviewed.topic.id);
+ assert.ok(topic);
+ assert.equal("requester_user_id" in topic,false);
+ assert.equal("description" in topic,false);
+ await marketplaceDemand.joinDemandTopic(topic.id,requester,{interestLevel:"exploring"},"marketplace-interest-first");
+ await marketplaceDemand.joinDemandTopic(topic.id,requester,{interestLevel:"ready_to_engage"},"marketplace-interest-update");
+ const refreshed=(await marketplaceDemand.listPublishedTopics({type:"service"})).items.find(item=>item.id===topic.id);
+ assert.equal(refreshed.interest_count,1);
+ assert.equal(refreshed.ready_count,1);
+ assert.equal((await marketplaceDemand.listMyInterests(requester)).filter(row=>row.topic_id===topic.id).length,1);
+ const summary=await marketplaceDemand.getDemandSummary(staff,topic.id);
+ assert.equal(summary.uniqueInterests,1);
+ assert.equal(summary.readyCount,1);
+ assert.ok(summary.counts.some(row=>row.interest_level==="ready_to_engage"&&Number(row.count)===1));
+});
+test("P1 marketplace: demand assessment is Support Desk-only and returns aggregate-only rows",async()=>{
+ const requester=await account(randomUUID()),staff=await supportStaff(),outsider=await account(randomUUID()),category="Finance "+randomUUID().replaceAll("-","").slice(0,8);
+ const demand=await marketplaceDemand.createDemand(requester,{demandType:"service",title:"Need bookkeeping support",description:"Our small team needs monthly bookkeeping and financial reporting support.",category,deliveryMode:"remote",locationLabel:"Addis Ababa"}, "marketplace-assessment-submit");
+ const reviewed=await marketplaceDemand.reviewDemand(demand.id,staff,{status:"topic_published",publishTopic:true,publicTitle:"Bookkeeping support for small teams",publicSummary:"Small teams are seeking qualified help with monthly bookkeeping and clear financial reporting.",publicCategory:category,publicLocationLabel:"Addis Ababa",interestGoal:3},"marketplace-assessment-review");
+ await marketplaceDemand.joinDemandTopic(reviewed.topic.id,outsider,{interestLevel:"ready_to_engage"},"marketplace-assessment-interest");
+ const assessment=await marketplaceDemand.getDemandInterestAssessment(staff,{type:"service"});
+ assert.equal(assessment.privacy,"aggregate_only");
+ assert.ok(assessment.items.some(row=>row.demand_type==="service"&&row.category===category&&row.participant_count===1));
+ for(const row of assessment.items){
+   assert.equal("user_id" in row,false);
+   assert.equal("comment" in row,false);
+   assert.equal("requester_user_id" in row,false);
+   assert.equal("description" in row,false);
+ }
+ await assert.rejects(marketplaceDemand.getDemandInterestAssessment(outsider,{type:"service"}),error=>error.code==="FORBIDDEN");
+});
+test("P1 marketplace: organization demand is visible to its owner but not an unrelated account",async()=>{
+ const owner=await account(randomUUID()),unrelated=await account(randomUUID());
+ const org=await organizationJobs.registerOrganization(owner,{legalName:"Marketplace Test "+randomUUID(),displayName:"Marketplace Test Organization"},"marketplace-org-create");
+ const demand=await marketplaceDemand.createDemand(owner,{demandType:"mentorship",title:"Mentorship for early-career staff",description:"Our organization seeks a structured mentoring program for early-career team members.",category:"Career development",organizationId:org.id},"marketplace-org-demand");
+ assert.ok((await marketplaceDemand.listMyDemand(owner)).some(row=>row.id===demand.id));
+ assert.equal((await marketplaceDemand.listMyDemand(unrelated)).some(row=>row.id===demand.id),false);
+});
+test("P1 marketplace: service listings stay hidden until approved by Support Desk",async()=>{
+ const provider=await account(randomUUID()),staff=await supportStaff();
+ await activeMember(provider);
+ const listing=await services.createServiceListing(provider,{title:"Test professional service",description:"A detailed professional service for marketplace moderation testing.",serviceCategory:"Testing",deliveryMode:"remote",pricingModel:"quote",visibility:"public"},"marketplace-listing-create");
+ const submitted=await services.changeServiceListingStatus(listing.id,provider,"published","marketplace-listing-submit");
+ assert.equal(submitted.status,"draft");assert.equal(submitted.moderation_status,"pending");
+ assert.equal((await services.listServices(null,{q:"Test professional service"})).items.some(item=>item.id===listing.id),false);
+ const queue=await marketplaceDemand.listAdminListings(staff);
+ assert.ok(queue.some(item=>item.id===listing.id&&item.moderation_status==="pending"));
+ await marketplaceDemand.moderateListing("service",listing.id,staff,{decision:"approved",note:"Approved by automated test."},"marketplace-listing-approve");
+ assert.equal((await services.listServices(null,{q:"Test professional service"})).items.some(item=>item.id===listing.id),true);
+});
+test("P1 marketplace: Support Desk merges duplicate demand into a canonical request without losing source history",async()=>{
+ const firstRequester=await account(randomUUID()),secondRequester=await account(randomUUID()),staff=await supportStaff(),outsider=await account(randomUUID());
+ const target=await marketplaceDemand.createDemand(firstRequester,{demandType:"service",title:"Bookkeeping support for SMEs",description:"Small businesses need recurring bookkeeping and monthly financial reporting.",category:"Finance",deliveryMode:"remote"},"marketplace-merge-target");
+ const duplicate=await marketplaceDemand.createDemand(secondRequester,{demandType:"service",title:"Monthly bookkeeping help",description:"A small company needs monthly bookkeeping and reporting assistance.",category:"Finance",deliveryMode:"remote"},"marketplace-merge-duplicate");
+ await assert.rejects(
+  marketplaceDemand.mergeDemand(duplicate.id,target.id,outsider,"marketplace-merge-forbidden"),
+  error=>error.code==="FORBIDDEN",
+  "non-staff actors cannot merge private demand"
+ );
+ await assert.rejects(marketplaceDemand.reviewDemand(duplicate.id,staff,{status:"closed",outcomeCode:"duplicate_merged",outcomeNote:"test-only fake merge"},"marketplace-fake-merge"),error=>error.code==="MERGE_ACTION_REQUIRED","generic closure must not masquerade as a merge");
+ const merged=await marketplaceDemand.mergeDemand(duplicate.id,target.id,staff,"marketplace-merge");
+ assert.equal(merged.status,"closed");
+ assert.equal(merged.outcome_code,"duplicate_merged");
+ assert.equal(merged.merged_into_demand_id,target.id);
+ assert.equal(merged.mergedInto.id,target.id);
+ assert.equal(merged.notificationStatus,"in_app_recorded");
+ assert.equal(merged.externalDelivery,"not_configured");
+ const db=getPool();
+ const stored=(await db.query("select status,outcome_code,merged_into_demand_id from marketplace_demand where id=$1",[duplicate.id])).rows[0];
+ assert.deepEqual(stored,{status:"closed",outcome_code:"duplicate_merged",merged_into_demand_id:target.id});
+ const events=(await db.query("select action from marketplace_demand_event where demand_id=$1 order by created_at",[duplicate.id])).rows;
+ assert.ok(events.some(event=>event.action==="demand.duplicate_merged"));
+ assert.ok((await db.query("select 1 from marketplace_demand_event where demand_id=$1 and action='demand.duplicate_received'",[target.id])).rowCount===1);
+ assert.ok((await db.query("select 1 from notification_event where resource_id=$1 and event_code='marketplace.demand_duplicate_received'",[target.id])).rowCount>=1,"canonical requester receives a separate status event without duplicate private details");
+ assert.ok((await db.query("select 1 from notification_event where resource_id=$1 and event_code='marketplace.demand_duplicate_merged'",[duplicate.id])).rowCount>=1,"duplicate requester receives a persisted in-app event");
+ const repeated=await marketplaceDemand.mergeDemand(duplicate.id,target.id,staff,"marketplace-merge-retry");
+ assert.equal(repeated.idempotent,true);
+ await assert.rejects(
+  marketplaceDemand.mergeDemand(target.id,duplicate.id,staff,"marketplace-merge-cycle"),
+  error=>error.code==="INVALID_STATE"||error.code==="MERGE_TARGET_INVALID",
+  "a canonical request cannot be merged into its already-merged duplicate"
+ );
+ const firstActivity=await marketplaceDemand.listMyDemand(secondRequester);
+ assert.ok(firstActivity.some(row=>row.id===duplicate.id&&row.merged_into_existing===true),"requester retains the original record and receives a privacy-safe merge indicator without the canonical private ID");
+});
+test.after(async()=>{await closePool();});
