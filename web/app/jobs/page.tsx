@@ -115,7 +115,15 @@ export default function Jobs(){
    if(job.description===undefined)tasks.push(api<Job>("/api/v1/jobs/"+encodeURIComponent(job.id),{},token||undefined).then(detail=>setJobs(current=>current.map(item=>item.id===job.id?{...item,...detail}:item))).catch(e=>setError(e instanceof ApiError?e.message:"We couldn't load the opportunity details.")));
    if(token&&!eligibilityByJob[job.id]){
      setEligibilityLoading(current=>({...current,[job.id]:true}));
-     tasks.push(api<Eligibility>("/api/v1/jobs/"+encodeURIComponent(job.id)+"/eligibility",{},token).then(result=>setEligibilityByJob(current=>({...current,[job.id]:result}))).catch(e=>setEligibilityByJob(current=>({...current,[job.id]:{error:e instanceof ApiError?e.message:"Eligibility could not be checked. Retry to refresh."}}))).finally(()=>setEligibilityLoading(current=>({...current,[job.id]:false})));
+     tasks.push(
+       api<Eligibility>("/api/v1/jobs/" + encodeURIComponent(job.id) + "/eligibility", {}, token)
+         .then((result) => setEligibilityByJob((current) => ({ ...current, [job.id]: result })))
+         .catch((e) => setEligibilityByJob((current) => ({
+           ...current,
+           [job.id]: { error: e instanceof ApiError ? e.message : "Eligibility could not be checked. Retry to refresh." },
+         })))
+         .finally(() => setEligibilityLoading((current) => ({ ...current, [job.id]: false }))),
+     );
    }
    await Promise.all(tasks);
  }
