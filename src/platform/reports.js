@@ -103,7 +103,10 @@ function xml(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").
 function crc32(b){let c=0xffffffff;for(const x of b){c^=x;for(let i=0;i<8;i++)c=(c>>>1)^((c&1)?0xedb88320:0);}return (c^0xffffffff)>>>0;}
 function zip(files){const local=[],central=[];let offset=0;for(const name of Object.keys(files)){const n=Buffer.from(name),raw=Buffer.from(files[name]),data=deflateRawSync(raw),crc=crc32(raw),lh=Buffer.alloc(30);lh.writeUInt32LE(0x04034b50,0);lh.writeUInt16LE(20,4);lh.writeUInt16LE(8,8);lh.writeUInt32LE(crc,14);lh.writeUInt32LE(data.length,18);lh.writeUInt32LE(raw.length,22);lh.writeUInt16LE(n.length,26);local.push(lh,n,data);const ch=Buffer.alloc(46);ch.writeUInt32LE(0x02014b50,0);ch.writeUInt16LE(20,4);ch.writeUInt16LE(20,6);ch.writeUInt16LE(8,10);ch.writeUInt32LE(crc,16);ch.writeUInt32LE(data.length,20);ch.writeUInt32LE(raw.length,24);ch.writeUInt16LE(n.length,28);ch.writeUInt32LE(offset,42);central.push(ch,n);offset+=lh.length+n.length+data.length;}const cd=Buffer.concat(central),end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50,0);end.writeUInt16LE(Object.keys(files).length,8);end.writeUInt16LE(Object.keys(files).length,10);end.writeUInt32LE(cd.length,12);end.writeUInt32LE(offset,16);return Buffer.concat([...local,cd,end]);}
 export function makeXlsx(r){
- const rows=r.rows,headers=Object.keys(rows[0]||r.report.columns.reduce((o,k)=>(o[k]="",o),{}));
+ const rows=r.rows;
+ const fallbackHeaders={};
+ for(const key of r.report.columns) fallbackHeaders[key]="";
+ const headers=Object.keys(rows[0]||fallbackHeaders);
  const data=[["MPA PROFESSIONALS ASSOCIATION"],[r.report.title],["Generated: "+r.generatedAt],["Scope: "+r.report.scope],["Filters: "+JSON.stringify(r.filters)],[r.report.definition],["Totals: "+JSON.stringify(r.totals)],[],headers,...rows.map(row=>headers.map(h=>row[h] instanceof Date?row[h].toISOString():row[h]??""))];
  const col=n=>{let s="";for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
  const sheetRows=data.map((row,i)=>'<row r="'+(i+1)+'">'+row.map((v,j)=>{const ref=col(j)+(i+1),style=i===0?1:i===1?2:i===8?3:0;return typeof v==="number"?'<c r="'+ref+'" s="'+style+'"><v>'+v+'</v></c>':'<c r="'+ref+'" s="'+style+'" t="inlineStr"><is><t xml:space="preserve">'+xml(v instanceof Date?v.toISOString():v??"")+'</t></is></c>';}).join("")+"</row>").join("");
