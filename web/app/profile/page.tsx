@@ -481,7 +481,7 @@ export default function Profile() {
               </div>
               <ShieldCheck color="var(--primary)" />
             </div>
-            {loading && <p role="status">Loading profile from your account…</p>}
+            {loading && <p aria-live="polite" aria-atomic="true">Loading profile from your account…</p>}
             <section aria-labelledby="profile-picture-heading" className="grid" style={{ gridTemplateColumns: "auto minmax(0,1fr)", alignItems: "center", gap: 14, padding: 14, border: "1px solid var(--border)", borderRadius: 12 }}>
               <div style={{ width: 92, height: 92, borderRadius: 12, overflow: "hidden", display: "grid", placeItems: "center", background: "linear-gradient(145deg,#0A3258,#174A78)", color: "#fff", border: "2px solid #97C024", fontSize: 28, fontWeight: 800 }}>
                 {profilePictureUrl ? <img src={profilePictureUrl} alt="Your professional profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>{(profile?.first_name?.[0] || "M").toUpperCase()}{(profile?.last_name?.[0] || "P").toUpperCase()}</span>}

@@ -67,7 +67,7 @@ export default function OrganizationDirectory() {
         </div>
       </form>
     </Card>
-    {error && <div className="form-error" role="alert">{error}<button className="btn btn-ghost" type="button" onClick={() => void load(filters, page)}>Retry</button></div>}{savedItems.savedError&&<div className="form-error" role="status">{savedItems.savedError}</div>}
+    {error && <div className="form-error" role="alert">{error}<button className="btn btn-ghost" type="button" onClick={() => void load(filters, page)}>Retry</button></div>}{savedItems.savedError&&<div className="form-error" aria-live="polite" aria-atomic="true">{savedItems.savedError}</div>}
     {!loading && !error && <p className="muted" aria-live="polite">{total === null ? items.length + " organizations loaded" : total + " verified public organizations match your search."}</p>}
     {loading ? <Card><div className="row"><RefreshCw size={18} /><p className="muted">Loading verified public organizations…</p></div></Card>
       : items.length === 0 && !error ? <Card><h2 className="h2">No matching organizations</h2><p className="muted">Try a broader name, type or location. Private or unverified organizations are intentionally excluded.</p></Card>
