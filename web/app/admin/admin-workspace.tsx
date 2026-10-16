@@ -65,9 +65,9 @@ export function AdminWorkspace({ children }: { children: React.ReactNode }) {
       <div className={styles.access}><span>Signed-in role information</span><p>{roleSummary}</p><small>Navigation is for discovery only. Every page and action must still be authorized by the server.</small></div>
     </aside>
     <section className={styles.content}>
-      <div className={styles.breadcrumbs} aria-label="Breadcrumb">
+      <nav className={styles.breadcrumbs} aria-label="Breadcrumb">
         <Link href="/admin">Administration</Link><span aria-hidden="true">/</span><span aria-current="page">{current?.label ?? "Workspace"}</span>
-      </div>
+      </nav>
       {children}
     </section>
   </div>;
