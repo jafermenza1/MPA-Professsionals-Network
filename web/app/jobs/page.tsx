@@ -18,7 +18,7 @@ type EligibilityResult=Eligibility|{error:string};
 type Filters={q:string;location:string;employmentType:string;workMode:string;seniority:string;postingScope:string};
 const initialFilters:Filters={q:"",location:"",employmentType:"",workMode:"",seniority:"",postingScope:""};
 
-function EligibilityDetails({result}:{result?:EligibilityResult}){if(!result)return <p className="muted">Eligibility has not been checked yet.</p>;if("error" in result)return <p className="form-error" role="alert">{result.error}</p>;return <>{<p>{result.summary}</p>}{result.results.length>0&&<ul>{result.results.map((rule,index)=><li key={rule.code+index}>{rule.eligible?"Meets requirement: ":"Still needed: "}{rule.reason}</li>)}</ul>}</>;}
+function EligibilityDetails({result}:{result?:EligibilityResult}){if(!result)return <p className="muted">Eligibility has not been checked yet.</p>;if("error" in result)return <p className="form-error" role="alert">{result.error}</p>;return <>{<p>{result.summary}</p>}{result.results.length>0&&<ul>{result.results.map((rule,index)=><li key={rule.code}>{rule.eligible?"Meets requirement: ":"Still needed: "}{rule.reason}</li>)}</ul>}</>;}
 function queryString(filters:Filters){
  const p=new URLSearchParams();
  for(const [key,value] of Object.entries(filters)) if(value.trim()) p.set(key,value.trim());
