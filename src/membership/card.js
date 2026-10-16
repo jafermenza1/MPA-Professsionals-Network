@@ -69,7 +69,7 @@ export async function getMyMembershipCard(userId){
 }
 export async function getMembershipCardForAdmin(membershipNumber,actorId,requestId){
   const number=String(membershipNumber||"").trim().toUpperCase();
-  if(!number||number.length>100||/[\u0000-\u001f\u007f]/.test(number)) throw fail(400,"Enter an existing membership ID.","INVALID_MEMBERSHIP_NUMBER");
+  if(!number||number.length>100||/\p{Cc}/u.test(number)) throw fail(400,"Enter an existing membership ID.","INVALID_MEMBERSHIP_NUMBER");
   const db=getPool();
   const r=await db.query(`select m.id membership_record_id,m.membership_number,m.status,m.start_date,m.end_date,m.card_token_version,
       p.name membership_type,p.product_code,
