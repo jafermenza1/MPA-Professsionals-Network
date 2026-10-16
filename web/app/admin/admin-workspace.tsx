@@ -8,7 +8,8 @@ import { api } from "../../lib/api";
 import { useUiStore } from "../../lib/store";
 import styles from "./admin-workspace.module.css";
 
-const destinations = [
+type Destination = { href: string; label: string; description: string; icon: typeof Activity; exact?: boolean };
+const destinations: Destination[] = [
   { href: "/admin", label: "Overview", description: "Review and administration", icon: Activity, exact: true },
   { href: "/admin/members", label: "Members", description: "Imports and member records", icon: Users },
   { href: "/admin/membership-card", label: "Membership card", description: "Credential appearance", icon: ShieldCheck },
@@ -18,7 +19,7 @@ const destinations = [
   { href: "/admin/email", label: "Email operations", description: "Queues, templates and delivery", icon: Mail },
   { href: "/admin/security", label: "Admin security", description: "Passkeys and recovery", icon: Fingerprint },
   { href: "/admin/support", label: "Support", description: "Inquiries and knowledge base", icon: MessageSquareText },
-] as const;
+];
 
 export function AdminWorkspace({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
