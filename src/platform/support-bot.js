@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { getPool } from "./db.js";
 
-const clean = (value, max=2000) => String(value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim().slice(0,max);
+const clean = (value, max=2000) => String(value ?? "").replace(/\p{Cc}/gu, character => "\t\n\r".includes(character) ? character : "").trim().slice(0,max);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const sha = value => createHash("sha256").update(String(value)).digest("hex");
 const slugify = value => clean(value,80).toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,80) || "category";
