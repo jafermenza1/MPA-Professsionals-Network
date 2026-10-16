@@ -1,16 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import   usePathname } from "next/navigation";
-import   useEffect, useMemo, useState } from "react";
-import   Activity, BookOpenCheck, Building2, ClipboardList, FileBarChart, Fingerprint, Mail, MessageSquareText, ShieldCheck, Users } from "lucide-react";
-import   api } from "../../lib/api";
-import   useUiStore } from "../../lib/store";
+import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { Activity, BookOpenCheck, Building2, ClipboardList, FileBarChart, Fingerprint, Mail, MessageSquareText, ShieldCheck, Users } from "lucide-react";
+import { api } from "../../lib/api";
+import { useUiStore } from "../../lib/store";
 import styles from "./admin-workspace.module.css";
 
 const destinations = [
-    href: "/admin", label: "Overview", description: "Review and administration", icon: Activity, exact: true },
-    href: "/admin/members", label: "Members", description: "Imports and member records", icon: Users },
+  { href: "/admin", label: "Overview", description: "Review and administration", icon: Activity, exact: true },
+  { href: "/admin/members", label: "Members", description: "Imports and member records", icon: Users },
     href: "/admin/membership-card", label: "Membership card", description: "Credential appearance", icon: ShieldCheck },
     href: "/admin/reference-portfolio", label: "Reference data", description: "Governed profile options", icon: BookOpenCheck },
     href: "/admin/marketplace", label: "Marketplace", description: "Demand and listing review", icon: ClipboardList },
@@ -20,7 +20,7 @@ const destinations = [
     href: "/admin/support", label: "Support", description: "Inquiries and knowledge base", icon: MessageSquareText },
 ] as const;
 
-export function AdminWorkspace(  children }:   children: React.ReactNode }) {
+export function AdminWorkspace({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const token = useUiStore((state) => state.token);
   const hydrated = useUiStore((state) => state.hydrated);
