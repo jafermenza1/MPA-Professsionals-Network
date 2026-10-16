@@ -12,6 +12,7 @@ function fromB64url(value:string):Uint8Array{
  const binary=atob(normalized+"=".repeat((4-normalized.length%4)%4));
  return Uint8Array.from(binary,char=>char.charCodeAt(0));
 }
+function toWebAuthnBuffer(value:Uint8Array):ArrayBuffer{return value.slice().buffer as ArrayBuffer;}
 function toB64url(value:ArrayBuffer):string{
  const bytes=new Uint8Array(value);let binary="";
  for(const byte of bytes)binary+=String.fromCharCode(byte);
@@ -46,7 +47,7 @@ export default function AdminSecurity(){
    try{
      if(!window.isSecureContext||!navigator.credentials||!("PublicKeyCredential" in window))throw new Error("Passkeys require a supported browser and HTTPS (localhost is allowed for development).");
      const options=await api<RegistrationOptions>("/api/v1/admin/passkeys/registration/options",{method:"POST"},token);
-     const publicKey:PublicKeyCredentialCreationOptions={...options.publicKey,challenge:fromB64url(options.publicKey.challenge),user:{...options.publicKey.user,id:fromB64url(options.publicKey.user.id)},excludeCredentials:options.publicKey.excludeCredentials.map(item=>({...item,id:fromB64url(item.id)}))};
+     const publicKey:PublicKeyCredentialCreationOptions={...options.publicKey,challenge:toWebAuthnBuffer(fromB64url(options.publicKey.challenge)),user:{...options.publicKey.user,id:toWebAuthnBuffer(fromB64url(options.publicKey.user.id))},excludeCredentials:options.publicKey.excludeCredentials.map(item=>({...item,id:toWebAuthnBuffer(fromB64url(item.id))}))};
      const credential=await navigator.credentials.create({publicKey}) as PublicKeyCredential|null;
      if(!credential)throw new Error("Passkey registration was cancelled.");
      const response=credential.response as AuthenticatorAttestationResponse;
