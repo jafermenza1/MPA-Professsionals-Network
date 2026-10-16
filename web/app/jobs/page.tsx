@@ -1,6 +1,6 @@
 "use client";
 
-import {FormEvent,useCallback,useEffect,useState} from "react";
+import {FormEvent,useCallback,useEffect,useId,useState} from "react";
 import {Bookmark,Building2,Clock3,MapPin,SlidersHorizontal,Users,RefreshCw} from "lucide-react";
 import {Card,Badge} from "../../components/ui";
 import {api,ApiError} from "../../lib/api";
