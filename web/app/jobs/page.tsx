@@ -14,6 +14,7 @@ type Job={
  salary_max?:number|string|null;salary_currency?:string|null;
 };
 type Eligibility={eligible:boolean;summary:string;results:{code:string;eligible:boolean;reason:string}[]};
+type EligibilityResult=Eligibility|{error:string};
 type Filters={q:string;location:string;employmentType:string;workMode:string;seniority:string;postingScope:string};
 const initialFilters:Filters={q:"",location:"",employmentType:"",workMode:"",seniority:"",postingScope:""};
 
@@ -45,6 +46,8 @@ export default function Jobs(){
  const [coverLetters,setCoverLetters]=useState<Record<string,string>>({});
  const [draftIds,setDraftIds]=useState<Record<string,string>>({});
  const [applyingId,setApplyingId]=useState("");
+ const [eligibilityByJob,setEligibilityByJob]=useState<Record<string,EligibilityResult>>({});
+ const [eligibilityLoading,setEligibilityLoading]=useState<Record<string,boolean>>({});
 
  const loadJobs=useCallback(async(nextFilters:Filters,pageIndex=0)=>{
    setLoading(true);setError("");setNotice("");
