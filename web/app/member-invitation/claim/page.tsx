@@ -1,8 +1,8 @@
 "use client";
-import { FormFeedback } from "../../components/form-feedback";
+import { FormFeedback } from "../../../components/form-feedback";
 import { useEffect,useState,type FormEvent } from "react";
-import { Card } from "../../components/ui";
-import { api,ApiError } from "../../lib/api";
+import { Card } from "../../../components/ui";
+import { api,ApiError } from "../../../lib/api";
 export default function MemberInvitationClaimPage(){
  const [token,setToken]=useState(""),[password,setPassword]=useState(""),[confirm,setConfirm]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  useEffect(()=>{const value=new URLSearchParams(window.location.search).get("token")||"";setToken(value);},[]);
