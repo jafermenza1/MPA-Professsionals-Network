@@ -22,6 +22,6 @@ export default function PublicProfessionalProfile(){
  {item.availability_status&&<p className="tagline">Availability: {item.availability_status.replaceAll("_"," ")}</p>}
  {Array.isArray(item.verifiedClaims)&&item.verifiedClaims.length>0&&<div><h2 className="h2">Verified claims</h2><div className="row" style={{flexWrap:"wrap"}}>{item.verifiedClaims.map((claim,i)=><Badge key={claim.claim_code+"-"+i}><ShieldCheck size={13}/>{claim.claim_code.replaceAll("_"," ")}</Badge>)}</div></div>}
  {Array.isArray(item.experience)&&item.experience.length>0&&<div><h2 className="h2">Experience</h2>{item.experience.map(role=><div key={role.id} style={{padding:"12px 0",borderBottom:"1px solid var(--border, #d1d5db)"}}><strong>{role.role_title}</strong>{role.employer_name&&<p className="muted">{role.employer_name}</p>}{role.description&&<p className="muted">{role.description}</p>}</div>)}</div>}
- <p className="muted">Contact details stay protected by the inquiry and explicit contact-release workflow.</p><Link className="btn btn-primary" href="/network">Open professional directory</Link>{saved.savedError&&<p role="status" className="form-error">{saved.savedError}</p>}</Card>}
+ <p className="muted">Contact details stay protected by the inquiry and explicit contact-release workflow.</p><Link className="btn btn-primary" href="/network">Open professional directory</Link>{saved.savedError&&<p aria-live="polite" aria-atomic="true" className="form-error">{saved.savedError}</p>}</Card>}
  </main>;
 }

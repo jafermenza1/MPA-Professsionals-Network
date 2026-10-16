@@ -19,6 +19,6 @@ export default function PublicOrganizationProfile(){
  {item.description&&<p className="muted" style={{marginTop:16,whiteSpace:"pre-wrap"}}>{item.description}</p>}
  {item.location_label&&<p className="tagline"><MapPin size={15}/> {item.location_label}</p>}
  <div className="row" style={{gap:8,flexWrap:"wrap",marginTop:16}}><button className="btn btn-ghost" type="button" disabled={!saved.signedIn||saved.isSaving("organization",item.id)} aria-pressed={saved.isSaved("organization",item.id)} onClick={()=>void saved.toggle("organization",item.id)}><Bookmark size={16}/>{saved.isSaved("organization",item.id)?"Saved":"Save organization"}</button>{item.website&&/^https:\/\//i.test(item.website)&&<a className="btn btn-primary" href={item.website} target="_blank" rel="noreferrer">Official website <ExternalLink size={15}/></a>}</div>
- {saved.savedError&&<p role="status" className="form-error">{saved.savedError}</p>}</Card>}
+ {saved.savedError&&<p aria-live="polite" aria-atomic="true" className="form-error">{saved.savedError}</p>}</Card>}
  </main>;
 }
