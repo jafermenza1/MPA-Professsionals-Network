@@ -729,8 +729,8 @@ export default function Organizations() {
                           ? "This organization is verified. You can manage approved hiring and public offers under this identity."
                           : "Build trust by completing the required evidence checklist and submitting it for review."}
                   </p>
-                  {org.verification_decision_reason&&<p role="status"><b>Latest review note:</b> {org.verification_decision_reason}</p>}
-                  {(org.missing_evidence||[]).length>0&&org.verification_case_status!=="submitted"&&org.verification_case_status!=="pending"&&org.verification_status!=="pending"&&<div className="form-error" role="status"><b>Still needed:</b> {(org.missing_evidence||[]).map(item=>item.replaceAll("_"," ")).join(", ")}. Upload these documents before submitting for review.</div>}
+                  {org.verification_decision_reason&&<p aria-live="polite" aria-atomic="true"><b>Latest review note:</b> {org.verification_decision_reason}</p>}
+                  {(org.missing_evidence||[]).length>0&&org.verification_case_status!=="submitted"&&org.verification_case_status!=="pending"&&org.verification_status!=="pending"&&<div className="form-error" aria-live="polite" aria-atomic="true"><b>Still needed:</b> {(org.missing_evidence||[]).map(item=>item.replaceAll("_"," ")).join(", ")}. Upload these documents before submitting for review.</div>}
                   {(org.required_evidence||[]).length>0&&<p className="muted">Required evidence: {(org.required_evidence||[]).map(item=>item.replaceAll("_"," ")).join(", ")}. Uploaded evidence: {(org.verification_evidence||[]).map(item=>item.evidenceType.replaceAll("_"," ")).filter((item,index,all)=>all.indexOf(item)===index).join(", ")||"none recorded"}.</p>}
                   <div className="row" style={{flexWrap:"wrap",gap:8}}>
                     {org.verification_status==="verified" ? <>
