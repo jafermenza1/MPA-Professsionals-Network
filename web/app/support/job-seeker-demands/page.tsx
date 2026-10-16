@@ -40,7 +40,7 @@ export default function JobSeekerDemandSupportPage() {
         const next = { ...current };
         for (const item of demands) {
           const consented = Array.isArray(item.employer_sharing_fields) ? item.employer_sharing_fields : typeof item.employer_sharing_fields === "string" ? JSON.parse(item.employer_sharing_fields || "[]") : [];
-          if (!next[item.id]) next[item.id] = { organizationId: "", fields: consented.filter(field => labels[field]) };
+          if (!next[item.id]) next[item.id] = { organizationId: "", fields: consented.filter((field: string) => labels[field]) };
           else next[item.id] = { ...next[item.id], fields: next[item.id].fields.filter(field => consented.includes(field)) };
         }
         return next;
