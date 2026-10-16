@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useId, useState } from "react";
 import { FormFeedback } from "../../components/form-feedback";
 import {
   CreditCard,
@@ -98,6 +98,7 @@ const blank = {
   visibility: "public",
 };
 export default function Profile() {
+  const profileId = useId();
   const token = useUiStore((s) => s.token),
     clearToken = useUiStore((s) => s.clearToken),
     language = useUiStore((s) => s.language);
@@ -482,12 +483,12 @@ export default function Profile() {
               <ShieldCheck color="var(--primary)" />
             </div>
             {loading && <p aria-live="polite" aria-atomic="true">Loading profile from your account…</p>}
-            <section aria-labelledby="profile-picture-heading" className="grid" style={{ gridTemplateColumns: "auto minmax(0,1fr)", alignItems: "center", gap: 14, padding: 14, border: "1px solid var(--border)", borderRadius: 12 }}>
+            <section aria-labelledby={`${profileId}-picture-heading`} className="grid" style={{ gridTemplateColumns: "auto minmax(0,1fr)", alignItems: "center", gap: 14, padding: 14, border: "1px solid var(--border)", borderRadius: 12 }}>
               <div style={{ width: 92, height: 92, borderRadius: 12, overflow: "hidden", display: "grid", placeItems: "center", background: "linear-gradient(145deg,#0A3258,#174A78)", color: "#fff", border: "2px solid #97C024", fontSize: 28, fontWeight: 800 }}>
                 {profilePictureUrl ? <img src={profilePictureUrl} alt="Your professional profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>{(profile?.first_name?.[0] || "M").toUpperCase()}{(profile?.last_name?.[0] || "P").toUpperCase()}</span>}
               </div>
               <div className="grid" style={{ gap: 7 }}>
-                <h2 id="profile-picture-heading" className="h2" style={{ margin: 0 }}>Profile photograph</h2>
+                <h2 id={`${profileId}-picture-heading`} className="h2" style={{ margin: 0 }}>Profile photograph</h2>
                 <p className="muted" style={{ margin: 0 }}>JPG or PNG, up to 10 MiB. Your image is stored privately and used on your membership card; a branded placeholder is used if you skip this.</p>
                 <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
                   <label className="btn btn-primary" style={{ cursor: uploadingPicture ? "wait" : "pointer" }}>
@@ -542,18 +543,18 @@ export default function Profile() {
                 ))}
               </div>
               <div>
-                <label htmlFor="profile-headline">Professional headline</label>
+                <label htmlFor={`${profileId}-headline`}>Professional headline</label>
                 <input
-                  id="profile-headline"
+                  id={`${profileId}-headline`}
                   value={form.headline}
                   onChange={(e) => update("headline", e.target.value)}
                   maxLength={180}
                 />
               </div>
               <div>
-                <label htmlFor="profile-bio">Professional bio</label>
+                <label htmlFor={`${profileId}-bio`}>Professional bio</label>
                 <textarea
-                  id="profile-bio"
+                  id={`${profileId}-bio`}
                   value={form.bio}
                   onChange={(e) => update("bio", e.target.value)}
                   rows={4}
@@ -561,11 +562,11 @@ export default function Profile() {
                 />
               </div>
               <div>
-                <label htmlFor="profile-visibility">
+                <label htmlFor={`${profileId}-visibility`}>
                   Professional directory visibility
                 </label>
                 <select
-                  id="profile-visibility"
+                  id={`${profileId}-visibility`}
                   value={form.visibility}
                   onChange={(e) => update("visibility", e.target.value)}
                 >

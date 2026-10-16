@@ -33,6 +33,7 @@ function salary(job:Job){
 }
 
 export default function Jobs(){
+ const jobsId=useId();
  const token=useUiStore(s=>s.token);
  const [filters,setFilters]=useState<Filters>(initialFilters);
  const [jobs,setJobs]=useState<Job[]>([]);
@@ -146,7 +147,7 @@ export default function Jobs(){
    <p className="muted">Browse current opportunities published by verified organizations. Eligibility and formal application steps are checked by the platform; sample or invented vacancies are not shown.</p>
    <p><a className="btn btn-ghost" href="/jobs/interest">No matching vacancy? Register your job interest</a></p>
    <div className="split" style={{marginTop:20}}>
-     <Card id="job-filters" className="filter">
+     <Card id={`${jobsId}-filters`} className="filter">
        <form onSubmit={submitFilters}>
          <div className="row"><b>Search opportunities</b><SlidersHorizontal size={17}/></div>
          <label style={{display:"grid",gap:6,marginTop:14,fontSize:13,fontWeight:700}}>Role, skill or sector<input value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})} placeholder="Search job title or description"/></label>
@@ -160,7 +161,7 @@ export default function Jobs(){
          <button className="btn btn-ghost" type="button" onClick={()=>void createAlert()} disabled={creatingAlert||loading} style={{width:"100%",marginTop:8}}>{creatingAlert?"Saving alert…":"Save job alert"}</button>
        </form>
      </Card>
-     <div id="job-card" className="grid">
+     <div id={`${jobsId}-cards`} className="grid">
        {error&&<div className="form-error" role="alert">{error}<button className="btn btn-ghost" onClick={()=>void loadJobs(filters,page)} type="button" style={{marginLeft:8}}>Retry</button></div>}
        {notice&&<p className="muted" aria-live="polite" aria-atomic="true">{notice}{!token&&<a href="/login?next=/jobs"> Sign in</a>}</p>}
        {loading&&<Card><div className="row"><RefreshCw size={18}/><p className="muted">Loading current opportunities…</p></div></Card>}
