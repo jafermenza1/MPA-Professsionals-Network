@@ -513,11 +513,11 @@ function CaseEditor({
   }
   return (
     <div className="guide-overlay">
-      <div className="guide-dim" onClick={onClose} />
+      <button type="button" className="guide-dim" aria-label="Close guide overlay" onClick={onClose} />
       <aside className="guide-card">
         <div className="row">
           <b>Edit demo case</b>
-          <button className="icon-btn" onClick={onClose}>
+          <button type="button" className="icon-btn" onClick={onClose}>
             ×
           </button>
         </div>
