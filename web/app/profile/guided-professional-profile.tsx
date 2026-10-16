@@ -157,7 +157,7 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
   <Card>
    <div className="eyebrow">Guided professional profile</div><h2 className="h2">Professional classifications</h2>
    <p className="muted">Choose from administrator-managed lists. If you choose Other, a custom-value field appears. Your selections are saved as governed reference links where supported.</p>
-   {loading?<p role="status">Loading reference choices…</p>:null}
+   {loading?<p aria-live="polite" aria-atomic="true">Loading reference choices…</p>:null}
    <form onSubmit={saveReferences} className="grid" style={{gap:12}}>
     <div className="grid grid-2" style={{gap:12}}>
      {renderReferenceField("nationality","Nationality",groups.nationality)}
@@ -208,7 +208,7 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
     <div className="row" style={{justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}><strong>{item.title}</strong><Badge>{item.visibility}</Badge></div>
     <p className="muted">{item.item_type.replaceAll("_"," ")}{item.description?" · "+item.description:""}{item.started_on?" · Started "+String(item.started_on).slice(0,10):""}{item.completed_on?" · Completed "+String(item.completed_on).slice(0,10):""}</p>{item.references?.length?<div className="row" style={{gap:6,flexWrap:"wrap"}}>{item.references.map(ref=><Badge key={ref.relationType+ref.referenceItemId}>{ref.relationType==="skill"?"Skill: ":"Occupation: "}{ref.label}</Badge>)}</div>:null}<p className="muted">Added {item.created_at?new Date(item.created_at).toLocaleDateString():"date unavailable"} · Review status: {item.review_status==="reviewed"?"Reviewed":item.review_status==="under_review"?"Under review":item.review_status==="needs_correction"?"Needs correction":"User supplied — not independently verified"}</p>
     {item.external_url?<a href={item.external_url} target="_blank" rel="noreferrer">Open portfolio link</a>:null}
-    {item.evidence_file_id?<div className="row" style={{gap:8,flexWrap:"wrap"}}><p role="status"><Badge>Private evidence attached</Badge> {item.evidence_label||item.evidence_original_name||"Evidence file"}</p><button type="button" className="btn btn-ghost" onClick={()=>void downloadEvidence(item)}>Download private evidence</button></div>:<p className="muted">No evidence attached.</p>}
+    {item.evidence_file_id?<div className="row" style={{gap:8,flexWrap:"wrap"}}><p aria-live="polite" aria-atomic="true"><Badge>Private evidence attached</Badge> {item.evidence_label||item.evidence_original_name||"Evidence file"}</p><button type="button" className="btn btn-ghost" onClick={()=>void downloadEvidence(item)}>Download private evidence</button></div>:<p className="muted">No evidence attached.</p>}
     <button type="button" className="btn btn-ghost" onClick={()=>void removePortfolio(item.id)}>Remove item</button>
    </div>)}</div>:<p className="muted">No portfolio items yet.</p>}
    <form onSubmit={savePortfolio} className="grid" style={{gap:12}}>
@@ -231,8 +231,8 @@ export default function GuidedProfessionalProfile({onNationalitySaved}:{onNation
      <p className="muted">Step 1: choose a document or use your phone camera. Step 2: wait for “uploaded and confirmed privately”. Step 3: save the portfolio item to attach the file. PDF, JPG, PNG or plain text; maximum 10 MB. Evidence stays private and is not shown on your public profile.</p>
      <label>Evidence label<input value={portfolioDraft.evidenceLabel} onChange={e=>setPortfolioDraft(d=>({...d,evidenceLabel:e.target.value}))} maxLength={180} placeholder="e.g. Certificate scan or project screenshot"/></label>
      <label>Choose file or take photo<input type="file" accept="application/pdf,image/jpeg,image/png,text/plain" capture="environment" disabled={uploading} onChange={e=>{const file=e.target.files?.[0];if(file)void attachEvidence(file);e.currentTarget.value="";}}/></label>
-     {uploading?<p role="status">Uploading and checking your evidence… keep this page open.</p>:null}
-     {portfolioDraft.evidenceFileId?<p role="status"><Badge>Upload confirmed</Badge> Private evidence is ready to attach: {portfolioDraft.evidenceLabel||"selected file"} <button type="button" className="btn btn-ghost" onClick={()=>setPortfolioDraft(d=>({...d,evidenceFileId:"",evidenceLabel:""}))}>Remove attachment</button></p>:<p className="muted">No evidence uploaded. You can still save the portfolio item.</p>}
+     {uploading?<p aria-live="polite" aria-atomic="true">Uploading and checking your evidence… keep this page open.</p>:null}
+     {portfolioDraft.evidenceFileId?<p aria-live="polite" aria-atomic="true"><Badge>Upload confirmed</Badge> Private evidence is ready to attach: {portfolioDraft.evidenceLabel||"selected file"} <button type="button" className="btn btn-ghost" onClick={()=>setPortfolioDraft(d=>({...d,evidenceFileId:"",evidenceLabel:""}))}>Remove attachment</button></p>:<p className="muted">No evidence uploaded. You can still save the portfolio item.</p>}
     </div>
     <button type="submit" className="btn btn-primary" disabled={saving||uploading}>{saving?"Saving…":"Save portfolio item"}</button>
    </form>

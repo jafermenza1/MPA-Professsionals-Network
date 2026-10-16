@@ -230,7 +230,7 @@ export default function Dashboard(){
     </header>
 
     {error&&<div className="form-error" role="alert">{error} <button className="btn btn-ghost" type="button" onClick={()=>void load()} disabled={loading}>Retry</button></div>}
-    {data?.errors.length? <div className={styles.partial} role="status"><span>Some dashboard sections could not be refreshed: {data.errors.join(", ")}.</span><button className="btn btn-ghost" type="button" onClick={()=>void load()} disabled={loading}><RefreshCw size={14}/> Retry</button></div>:null}
+    {data?.errors.length? <div className={styles.partial} aria-live="polite" aria-atomic="true"><span>Some dashboard sections could not be refreshed: {data.errors.join(", ")}.</span><button className="btn btn-ghost" type="button" onClick={()=>void load()} disabled={loading}><RefreshCw size={14}/> Retry</button></div>:null}
 
     <section className={styles.metrics} aria-label="Workspace overview">
       <div><span>Applications</span><strong>{data?.tracking?.summary?.total??"—"}</strong><small>{data?.tracking?.summary?.active??0} in progress</small></div>
@@ -263,8 +263,8 @@ export default function Dashboard(){
             <div className={styles.activity}><span className={styles.activityIcon}><UsersRound size={17}/></span><span className={styles.activityBody}><b>Can organizations discover me?</b><small>{!data?.memberClarity?.profileLoaded?"Your directory settings could not be confirmed. Open your profile to check visibility.":!profile?.has_active_membership?"Your membership is not active; complete membership first.":data.memberClarity.profileVisibility==="private"?"Your professional directory profile is private. Change visibility in your profile if you want to be discoverable.":"Your profile visibility is set to "+data.memberClarity.profileVisibility+". Organization access still depends on each organization's permissions and your sharing choices."}</small></span><a href="/profile" className={styles.secondaryLink}>Review visibility <ArrowRight size={14}/></a></div>
             <div className={styles.activity}><span className={styles.activityIcon}><BriefcaseBusiness size={17}/></span><span className={styles.activityBody}><b>Which opportunities am I eligible for?</b><small>Eligibility can differ by job and its published requirements. Check the eligibility result on each opportunity before applying; your membership alone does not guarantee eligibility.</small></span><a href="/jobs" className={styles.secondaryLink}>Find opportunities <ArrowRight size={14}/></a></div>
           </div>
-          {data?.memberClarity?.applications.some(a=>a.status==="correction_required")&&<div className={styles.partial} role="status"><b>Next action:</b> open Membership, read the requested correction, attach any missing evidence and submit your response.</div>}
-          {data?.memberClarity?.cases.some(row=>row.status==="consent_pending")&&<div className={styles.partial} role="status"><b>Next action:</b> open Verification and give consent for the case you want reviewed.</div>}
+          {data?.memberClarity?.applications.some(a=>a.status==="correction_required")&&<div className={styles.partial} aria-live="polite" aria-atomic="true"><b>Next action:</b> open Membership, read the requested correction, attach any missing evidence and submit your response.</div>}
+          {data?.memberClarity?.cases.some(row=>row.status==="consent_pending")&&<div className={styles.partial} aria-live="polite" aria-atomic="true"><b>Next action:</b> open Verification and give consent for the case you want reviewed.</div>}
           <p className={styles.muted}>The information above is based on records returned for your account. If a section failed to load, use its link and retry; a missing result is not proof that a claim or payment was rejected.</p>
         </section>}
         <section className={styles.section}>
